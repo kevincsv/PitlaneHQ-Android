@@ -1,0 +1,64 @@
+package com.pitlanehq.android.ui
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Circle
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.compose.*
+import com.pitlanehq.android.model.PitWallConnection
+import com.pitlanehq.android.viewmodel.PitlaneViewModel
+
+private val destinations=listOf("dashboard" to "Dashboard","sessions" to "Sessions","laps" to "My Laps","telemetry" to "Telemetry")
+
+@Composable
+fun PitlaneApp(vm:PitlaneViewModel=viewModel()){
+    MaterialTheme(colorScheme=darkColorScheme()){
+        val nav=rememberNavController()
+        Scaffold(bottomBar={
+            NavigationBar{destinations.forEach{(route,label)->
+                NavigationBarItem(selected=false,onClick={nav.navigate(route){launchSingleTop=true}},icon={Icon(Icons.Default.Circle,null)},label={Text(label)})
+            }}
+        }){pad->NavHost(nav,"dashboard",Modifier.padding(pad)){
+            composable("dashboard"){DashboardScreen(vm)}
+            composable("sessions"){SimpleScreen("Sessions","Session history")}
+            composable("laps"){SimpleScreen("My Laps","Saved laps and records")}
+            composable("telemetry"){TelemetryScreen(vm)}
+        }}
+    }
+}
+
+@Composable private fun DashboardScreen(vm:PitlaneViewModel){
+    val t by vm.telemetry.collectAsState()
+    Column(Modifier.fillMaxSize().padding(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)){
+        Text("PITLANE HQ",style=MaterialTheme.typography.headlineMedium)
+        Text("Live race engineering")
+        Row(horizontalArrangement=Arrangement.spacedBy(12.dp),modifier=Modifier.fillMaxWidth()){
+            Kpi("Speed",t.speedKph?.let{"%.0f km/h".format(it)}?:"—",Modifier.weight(1f))
+            Kpi("RPM",t.rpm?.let{"%.0f".format(it)}?:"—",Modifier.weight(1f))
+        }
+        Row(horizontalArrangement=Arrangement.spacedBy(12.dp),modifier=Modifier.fillMaxWidth()){
+            Kpi("Gear",t.gear?.toString()?:"—",Modifier.weight(1f))
+            Kpi("Lap",t.lap?.toString()?:"—",Modifier.weight(1f))
+        }
+        Card(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp)){Text("Connection");Text("Open Connection Center in the next build to pair your PitWall PC.")}}
+    }
+}
+@Composable private fun Kpi(title:String,value:String,modifier:Modifier){Card(modifier){Column(Modifier.padding(16.dp)){Text(title,style=MaterialTheme.typography.labelMedium);Text(value,style=MaterialTheme.typography.headlineSmall)}}}
+@Composable private fun TelemetryScreen(vm:PitlaneViewModel){
+    val t by vm.telemetry.collectAsState()
+    LazyColumn(Modifier.fillMaxSize().padding(20.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+        item{Text("Full Telemetry",style=MaterialTheme.typography.headlineMedium)}
+        item{Text("Live values from PitWall PC.")}
+        item{ListItem(headlineContent={Text("Speed")},supportingContent={Text(t.speedKph?.toString()?:"—")})}
+        item{ListItem(headlineContent={Text("RPM")},supportingContent={Text(t.rpm?.toString()?:"—")})}
+        item{ListItem(headlineContent={Text("Gear")},supportingContent={Text(t.gear?.toString()?:"—")})}
+        item{ListItem(headlineContent={Text("Fuel")},supportingContent={Text(t.fuelLitres?.toString()?:"—")})}
+        item{ListItem(headlineContent={Text("Lap")},supportingContent={Text(t.lap?.toString()?:"—")})}
+    }
+}
+@Composable private fun SimpleScreen(title:String,body:String){Column(Modifier.fillMaxSize().padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){Text(title,style=MaterialTheme.typography.headlineMedium);Text(body)}}
