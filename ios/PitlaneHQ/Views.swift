@@ -508,7 +508,7 @@ struct AnalysisView: View {
                             Text(x.track + (x.trackConfig.isEmpty ? "" : " · " + x.trackConfig)).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
                             Text(x.car).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
                             HStack {
-                                Text([x.kind, day(x.started), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
+                                Text([kindText(x.kind), day(x.started), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
                                 Spacer()
                                 Text(lapTime(x.best)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
                             }
@@ -861,6 +861,16 @@ struct PointCard: View {
         .background(Theme.surface2)
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
+}
+
+/// Practice, qualifying or race, from iRacing's session type.
+func kindText(_ k: String) -> String {
+    let x = k.lowercased()
+    if x.contains("race") { return t("kind_race") }
+    if x.contains("qual") { return t("kind_qual") }
+    if x.contains("warm") { return t("kind_warm") }
+    if x.contains("practice") || x.contains("test") || x.contains("offline") { return t("kind_prac") }
+    return k
 }
 
 /// A line chart over the lap distance. Tap, or touch and hold and drag, to read the values at

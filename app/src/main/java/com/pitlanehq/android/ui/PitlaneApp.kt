@@ -396,7 +396,7 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
                     Text(x.track + if (x.trackConfig.isNotBlank()) " · " + x.trackConfig else "", fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(listOf(x.kind, day(x.started), t("laps_n", x.laps)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
+                        Text(listOf(kindText(x.kind), day(x.started), t("laps_n", x.laps)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
                         Text(lapTime(x.best), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                     }
                 }
@@ -579,6 +579,18 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
                 }
             }
         }
+    }
+}
+
+/** Practice, qualifying or race, from iRacing's session type. */
+private fun kindText(k: String): String {
+    val x = k.lowercase()
+    return when {
+        "race" in x -> t("kind_race")
+        "qual" in x -> t("kind_qual")
+        "warm" in x -> t("kind_warm")
+        "practice" in x || "test" in x || "offline" in x -> t("kind_prac")
+        else -> k
     }
 }
 

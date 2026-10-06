@@ -4,6 +4,14 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
+## 0.3.7 beta
+
+**Changed**
+- Sessions say practice, qualifying or race in your language.
+
+Also in this version, on the PC and the web: sharing older sessions and laps without telemetry,
+the lap analyzer charts and My races on phones.
+
 ## 0.3.6 beta
 
 **Changed**
