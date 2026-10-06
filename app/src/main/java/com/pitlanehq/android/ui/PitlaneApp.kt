@@ -1,22 +1,29 @@
 package com.pitlanehq.android.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
@@ -29,11 +36,15 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.*
+import com.pitlanehq.android.BuildConfig
 import com.pitlanehq.android.data.SERVER
 import com.pitlanehq.android.model.*
+import com.pitlanehq.android.viewmodel.LapAnalysis
 import com.pitlanehq.android.viewmodel.PitlaneViewModel
+import com.pitlanehq.android.viewmodel.RefKind
 import java.text.DateFormat
 import java.util.Date
+import kotlin.math.abs
 
 private val Ink = Color(0xFF11151B)
 private val Surface = Color(0xFF19202A)
@@ -45,18 +56,14 @@ private val Accent = Color(0xFFFFB02E)
 private val Good = Color(0xFF38C97C)
 private val Bad = Color(0xFFFF6363)
 private val Purple = Color(0xFFB98CFF)
+private val Blue = Color(0xFF5AA9FF)
 
 private const val WEB_APP = "$SERVER/app/?companion=1"
 
 private data class Dest(val route: String, val label: String, val icon: ImageVector)
 
-private val dests = listOf(
-    Dest("home", "Home", Icons.Default.Home),
-    Dest("analysis", "Analysis", Icons.Default.QueryStats),
-    Dest("community", "Community", Icons.Default.Groups),
-    Dest("live", "Live", Icons.Default.Sensors),
-    Dest("profile", "Profile", Icons.Default.Person)
-)
+private fun day(ms: Long) = if (ms <= 0) "" else DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(ms))
+private fun dayTime(ms: Long) = if (ms <= 0) "" else DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(ms))
 
 @Composable
 fun PitlaneApp(vm: PitlaneViewModel = viewModel()) {
@@ -66,7 +73,9 @@ fun PitlaneApp(vm: PitlaneViewModel = viewModel()) {
         surfaceVariant = Surface2, onSurfaceVariant = Muted, outline = Line, error = Bad
     )
     MaterialTheme(colorScheme = scheme) {
-        if (!account.signedIn) LoginScreen(vm, account.error, account.busy) else MainApp(vm)
+        key(I18n.lang) {
+            if (!account.signedIn) LoginScreen(vm, account.error, account.busy) else MainApp(vm)
+        }
     }
 }
 
@@ -83,62 +92,83 @@ private fun LoginScreen(vm: PitlaneViewModel, error: String?, busy: Boolean) {
     ) {
         item { Spacer(Modifier.height(32.dp)) }
         item { Text("PITLANE HQ", color = Fg, fontSize = 34.sp, fontWeight = FontWeight.Black) }
-        item { Text("COMPANION", color = Accent, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+        item { Text(t("companion"), color = Accent, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
         item {
             Panel {
-                Text("SIGN IN", fontSize = 22.sp, fontWeight = FontWeight.Black)
-                Text("Use the same Pitlane HQ account as on your PC.", color = Muted, fontSize = 12.sp)
+                Text(t("sign_in").uppercase(), fontSize = 22.sp, fontWeight = FontWeight.Black)
+                Text(t("same_account"), color = Muted, fontSize = 12.sp)
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
-                    email, { email = it }, label = { Text("Email") }, singleLine = true,
+                    email, { email = it }, label = { Text(t("email")) }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
-                    password, { password = it }, label = { Text("Password") }, singleLine = true,
+                    password, { password = it }, label = { Text(t("password")) }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth()
                 )
-                error?.let { Text(it, color = Bad, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp)) }
+                error?.let { Text(t(it), color = Bad, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp)) }
                 Spacer(Modifier.height(10.dp))
                 Button(
                     onClick = { vm.login(email, password) }, enabled = !busy && email.isNotBlank() && password.isNotBlank(),
                     modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)
-                ) { Text(if (busy) "SIGNING IN…" else "SIGN IN", fontWeight = FontWeight.Black) }
+                ) { Text((if (busy) t("signing_in") else t("sign_in")).uppercase(), fontWeight = FontWeight.Black) }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    TextButton({ uri.openUri(WEB_APP) }) { Text("Create an account", color = Accent, fontSize = 12.sp) }
-                    TextButton({ uri.openUri("$SERVER/account/forgot") }) { Text("Forgot password?", color = Muted, fontSize = 12.sp) }
+                    TextButton({ uri.openUri(WEB_APP) }) { Text(t("create_account"), color = Accent, fontSize = 12.sp) }
+                    TextButton({ uri.openUri("$SERVER/account/forgot") }) { Text(t("forgot"), color = Muted, fontSize = 12.sp) }
                 }
             }
         }
-        item {
-            Text(
-                "Your password only unlocks your keys on this phone. It never leaves it.",
-                color = Muted, fontSize = 11.sp
-            )
-        }
+        item { Text(t("pw_note"), color = Muted, fontSize = 11.sp) }
     }
 }
 
 @Composable
 private fun MainApp(vm: PitlaneViewModel) {
     val nav = rememberNavController()
+    val demo by vm.demo.collectAsState()
+    val online by vm.online.collectAsState()
     Scaffold(containerColor = Ink, bottomBar = { BottomBar(nav) }) { pad ->
-        NavHost(nav, "home", Modifier.padding(pad)) {
-            composable("home") { Home(vm, nav) }
-            composable("analysis") { Analysis(vm, nav) }
-            composable("session") { SessionDetail(vm, nav) }
-            composable("community") { Community(vm, nav) }
-            composable("combo") { ComboDetail(vm, nav) }
-            composable("live") { Live(vm) }
-            composable("profile") { Profile(vm) }
+        Column(Modifier.padding(pad).fillMaxSize()) {
+            Column(Modifier.statusBarsPadding()) {
+                if (!online) Banner(t("showing_saved"), Bad)
+                if (demo) Banner(t("demo_banner"), Accent)
+            }
+            NavHost(nav, "home", Modifier.weight(1f)) {
+                composable("home") { Home(vm, nav) }
+                composable("races") { RacesAll(vm, nav) }
+                composable("race") { RaceDetail(vm, nav) }
+                composable("analysis") { Analysis(vm, nav) }
+                composable("session") { SessionDetail(vm, nav) }
+                composable("lap") { LapDetail(vm, nav) }
+                composable("community") { Community(vm, nav) }
+                composable("combo") { ComboDetail(vm, nav) }
+                composable("live") { Live(vm) }
+                composable("settings") { Settings(vm) }
+            }
         }
     }
 }
 
 @Composable
+private fun Banner(s: String, c: Color) {
+    Text(
+        s, color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace,
+        modifier = Modifier.fillMaxWidth().background(c).padding(horizontal = 16.dp, vertical = 6.dp)
+    )
+}
+
+@Composable
 private fun BottomBar(nav: NavHostController) {
+    val dests = listOf(
+        Dest("home", t("home"), Icons.Default.Home),
+        Dest("analysis", t("analysis"), Icons.Default.QueryStats),
+        Dest("community", t("community"), Icons.Default.Groups),
+        Dest("live", t("live"), Icons.Default.Sensors),
+        Dest("settings", t("settings"), Icons.Default.Settings)
+    )
     val current = nav.currentBackStackEntryAsState().value?.destination?.route
-    val tab = when (current) { "session" -> "analysis"; "combo" -> "community"; else -> current }
+    val tab = when (current) { "races", "race" -> "home"; "session", "lap" -> "analysis"; "combo" -> "community"; else -> current }
     NavigationBar(containerColor = Surface, tonalElevation = 0.dp) {
         dests.forEach { d ->
             NavigationBarItem(
@@ -158,16 +188,16 @@ private fun BottomBar(nav: NavHostController) {
 @Composable
 private fun Screen(title: String, sub: String = "", back: (() -> Unit)? = null, content: LazyListScope.() -> Unit) {
     LazyColumn(
-        Modifier.fillMaxSize().background(Ink).statusBarsPadding(),
+        Modifier.fillMaxSize().background(Ink),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
-            Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (back != null) IconButton(back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Fg) }
+            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (back != null) IconButton(back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Fg) }
                 Column(Modifier.weight(1f)) {
-                    Text(title.uppercase(), color = Fg, fontSize = 24.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    if (sub.isNotBlank()) Text(sub, color = Muted, fontSize = 12.sp)
+                    Text(title.uppercase(), color = Fg, fontSize = 22.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (sub.isNotBlank()) Text(sub, color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
@@ -175,42 +205,176 @@ private fun Screen(title: String, sub: String = "", back: (() -> Unit)? = null, 
     }
 }
 
+/** Loading bar, error with a retry button, and the "saved copy" note. */
+private fun <T> LazyListScope.state(l: Loadable<T>, retry: () -> Unit) {
+    if (l.loading) item { LinearProgressIndicator(Modifier.fillMaxWidth(), color = Accent, trackColor = Surface2) }
+    l.error?.let { e ->
+        item {
+            Panel {
+                Text(t(e), color = Bad, fontSize = 13.sp)
+                TextButton(retry) { Text(t("retry").uppercase(), color = Accent, fontWeight = FontWeight.Bold) }
+            }
+        }
+    }
+    if (l.stale && l.error == null) item { Text(t("showing_saved"), color = Accent, fontSize = 11.sp) }
+}
+
 // ---------- Home ----------
 @Composable
 private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
     val a by vm.account.collectAsState()
-    val uri = LocalUriHandler.current
-    Screen("Pitlane HQ", "Your racing companion") {
-        item { Section("ACCOUNT") }
+    val r by vm.races.collectAsState()
+    val races = r.data ?: emptyList()
+    Screen(a.display.ifBlank { t("driver") }, t("racing_companion")) {
+        state(r) { vm.loadRaces() }
+        item { Section(t("race_summary")) }
         item {
-            Panel {
-                Text(a.display.ifBlank { "Pitlane driver" }, fontWeight = FontWeight.Black, fontSize = 20.sp)
-                Text(a.email, color = Muted, fontSize = 12.sp)
+            val recent = races.take(10)
+            val last = races.firstOrNull()
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Metric(t("current_ir"), if (last != null && last.ir > 0) "${last.ir + last.irChange}" else "—", Modifier.weight(1f))
+                val ch = recent.sumOf { it.irChange }
+                Metric(t("ir_change"), if (recent.isEmpty()) "—" else signed(ch), Modifier.weight(1f), if (ch > 0) Good else if (ch < 0) Bad else Fg, t("last_races", recent.size))
             }
         }
-        item { Section("PC SETTINGS IN YOUR ACCOUNT") }
+        item {
+            val recent = races.take(10)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Metric(t("races"), "${races.size}", Modifier.weight(1f))
+                Metric(t("wins"), "${races.count { it.finish == 1 }}", Modifier.weight(1f))
+                Metric(t("top5"), "${races.count { it.finish in 1..5 }}", Modifier.weight(1f))
+                Metric(t("avg_inc"), if (recent.isEmpty()) "—" else "%.1f".format(recent.map { it.inc }.average()), Modifier.weight(1f))
+            }
+        }
         item {
             Panel {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(if (a.syncVersion > 0) "${a.syncedFiles} files · version ${a.syncVersion}" else "Nothing synced yet", fontWeight = FontWeight.Bold)
-                        Text(
-                            if (a.syncUpdated > 0) "Updated " + DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(a.syncUpdated))
-                            else "Turn on sync in PitlaneHQ.exe → Account", color = Muted, fontSize = 12.sp
-                        )
-                        a.error?.let { Text(it, color = Bad, fontSize = 12.sp) }
+                        Text(t("safety").uppercase(), fontWeight = FontWeight.Black, fontSize = 13.sp)
+                        Text(t("safety_wip"), color = Muted, fontSize = 11.sp)
                     }
-                    Button({ vm.sync() }, enabled = !a.busy, colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) {
-                        Text(if (a.busy) "…" else "SYNC", fontWeight = FontWeight.Bold)
+                    Status("WIP", Accent)
+                }
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Section(t("recent_races"))
+                Spacer(Modifier.weight(1f))
+                if (races.size > 5) TextButton({ nav.navigate("races") }) { Text(t("see_all"), color = Accent, fontSize = 12.sp) }
+            }
+        }
+        if (r.data != null && races.isEmpty()) item { Empty(t("no_races")) }
+        items(races.take(5)) { x -> RaceRow(x) { vm.race = x; nav.navigate("race") } }
+        item { Text(t("ir_estimate"), color = Muted, fontSize = 11.sp) }
+        item {
+            Panel {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (a.syncUpdated > 0) t("synced", dayTime(a.syncUpdated)) else t("never_synced"),
+                            color = Muted, fontSize = 12.sp
+                        )
+                        a.error?.let { Text(t(it), color = Bad, fontSize = 12.sp) }
+                    }
+                    TextButton({ vm.sync() }, enabled = !a.busy) { Text(if (a.busy) "…" else t("sync").uppercase(), color = Accent, fontWeight = FontWeight.Bold) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RaceRow(x: Race, onClick: () -> Unit) {
+    Panel(Modifier.clickable(onClick = onClick)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(x.track, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    listOf(day(x.whenMs), if (x.official) t("official") else t("unofficial"), if (x.sof > 0) "SOF ${x.sof}" else "").filter { it.isNotBlank() }.joinToString(" · "),
+                    color = Muted, fontSize = 11.sp
+                )
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(if (x.dnf) t("dnf") else "P${x.finish}/${x.field}", fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, color = if (x.finish == 1) Purple else Fg)
+                Text("iR " + signed(x.irChange), color = if (x.irChange > 0) Good else if (x.irChange < 0) Bad else Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("${x.inc}x", color = if (x.inc >= 8) Bad else Muted, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RacesAll(vm: PitlaneViewModel, nav: NavHostController) {
+    val r by vm.races.collectAsState()
+    Screen(t("all_races"), back = { nav.popBackStack() }) {
+        items(r.data ?: emptyList()) { x -> RaceRow(x) { vm.race = x; nav.navigate("race") } }
+    }
+}
+
+@Composable
+private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
+    val x = vm.race ?: return
+    Screen(x.track, x.car + " · " + dayTime(x.whenMs), back = { nav.popBackStack() }) {
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Metric(t("start"), "P${x.start}", Modifier.weight(1f))
+                Metric(t("finish"), if (x.dnf) t("dnf") else "P${x.finish}", Modifier.weight(1f), if (x.finish == 1) Purple else Fg)
+                Metric("iRating", signed(x.irChange), Modifier.weight(1f), if (x.irChange > 0) Good else if (x.irChange < 0) Bad else Fg, if (x.ir > 0) "${x.ir} → ${x.ir + x.irChange}" else null)
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Metric(t("incidents"), "${x.inc}x", Modifier.weight(1f), if (x.inc >= 8) Bad else Fg)
+                Metric(t("pos_gain"), signed(x.start - x.finish), Modifier.weight(1f), if (x.start > x.finish) Good else if (x.start < x.finish) Bad else Fg)
+                Metric(t("sof"), if (x.sof > 0) "${x.sof}" else "—", Modifier.weight(1f))
+            }
+        }
+        item {
+            Panel {
+                InfoRow(t("best_lap"), lapTime(x.best), Purple)
+                InfoRow(t("field_best"), lapTime(x.fieldBest))
+                InfoRow(t("average"), lapTime(x.avg))
+                InfoRow(t("consistency"), x.consistency?.let { "±%.3f s".format(it) } ?: "—")
+                InfoRow(t("pits"), "${x.pits}")
+                InfoRow(t("fuel_used"), x.fuelUsed?.let { "%.1f L".format(it) } ?: "—")
+                InfoRow(t("laps"), "${x.laps.size} · " + t("drivers", x.field))
+            }
+        }
+        if (x.laps.isNotEmpty()) {
+            item { Section(t("laps").uppercase()) }
+            item {
+                Panel {
+                    val best = x.laps.filter { it.time > 0 }.minOfOrNull { it.time }
+                    x.laps.forEach { l ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                            Text("L${l.n}", color = Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(44.dp))
+                            Text(lapTime(l.time), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = if (l.time == best) Purple else Fg, modifier = Modifier.weight(1f))
+                            Text("P${l.pos}", color = Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(44.dp))
+                            Text(if (l.pit) t("pit") else if (l.inc > 0) "${l.inc}x" else "", color = if (l.pit) Blue else Bad, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(40.dp))
+                        }
                     }
                 }
             }
         }
-        item { Section("GO TO") }
-        item { Action("MY LAPS", "Sessions your PC uploaded", Icons.Default.QueryStats) { nav.navigate("analysis") } }
-        item { Action("COMMUNITY", "Fastest drivers per track and car", Icons.Default.Groups) { nav.navigate("community") } }
-        item { Action("LIVE TELEMETRY", "Your PC, live, from anywhere", Icons.Default.Sensors) { nav.navigate("live") } }
-        item { Action("FULL PITLANE HQ", "Coach, comparisons and everything else on the web", Icons.Default.OpenInBrowser) { uri.openUri(WEB_APP) } }
+        if (x.results.isNotEmpty()) {
+            item { Section(t("results")) }
+            item {
+                Panel {
+                    x.results.forEach { p ->
+                        val me = p.pos == x.finish
+                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("${p.pos}", color = if (me) Accent else Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(30.dp))
+                            Text(p.name, fontSize = 12.sp, fontWeight = if (me) FontWeight.Black else FontWeight.Normal, color = if (me) Accent else Fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            Text(if (p.ir > 0) "${p.ir}" else "", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
+                            Text(lapTime(p.best), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(66.dp))
+                            Text("${p.inc}x", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(30.dp))
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -218,19 +382,40 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
 @Composable
 private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
     val s by vm.sessions.collectAsState()
-    LaunchedEffect(Unit) { if (s.data == null) vm.loadSessions() }
-    Screen("My laps", "Sessions uploaded by PitlaneHQ.exe") {
-        item { Reload(s.loading) { vm.loadSessions() } }
-        s.error?.let { item { Text(it, color = Bad, fontSize = 12.sp) } }
-        val list = s.data
-        if (list != null && list.isEmpty()) item { Empty("No sessions yet. Drive with PitlaneHQ.exe running and signed in: your laps upload by themselves.") }
-        items(list ?: emptyList(), key = { it.id }) { x ->
-            Panel(Modifier.clickable { vm.session = x; vm.loadLaps(x.id); nav.navigate("session") }) {
-                Text(x.track + if (x.trackConfig.isNotBlank()) " · " + x.trackConfig else "", fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(listOf(x.kind, DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(x.started)), "${x.laps} laps").filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
-                    Text(lapTime(x.best), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+    val b by vm.bests.collectAsState()
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(tab) { if (tab == 0 && s.data == null && !s.loading) vm.loadSessions(); if (tab == 1 && b.data == null && !b.loading) vm.loadBests() }
+    Screen(t("my_laps"), t("uploaded_by_pc")) {
+        item { Tabs(listOf(t("sessions"), t("bests")), tab) { tab = it } }
+        if (tab == 0) {
+            state(s) { vm.loadSessions() }
+            val list = s.data
+            if (list != null && list.isEmpty()) item { Empty(t("no_sessions")) }
+            items(list ?: emptyList(), key = { it.id }) { x ->
+                Panel(Modifier.clickable { vm.session = x; vm.loadLaps(x.id); nav.navigate("session") }) {
+                    Text(x.track + if (x.trackConfig.isNotBlank()) " · " + x.trackConfig else "", fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(listOf(x.kind, day(x.started), t("laps_n", x.laps)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
+                        Text(lapTime(x.best), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        } else {
+            state(b) { vm.loadBests() }
+            val list = b.data
+            if (list != null && list.isEmpty()) item { Empty(t("no_sessions")) }
+            items(list ?: emptyList()) { x ->
+                Panel(Modifier.clickable(enabled = x.bestSessionId != null) {
+                    val sess = CloudSession(x.bestSessionId!!, x.last, x.track, x.trackConfig, x.car, "", x.laps, x.best)
+                    vm.session = sess; vm.loadLaps(sess.id); nav.navigate("session")
+                }) {
+                    Text(x.track + if (x.trackConfig.isNotBlank()) " · " + x.trackConfig else "", fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(listOf(day(x.last), t("laps_n", x.laps)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
+                        Text(lapTime(x.best), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -249,31 +434,32 @@ private fun SessionDetail(vm: PitlaneViewModel, nav: NavHostController) {
     val bestSec = (0 until nSec).map { i -> valid.mapNotNull { it.sectors.getOrNull(i) }.filter { it > 0 }.minOrNull() }
     val ideal = if (nSec > 0 && bestSec.all { it != null }) bestSec.sumOf { it!! } else null
     Screen(x.track, x.car, back = { nav.popBackStack() }) {
-        if (l.loading) item { LinearProgressIndicator(Modifier.fillMaxWidth(), color = Accent) }
-        l.error?.let { item { Text(it, color = Bad, fontSize = 12.sp) } }
+        state(l) { vm.loadLaps(x.id) }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Metric("BEST", lapTime(best), Modifier.weight(1f), Purple)
-                Metric("BEST SECTORS", lapTime(ideal), Modifier.weight(1f))
+                Metric(t("best"), lapTime(best), Modifier.weight(1f), Purple)
+                Metric(t("best_sectors"), lapTime(ideal), Modifier.weight(1f))
             }
         }
-        item { Section("LAPS") }
+        item { Row { Section(t("laps").uppercase()); Spacer(Modifier.weight(1f)); Text(t("tap_lap"), color = Muted, fontSize = 11.sp) } }
         items(laps) { lap ->
-            Panel {
+            Panel(Modifier.clickable { vm.analyse(x, lap, laps, RefKind.MY_BEST); nav.navigate("lap") }) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("L${lap.n}", color = Muted, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
                     Text(
                         lapTime(lap.time), fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f),
                         color = when { !lap.valid -> Bad; lap.time == best -> Purple; else -> Fg }
                     )
-                    if (!lap.valid) Text("INVALID", color = Bad, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    if (best != null && lap.valid && lap.time > best) Text("+%.3f".format(lap.time - best), color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    if (!lap.valid) Text(t("invalid"), color = Bad, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    Icon(Icons.Default.ChevronRight, null, tint = Muted)
                 }
                 if (lap.sectors.isNotEmpty()) {
                     Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        lap.sectors.forEachIndexed { i, t ->
+                        lap.sectors.forEachIndexed { i, s ->
                             Text(
-                                "S${i + 1} " + "%.3f".format(t), fontSize = 11.sp, fontFamily = FontFamily.Monospace,
-                                color = if (lap.valid && t == bestSec.getOrNull(i)) Purple else Muted
+                                "S${i + 1} " + "%.3f".format(s), fontSize = 11.sp, fontFamily = FontFamily.Monospace,
+                                color = if (lap.valid && s == bestSec.getOrNull(i)) Purple else Muted
                             )
                         }
                     }
@@ -283,27 +469,178 @@ private fun SessionDetail(vm: PitlaneViewModel, nav: NavHostController) {
     }
 }
 
+@Composable
+private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
+    val x = vm.session ?: return
+    val a by vm.analysis.collectAsState()
+    val laps by vm.laps.collectAsState()
+    var kind by rememberSaveable { mutableStateOf(RefKind.MY_BEST) }
+    val an: LapAnalysis? = a.data
+    Screen(t("lap_analysis") + (an?.let { " · L${it.lap.n}" } ?: ""), x.track + " · " + x.car, back = { nav.popBackStack() }) {
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(t("compare_with"), color = Muted, fontSize = 12.sp)
+                RefKind.entries.forEach { k ->
+                    FilterChip(kind == k, {
+                        kind = k
+                        an?.let { vm.analyse(x, it.lap, laps.data ?: emptyList(), k) }
+                    }, label = { Text(if (k == RefKind.MY_BEST) t("my_best") else t("community_fastest"), fontSize = 12.sp) })
+                }
+            }
+        }
+        state(a) { an?.let { vm.analyse(x, it.lap, laps.data ?: emptyList(), kind) } }
+        if (an != null) {
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Metric(t("you"), lapTime(an.lap.time), Modifier.weight(1f), Accent)
+                    Metric(an.refLabel.ifBlank { t("ref") }, lapTime(an.refTime), Modifier.weight(1f), Blue)
+                    val d = an.refTime?.let { an.lap.time - it }
+                    Metric(t("delta"), d?.let { "%+.3f".format(it) } ?: "—", Modifier.weight(1f), if (d == null) Fg else if (d <= 0) Good else Bad)
+                }
+            }
+            if (an.trace == null) item { Empty(t("no_trace")) }
+            else {
+                val c = compare(an.trace, an.ref)
+                if (an.ref == null) item { Text(t("no_reference"), color = Muted, fontSize = 12.sp) }
+                item {
+                    Chart(t("speed") + " (km/h)", listOfNotNull(c.speedA to Accent, c.speedB?.let { it to Blue }))
+                }
+                c.delta?.let { d -> item { Chart(t("delta") + " (s)", listOf(d to Purple), zero = true) } }
+                item { Chart(t("inputs"), listOf(c.thrA to Good, c.brkA to Bad), fixedMax = 1.0) }
+                if (an.ref != null) {
+                    item { Section(t("where_time")) }
+                    val ls = losses(c)
+                    if (ls.isEmpty()) item { Empty(t("all_clean")) }
+                    items(ls) { lo ->
+                        Panel {
+                            Row {
+                                Text(t("at_m", lo.fromM), fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                                Text(t("lost", "%.3f".format(lo.lost)), color = Bad, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                            }
+                            lo.brakeDiffM?.takeIf { abs(it) >= 5 }?.let { Text(if (it < 0) t("brake_earlier", -it) else t("brake_later", it), color = Muted, fontSize = 12.sp) }
+                            Text(t("min_speed", "%.0f".format(lo.minA), "%.0f".format(lo.minB)), color = Muted, fontSize = 12.sp)
+                            lo.throttleDiffM?.takeIf { it >= 10 }?.let { Text(t("throttle_later", it), color = Muted, fontSize = 12.sp) }
+                        }
+                    }
+                }
+            }
+            if (an.lap.sectors.isNotEmpty()) {
+                item { Section(t("sectors")) }
+                item {
+                    Panel {
+                        an.lap.sectors.forEachIndexed { i, s ->
+                            val r = an.refSectors.getOrNull(i)
+                            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                                Text("S${i + 1}", color = Muted, fontFamily = FontFamily.Monospace, modifier = Modifier.width(40.dp))
+                                Text("%.3f".format(s), fontFamily = FontFamily.Monospace, color = Accent, modifier = Modifier.weight(1f))
+                                Text(r?.let { "%.3f".format(it) } ?: "—", fontFamily = FontFamily.Monospace, color = Blue, modifier = Modifier.weight(1f))
+                                Text(r?.let { "%+.3f".format(s - it) } ?: "", fontFamily = FontFamily.Monospace, color = if (r != null && s <= r) Good else Bad)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** A line chart over the lap distance. */
+@Composable
+private fun Chart(title: String, series: List<Pair<List<Double>, Color>>, zero: Boolean = false, fixedMax: Double? = null) {
+    Panel {
+        Section(title.uppercase())
+        Spacer(Modifier.height(6.dp))
+        val all = series.flatMap { it.first }
+        if (all.isEmpty()) return@Panel
+        val lo = if (fixedMax != null) 0.0 else if (zero) minOf(all.min(), 0.0) else all.min()
+        val hi = fixedMax ?: if (zero) maxOf(all.max(), 0.0) else all.max()
+        val span = (hi - lo).takeIf { it > 1e-9 } ?: 1.0
+        Canvas(Modifier.fillMaxWidth().height(120.dp)) {
+            fun y(v: Double) = (size.height * (1 - (v - lo) / span)).toFloat()
+            if (zero) drawLine(Line, Offset(0f, y(0.0)), Offset(size.width, y(0.0)), 1f)
+            series.forEach { (vals, color) ->
+                if (vals.size < 2) return@forEach
+                val p = Path()
+                vals.forEachIndexed { i, v ->
+                    val px = size.width * i / (vals.size - 1)
+                    if (i == 0) p.moveTo(px, y(v)) else p.lineTo(px, y(v))
+                }
+                drawPath(p, color, style = Stroke(width = 2f))
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(if (fixedMax == 1.0) "0%" else "%.1f".format(lo), color = Muted, fontSize = 10.sp)
+            Text(if (fixedMax == 1.0) "100%" else "%.1f".format(hi), color = Muted, fontSize = 10.sp)
+        }
+    }
+}
+
 // ---------- Community ----------
 @Composable
 private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
     val c by vm.combos.collectAsState()
-    var q by remember { mutableStateOf("") }
-    LaunchedEffect(Unit) { if (c.data == null) vm.loadCombos() }
-    Screen("Community", "Laps shared by Pitlane HQ drivers · iRacing") {
-        item {
-            OutlinedTextField(q, { q = it }, label = { Text("Search track or car") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+    val rp by vm.reports.collectAsState()
+    val su by vm.setups.collectAsState()
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var q by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(tab) {
+        when (tab) {
+            0 -> if (c.data == null && !c.loading) vm.loadCombos()
+            1 -> if (rp.data == null && !rp.loading) vm.loadReports()
+            else -> if (su.data == null && !su.loading) vm.loadSetups()
         }
-        item { Reload(c.loading) { vm.loadCombos() } }
-        c.error?.let { item { Text(it, color = Bad, fontSize = 12.sp) } }
-        val list = (c.data ?: emptyList()).filter { q.isBlank() || it.track.contains(q, true) || it.car.contains(q, true) }
-        if (c.data != null && list.isEmpty()) item { Empty("No shared laps found.") }
-        items(list, key = { "${it.trackId}-${it.carId}" }) { x ->
-            Panel(Modifier.clickable { vm.combo = x; vm.loadBoard(x); nav.navigate("combo") }) {
-                Text(x.track, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("${x.laps} laps", color = Muted, fontSize = 12.sp)
-                    Text(lapTime(x.best), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+    }
+    fun match(vararg s: String) = q.isBlank() || s.any { it.contains(q, true) }
+    Screen(t("community"), t("shared_by")) {
+        item { Tabs(listOf(t("leaderboards"), t("reports"), t("setups")), tab) { tab = it } }
+        item { OutlinedTextField(q, { q = it }, label = { Text(t("search")) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
+        when (tab) {
+            0 -> {
+                state(c) { vm.loadCombos() }
+                val list = (c.data ?: emptyList()).filter { match(it.track, it.car) }
+                if (c.data != null && list.isEmpty()) item { Empty(t("nothing_found")) }
+                items(list, key = { "${it.trackId}-${it.carId}" }) { x ->
+                    Panel(Modifier.clickable { vm.combo = x; vm.loadBoard(x); nav.navigate("combo") }) {
+                        Text(x.track, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(t("laps_n", x.laps), color = Muted, fontSize = 12.sp)
+                            Text(lapTime(x.best), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+            1 -> {
+                state(rp) { vm.loadReports() }
+                val list = (rp.data ?: emptyList()).filter { match(it.track, it.car, it.alias) }
+                if (rp.data != null && list.isEmpty()) item { Empty(t("nothing_found")) }
+                items(list, key = { it.id }) { x ->
+                    Panel {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(x.track, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(x.alias + " · " + day(x.created), color = Muted, fontSize = 11.sp)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(if (x.finish > 0) "P${x.finish}/${x.field}" else "—", fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+                                Text(lapTime(x.best), color = Purple, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
+            else -> {
+                state(su) { vm.loadSetups() }
+                val list = (su.data ?: emptyList()).filter { match(it.track, it.car, it.name, it.alias) }
+                if (su.data != null && list.isEmpty()) item { Empty(t("nothing_found")) }
+                items(list, key = { it.id }) { x ->
+                    Panel {
+                        Text(x.name, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(listOf(x.car, x.track).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 2)
+                        if (x.notes.isNotBlank()) Text(x.notes, fontSize = 12.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        Text(x.alias + " · " + t("downloads", x.downloads) + " · " + day(x.created), color = Muted, fontSize = 11.sp)
+                    }
                 }
             }
         }
@@ -314,17 +651,29 @@ private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
 private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
     val x = vm.combo ?: return
     val b by vm.board.collectAsState()
+    val a by vm.account.collectAsState()
     val list = b.data ?: emptyList()
     val top = list.firstOrNull()?.time
+    val mine = list.indexOfFirst { a.display.isNotBlank() && it.alias.equals(a.display, true) }
     Screen(x.track, x.car, back = { nav.popBackStack() }) {
-        if (b.loading) item { LinearProgressIndicator(Modifier.fillMaxWidth(), color = Accent) }
-        b.error?.let { item { Text(it, color = Bad, fontSize = 12.sp) } }
-        item { Section("FASTEST DRIVERS") }
+        state(b) { vm.loadBoard(x) }
+        if (b.data != null) item {
+            Panel {
+                if (mine >= 0) Text(t("your_position", mine + 1, list.size, lapTime(list[mine].time)), color = Accent, fontWeight = FontWeight.Bold)
+                else Text(t("not_on_board"), color = Muted, fontSize = 12.sp)
+                Text(t("drivers", list.size), color = Muted, fontSize = 11.sp)
+            }
+        }
+        item { Section(t("fastest_drivers")) }
         itemsIndexed(list) { i, lap ->
+            val me = i == mine
             Panel {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${i + 1}", color = if (i == 0) Purple else Muted, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, modifier = Modifier.width(32.dp))
-                    Text(lap.alias, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${i + 1}", color = if (i == 0) Purple else if (me) Accent else Muted, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, modifier = Modifier.width(32.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(lap.alias, fontWeight = FontWeight.Bold, color = if (me) Accent else Fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (lap.sectors.isNotEmpty()) Text(lap.sectors.joinToString("  ") { "%.3f".format(it) }, color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    }
                     Column(horizontalAlignment = Alignment.End) {
                         Text(lapTime(lap.time), color = if (i == 0) Purple else Fg, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                         if (top != null && i > 0) Text("+%.3f".format(lap.time - top), color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
@@ -344,85 +693,131 @@ private fun Live(vm: PitlaneViewModel) {
         onDispose { vm.stopLive() }
     }
     val (label, color) = when {
-        s.link != LinkState.OPEN -> (if (s.link == LinkState.CONNECTING) "CONNECTING" else "OFFLINE") to Muted
-        !s.pcOnline -> "PC OFFLINE" to Muted
-        !s.simConnected -> "PC ONLINE · SIM NOT RUNNING" to Accent
-        else -> "LIVE" to Good
+        s.link != LinkState.OPEN -> (if (s.link == LinkState.CONNECTING) t("connecting") else t("offline_s")) to Muted
+        !s.pcOnline -> t("pc_offline") to Muted
+        !s.simConnected -> t("pc_no_sim") to Accent
+        else -> t("live_s") to Good
     }
-    Screen("Live telemetry", "From PitlaneHQ.exe through your account") {
+    Screen(t("live_title"), t("live_sub")) {
         item { Status(label, color) }
-        s.message?.let { item { Text(it, color = Bad, fontSize = 12.sp) } }
-        if (s.link == LinkState.OPEN && !s.pcOnline) item {
-            Empty("Open PitlaneHQ.exe on your PC and sign in with this account. Live telemetry starts by itself.")
-        }
+        s.message?.let { item { Text(t(it), color = Bad, fontSize = 12.sp) } }
+        if (s.link == LinkState.OPEN && !s.pcOnline) item { Empty(t("open_pc")) }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Metric("SPEED", s.num("Speed")?.let { "%.0f".format(it * 3.6) } ?: "—", Modifier.weight(1f))
-                Metric("GEAR", s.num("Gear")?.toInt()?.let { if (it < 0) "R" else if (it == 0) "N" else "$it" } ?: "—", Modifier.weight(1f))
+                Metric(t("speed"), s.num("Speed")?.let { "%.0f".format(it * 3.6) } ?: "—", Modifier.weight(1f))
+                Metric(t("gear"), s.num("Gear")?.toInt()?.let { if (it < 0) "R" else if (it == 0) "N" else "$it" } ?: "—", Modifier.weight(1f))
                 Metric("RPM", s.num("RPM")?.let { "%.0f".format(it) } ?: "—", Modifier.weight(1f))
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Metric("LAP", s.num("Lap")?.toInt()?.toString() ?: "—", Modifier.weight(1f))
-                Metric("POS", s.num("PlayerCarPosition")?.toInt()?.takeIf { it > 0 }?.let { "P$it" } ?: "—", Modifier.weight(1f))
-                Metric("FUEL", s.num("FuelLevel")?.let { "%.1f L".format(it) } ?: "—", Modifier.weight(1f))
+                Metric(t("lap"), s.num("Lap")?.toInt()?.toString() ?: "—", Modifier.weight(1f))
+                Metric(t("pos"), s.num("PlayerCarPosition")?.toInt()?.takeIf { it > 0 }?.let { "P$it" } ?: "—", Modifier.weight(1f))
+                Metric(t("fuel"), s.num("FuelLevel")?.let { "%.1f L".format(it) } ?: "—", Modifier.weight(1f))
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Metric("CURRENT", lapTime(s.num("LapCurrentLapTime")), Modifier.weight(1f))
-                Metric("LAST", lapTime(s.num("LapLastLapTime")), Modifier.weight(1f))
-                Metric("BEST", lapTime(s.num("LapBestLapTime")), Modifier.weight(1f), Purple)
+                Metric(t("current"), lapTime(s.num("LapCurrentLapTime")), Modifier.weight(1f))
+                Metric(t("last"), lapTime(s.num("LapLastLapTime")), Modifier.weight(1f))
+                Metric(t("best"), lapTime(s.num("LapBestLapTime")), Modifier.weight(1f), Purple)
             }
         }
         item {
             val d = s.num("LapDeltaToBestLap")
-            Metric("DELTA TO BEST", d?.let { "%+.3f".format(it) } ?: "—", Modifier.fillMaxWidth(), if (d == null) Fg else if (d <= 0) Good else Bad)
+            Metric(t("delta_best"), d?.let { "%+.3f".format(it) } ?: "—", Modifier.fillMaxWidth(), if (d == null) Fg else if (d <= 0) Good else Bad)
         }
         item {
             Panel {
-                Section("INPUTS")
-                Bar("THROTTLE", s.num("Throttle"), Good)
-                Bar("BRAKE", s.num("Brake"), Bad)
+                Section(t("inputs").uppercase())
+                Bar(t("throttle"), s.num("Throttle"), Good)
+                Bar(t("brake"), s.num("Brake"), Bad)
             }
         }
-        item { Text("Encrypted with your account key: the server only passes it along.", color = Muted, fontSize = 11.sp) }
+        item { Text(t("e2e"), color = Muted, fontSize = 11.sp) }
     }
 }
 
-// ---------- Profile ----------
+// ---------- Settings ----------
 @Composable
-private fun Profile(vm: PitlaneViewModel) {
+private fun Settings(vm: PitlaneViewModel) {
     val a by vm.account.collectAsState()
+    val d by vm.devices.collectAsState()
+    val demo by vm.demo.collectAsState()
     val uri = LocalUriHandler.current
-    Screen("Profile", "Account") {
+    LaunchedEffect(Unit) { if (d.data == null && !d.loading) vm.loadDevices() }
+    Screen(t("settings")) {
+        item { Section(t("account")) }
         item {
             Panel {
-                Text(a.display.ifBlank { "Pitlane driver" }, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                Text(a.display.ifBlank { t("driver") }, fontWeight = FontWeight.Black, fontSize = 20.sp)
                 Text(a.email, color = Muted, fontSize = 12.sp)
+                Text(if (a.verified) t("verified") else t("not_verified"), color = if (a.verified) Good else Accent, fontSize = 11.sp)
             }
         }
-        item { Action("ACCOUNT SETTINGS", "Name, password and devices on the web", Icons.Default.ManageAccounts) { uri.openUri(WEB_APP) } }
+        item { Action(t("web").uppercase(), t("web_sub"), Icons.Default.OpenInBrowser) { uri.openUri(WEB_APP) } }
+        item { Section(t("devices")) }
+        state(d) { vm.loadDevices() }
+        items(d.data ?: emptyList(), key = { it.id }) { dev ->
+            Panel {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(if (dev.device.contains("Android", true) || dev.device.contains("iPhone", true)) Icons.Default.PhoneAndroid else Icons.Default.Computer, null, tint = Muted)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(if (dev.current) t("this_device") else dev.device.ifBlank { "—" }, fontWeight = FontWeight.Bold)
+                        Text(dayTime(dev.lastSeen), color = Muted, fontSize = 11.sp)
+                    }
+                    if (!dev.current) TextButton({ vm.revoke(dev.id) }) { Text(t("sign_out_device"), color = Bad, fontSize = 12.sp) }
+                }
+            }
+        }
+        if ((d.data?.size ?: 0) > 1) item { TextButton({ vm.revoke("others") }) { Text(t("sign_out_others"), color = Bad) } }
+        item { Section(t("language")) }
         item {
             Panel {
-                Text("YOUR DATA", fontWeight = FontWeight.Black)
-                Text(
-                    "Your password never leaves this phone. Your synced settings and live telemetry are encrypted with your account key before they reach the server.",
-                    color = Muted, fontSize = 12.sp
-                )
+                listOf("system" to t("lang_system"), "en" to "English", "es" to "Español").forEach { (k, label) ->
+                    Row(Modifier.fillMaxWidth().clickable { vm.setLanguage(k) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(I18n.choice == k, { vm.setLanguage(k) })
+                        Text(label)
+                    }
+                }
             }
         }
+        item { Section(t("testing")) }
+        item {
+            Panel {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(t("demo_mode"), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Switch(demo, { vm.setDemo(it) })
+                }
+                Text(t("demo_note"), color = Muted, fontSize = 12.sp)
+            }
+        }
+        item { Section(t("your_data")) }
+        item { Panel { Text(t("privacy"), color = Muted, fontSize = 12.sp) } }
         item {
             Button(
                 onClick = { vm.logout() }, modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = Surface2, contentColor = Bad)
-            ) { Text("SIGN OUT", fontWeight = FontWeight.Bold) }
+            ) { Text(t("sign_out").uppercase(), fontWeight = FontWeight.Bold) }
         }
+        item { Text(t("version", BuildConfig.VERSION_NAME), color = Muted, fontSize = 11.sp, modifier = Modifier.fillMaxWidth()) }
     }
 }
 
 // ---------- pieces ----------
+@Composable
+private fun Tabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        labels.forEachIndexed { i, l ->
+            FilterChip(
+                selected == i, { onSelect(i) }, label = { Text(l, fontSize = 13.sp) },
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Accent, selectedLabelColor = Ink)
+            )
+        }
+    }
+}
+
 @Composable
 private fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Card(
@@ -444,29 +839,30 @@ private fun Status(s: String, c: Color) {
 }
 
 @Composable
-private fun Metric(l: String, v: String, m: Modifier, color: Color = Fg) {
+private fun Metric(l: String, v: String, m: Modifier, color: Color = Fg, sub: String? = null) {
     Panel(m) {
-        Section(l)
-        Text(v, color = color, fontWeight = FontWeight.Black, fontSize = 20.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
+        Text(l.uppercase(), color = Muted, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(v, color = color, fontWeight = FontWeight.Black, fontSize = 18.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
+        sub?.let { Text(it, color = Muted, fontSize = 10.sp, maxLines = 1) }
+    }
+}
+
+@Composable
+private fun InfoRow(l: String, v: String, color: Color = Fg) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        Text(l, color = Muted, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        Text(v, color = color, fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
 private fun Bar(label: String, v: Double?, c: Color) {
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(80.dp))
+        Text(label, color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(90.dp))
         LinearProgressIndicator(
             progress = { (v ?: 0.0).toFloat().coerceIn(0f, 1f) }, color = c, trackColor = Surface2,
             modifier = Modifier.weight(1f).height(10.dp)
         )
-    }
-}
-
-@Composable
-private fun Reload(loading: Boolean, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        if (loading) LinearProgressIndicator(Modifier.weight(1f), color = Accent) else Spacer(Modifier.weight(1f))
-        TextButton(onClick, enabled = !loading) { Text("REFRESH", color = Accent, fontSize = 12.sp) }
     }
 }
 

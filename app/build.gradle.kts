@@ -11,8 +11,23 @@ android {
         applicationId="com.pitlanehq.android"
         minSdk=26
         targetSdk=36
-        versionCode=1
-        versionName="0.1.0"
+        versionCode=2
+        versionName="0.2.0"
+    }
+    // release signing from GitHub secrets (never in the repository); without them CI signs with its debug key
+    val ks = System.getenv("ANDROID_KEYSTORE_FILE")
+    signingConfigs {
+        if (ks != null && file(ks).exists()) create("release") {
+            storeFile = file(ks)
+            storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+            keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+        }
     }
     compileOptions { sourceCompatibility=JavaVersion.VERSION_17; targetCompatibility=JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget="17" }

@@ -31,14 +31,48 @@ data class CloudSession(
     val best: Double?
 )
 
-data class CloudLap(val n: Int, val time: Double, val valid: Boolean, val sectors: List<Double>)
+data class CloudLap(val id: String, val n: Int, val time: Double, val valid: Boolean, val sectors: List<Double>)
+
+/** A lap trace: one row every [bin] metres: speed m/s, throttle 0-1, brake 0-1, gear, steering rad, lap time s. */
+data class Trace(val bin: Double, val rows: List<DoubleArray>) {
+    val speedKph get() = rows.map { it[0] * 3.6 }
+    val throttle get() = rows.map { it.getOrElse(1) { 0.0 } }
+    val brake get() = rows.map { it.getOrElse(2) { 0.0 } }
+    val time get() = rows.map { it.getOrElse(5) { 0.0 } }
+}
+
+/** Your best lap per track and car (GET /api/bests). */
+data class PersonalBest(
+    val track: String, val trackConfig: String, val car: String, val best: Double, val laps: Int, val last: Long,
+    val bestLapId: String?, val bestSessionId: String?
+)
 
 /** A track and car the community has laps for (GET /community/combos). */
 data class Combo(val trackId: Long, val track: String, val carId: Long, val car: String, val laps: Int, val best: Double?)
 
-data class CommunityLap(val alias: String, val time: Double, val created: Long)
+data class CommunityLap(val id: String, val alias: String, val time: Double, val created: Long, val hasTrace: Boolean, val sectors: List<Double>)
 
-data class Loadable<T>(val loading: Boolean = false, val data: T? = null, val error: String? = null)
+data class SharedReport(val id: String, val alias: String, val track: String, val car: String, val created: Long, val finish: Int, val field: Int, val best: Double?)
+
+data class SharedSetup(val id: String, val alias: String, val name: String, val car: String, val track: String, val notes: String, val downloads: Int, val created: Long)
+
+data class Device(val id: String, val device: String, val lastSeen: Long, val current: Boolean)
+
+/** A race the PC recorded (races.json in the account sync). */
+data class Race(
+    val id: String, val whenMs: Long, val track: String, val car: String, val official: Boolean,
+    val start: Int, val finish: Int, val field: Int, val inc: Int, val best: Double?, val fieldBest: Double?,
+    val avg: Double?, val consistency: Double?, val pits: Int, val fuelUsed: Double?,
+    val ir: Int, val irChange: Int, val sof: Int, val dnf: Boolean,
+    val laps: List<RaceLap>, val results: List<RaceResult>
+)
+
+data class RaceLap(val n: Int, val time: Double, val pos: Int, val inc: Int, val pit: Boolean)
+
+data class RaceResult(val pos: Int, val name: String, val ir: Int, val best: Double?, val inc: Int, val laps: Int)
+
+/** What a screen shows: [stale] is saved data shown while the server cannot be reached. */
+data class Loadable<T>(val loading: Boolean = false, val data: T? = null, val error: String? = null, val stale: Boolean = false)
 
 fun lapTime(s: Double?): String {
     if (s == null || s.isNaN() || s <= 0) return "—"
@@ -46,3 +80,5 @@ fun lapTime(s: Double?): String {
     val r = s - m * 60
     return if (m > 0) "%d:%06.3f".format(m, r) else "%.3f".format(r)
 }
+
+fun signed(n: Int) = if (n > 0) "+$n" else "$n"

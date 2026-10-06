@@ -38,6 +38,17 @@ class PitWallRepository(private val account: AccountRepository) {
 
     fun start() {
         if (loop?.isActive == true) return
+        if (account.demo) {
+            // Settings → Demo data: an invented lap, nothing from the server
+            loop = scope.launch {
+                var tick = 0
+                while (true) {
+                    _state.value = LiveState(LinkState.OPEN, pcOnline = true, simConnected = true, values = Demo.live(tick++))
+                    delay(100)
+                }
+            }
+            return
+        }
         loop = scope.launch {
             var wait = 2_000L
             while (true) {
@@ -52,7 +63,7 @@ class PitWallRepository(private val account: AccountRepository) {
                     ping.cancel()
                     if (_state.value.message == null) wait = 2_000L
                 }
-                if (_state.value.message?.startsWith("Signed out") == true) break
+                if (_state.value.message == "signed_out") break
                 delay(wait)
                 wait = (wait * 2).coerceAtMost(30_000L)
             }
@@ -102,9 +113,9 @@ class PitWallRepository(private val account: AccountRepository) {
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 val msg = when (response?.code) {
-                    401 -> "Signed out: sign in again"
-                    429 -> "Too many screens are watching"
-                    else -> t.message ?: "Connection lost"
+                    401 -> "signed_out"
+                    429 -> "too_many"
+                    else -> "conn_lost"
                 }
                 if (socket === webSocket) _state.update { it.copy(link = LinkState.OFF, pcOnline = false, message = msg) }
                 closed.complete(Unit)
