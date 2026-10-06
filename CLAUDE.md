@@ -4,8 +4,11 @@
 - Push only when the owner says so ("súbelo", "sube todo"…). Never create pull requests unless asked.
 - Anything sensitive that goes to GitHub is encrypted or kept in GitHub secrets (signing keys,
   passwords); never paste tokens or keys anywhere.
-- Real data by default. Invented data only behind Settings → Demo data (off by default, a DEMO
-  banner on every screen, only on the phone, never uploaded), for testing the apps.
+- Real data by default. Invented data only behind Settings → Demo data, which only the server's
+  admins see (off by default, a DEMO banner on every screen, only on the phone, never uploaded).
+- DRINKS mode (formerly Friday night mode, admins only): friends drive on the owner's PC and their laps
+  go to the community under their name. Switched on the PC or from the phone (Settings → DRINKS
+  mode) through the encrypted live link ("drinks" event); the PC checks the account is an admin.
 - This repository is only the Android app (`app/`) and the iOS app (`ios/`). The PC app and the
   web/server (Cloudflare) live in the Pitwall-test repository; the apps talk to that server and
   must keep its protocol: account keys (PBKDF2 600 000 + HKDF, AES-GCM with "pitlanehq-v1"),

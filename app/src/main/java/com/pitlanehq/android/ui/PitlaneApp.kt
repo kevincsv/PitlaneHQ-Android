@@ -149,7 +149,8 @@ private fun MainApp(vm: PitlaneViewModel) {
                 composable("community") { Community(vm, nav) }
                 composable("combo") { ComboDetail(vm, nav) }
                 composable("live") { Live(vm) }
-                composable("settings") { Settings(vm) }
+                composable("settings") { Settings(vm, nav) }
+                composable("drinks") { DrinksScreen(vm, nav) }
             }
         }
     }
@@ -173,7 +174,7 @@ private fun BottomBar(nav: NavHostController) {
         Dest("settings", t("settings"), Icons.Default.Settings)
     )
     val current = nav.currentBackStackEntryAsState().value?.destination?.route
-    val tab = when (current) { "races", "race" -> "home"; "session", "lap" -> "analysis"; "combo" -> "community"; else -> current }
+    val tab = when (current) { "races", "race" -> "home"; "session", "lap" -> "analysis"; "combo" -> "community"; "drinks" -> "settings"; else -> current }
     NavigationBar(containerColor = Surface, tonalElevation = 0.dp) {
         dests.forEach { d ->
             NavigationBarItem(
@@ -768,9 +769,71 @@ private fun Live(vm: PitlaneViewModel) {
     }
 }
 
+// ---------- DRINKS mode (admins) ----------
+@Composable
+private fun DrinksScreen(vm: PitlaneViewModel, nav: NavHostController) {
+    val s by vm.liveState.collectAsState()
+    val demo by vm.demo.collectAsState()
+    var name by rememberSaveable { mutableStateOf("") }
+    DisposableEffect(Unit) {
+        vm.startLive()
+        onDispose { vm.stopLive() }
+    }
+    val d = s.drinks
+    Screen(t("drinks"), t("drinks_sub"), back = { nav.popBackStack() }) {
+        item { Status(if (s.pcOnline) t("pc_online") else if (s.link == LinkState.CONNECTING) t("connecting") else t("pc_offline"), if (s.pcOnline) Good else Muted) }
+        s.message?.let { item { Text(t(it), color = Bad, fontSize = 12.sp) } }
+        item { Panel { Text(t("drinks_note"), color = Muted, fontSize = 12.sp) } }
+        when {
+            demo -> item { Empty(t("drinks_demo")) }
+            d == null -> item { Empty(t("drinks_wait")) }
+            !d.admin -> item { Empty(t("drinks_pc_admin")) }
+            else -> {
+                item {
+                    Panel {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(t("drinks_on"), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            Switch(d.on, { vm.setDrinks(it, d.guest, d.guestAuto) })
+                        }
+                        Text(t("drinks_now", d.driver.ifBlank { t("you") }), color = if (d.on) Accent else Muted, fontWeight = FontWeight.Bold)
+                    }
+                }
+                if (d.on) {
+                    item {
+                        Panel {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(t("drinks_auto"), fontSize = 13.sp, modifier = Modifier.weight(1f))
+                                Switch(d.guestAuto, { vm.setDrinks(true, d.guest, it) })
+                            }
+                            if (!d.guestAuto) {
+                                OutlinedTextField(name, { name = it.take(32) }, label = { Text(t("drinks_name")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+                                    Button({ vm.setDrinks(true, name.trim(), false); name = "" }, enabled = name.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) { Text(t("drinks_set")) }
+                                    OutlinedButton({ vm.setDrinks(true, "", false) }) { Text(t("drinks_me")) }
+                                }
+                            }
+                        }
+                    }
+                    if (!d.guestAuto && d.guests.isNotEmpty()) {
+                        item { Section(t("drinks_recent")) }
+                        item {
+                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                d.guests.forEach { g ->
+                                    FilterChip(g.equals(d.guest, true), { vm.setDrinks(true, g, false) }, label = { Text(g) },
+                                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Accent, selectedLabelColor = Ink))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ---------- Settings ----------
 @Composable
-private fun Settings(vm: PitlaneViewModel) {
+private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
     val a by vm.account.collectAsState()
     val d by vm.devices.collectAsState()
     val demo by vm.demo.collectAsState()
@@ -813,8 +876,9 @@ private fun Settings(vm: PitlaneViewModel) {
                 }
             }
         }
-        item { Section(t("testing")) }
-        item {
+        if (a.admin) item { Section(t("admin_tools")) }
+        if (a.admin) item { Action(t("drinks").uppercase(), t("drinks_sub"), Icons.Default.LocalBar) { nav.navigate("drinks") } }
+        if (a.admin) item {
             Panel {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(t("demo_mode"), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))

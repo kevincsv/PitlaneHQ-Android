@@ -6,10 +6,14 @@ data class LiveState(
     val pcOnline: Boolean = false,
     val simConnected: Boolean = false,
     val values: Map<String, Any?> = emptyMap(),
+    val drinks: Drinks? = null,
     val message: String? = null
 ) {
     fun num(name: String): Double? = (values[name] as? Number)?.toDouble()
 }
+
+/** DRINKS mode on the PC (admins only): friends drive and their laps go to the community under their name. */
+data class Drinks(val admin: Boolean, val on: Boolean, val guest: String, val guestAuto: Boolean, val guests: List<String>, val driver: String)
 
 enum class LinkState { OFF, CONNECTING, OPEN }
 

@@ -1,5 +1,6 @@
 package com.pitlanehq.android.data
 
+import com.pitlanehq.android.model.Drinks
 import com.pitlanehq.android.model.LIVE_VARS
 import com.pitlanehq.android.model.LinkState
 import com.pitlanehq.android.model.LiveState
@@ -123,6 +124,14 @@ class PitWallRepository(private val account: AccountRepository) {
         })
     }
 
+    /** DRINKS mode on the PC: sealed like everything else, the PC checks the account is an admin. */
+    fun setDrinks(on: Boolean, guest: String, guestAuto: Boolean): Boolean {
+        val ws = socket ?: return false
+        val key = runCatching { account.dataKey() }.getOrNull() ?: return false
+        val msg = JSONArray().put("drinks").put(JSONObject().put("on", on).put("guest", guest).put("guestAuto", guestAuto))
+        return ws.send("e:" + Crypto.seal(key, Crypto.gzip(msg.toString().toByteArray()), Crypto.LIVE_AAD))
+    }
+
     private fun want(ws: WebSocket, key: ByteArray) {
         val msg = JSONArray().put("want").put(JSONObject().put("vars", JSONArray(LIVE_VARS)).put("all", false))
         ws.send("e:" + Crypto.seal(key, Crypto.gzip(msg.toString().toByteArray()), Crypto.LIVE_AAD))
@@ -145,6 +154,16 @@ class PitWallRepository(private val account: AccountRepository) {
             "status" -> {
                 val s = a.getJSONObject(1)
                 _state.update { it.copy(pcOnline = true, simConnected = s.optBoolean("connected")) }
+            }
+            "drinks" -> {
+                val d = a.getJSONObject(1)
+                val g = d.optJSONArray("guests") ?: JSONArray()
+                _state.update {
+                    it.copy(pcOnline = true, drinks = Drinks(
+                        d.optBoolean("admin"), d.optBoolean("on"), d.optString("guest"), d.optBoolean("guestAuto"),
+                        (0 until g.length()).map { i -> g.optString(i) }, d.optString("driver")
+                    ))
+                }
             }
             "fields" -> {
                 val f = a.getJSONArray(1)

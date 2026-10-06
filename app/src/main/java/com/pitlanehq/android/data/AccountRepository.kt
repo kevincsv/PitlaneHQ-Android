@@ -28,6 +28,7 @@ data class AccountState(
     val email: String = "",
     val display: String = "",
     val verified: Boolean = true,
+    val admin: Boolean = false,
     val busy: Boolean = false,
     val syncedFiles: Int = 0,
     val syncVersion: Long = 0,
@@ -55,8 +56,9 @@ class AccountRepository(context: Context) {
     private val app = context.getSharedPreferences("pitlane-app", Context.MODE_PRIVATE)
     private val cacheDir = File(context.filesDir, "saved").apply { mkdirs() }
 
+    // demo data is only for the admins of the server (ADMINS), for testing
     var demo: Boolean
-        get() = app.getBoolean("demo", false)
+        get() = app.getBoolean("demo", false) && prefs.getBoolean("admin", false)
         set(v) = app.edit().putBoolean("demo", v).apply()
     var language: String
         get() = app.getString("lang", "system") ?: "system"
@@ -67,6 +69,7 @@ class AccountRepository(context: Context) {
         email = prefs.getString("email", "") ?: "",
         display = prefs.getString("display", "") ?: "",
         verified = prefs.getBoolean("verified", true),
+        admin = prefs.getBoolean("admin", false),
         syncedFiles = prefs.getInt("syncedFiles", 0),
         syncVersion = prefs.getLong("syncVersion", 0),
         syncUpdated = prefs.getLong("syncUpdated", 0)
@@ -161,6 +164,7 @@ class AccountRepository(context: Context) {
             .putString("email", email)
             .putString("display", j.optString("display", ""))
             .putBoolean("verified", j.optBoolean("verified", true))
+            .putBoolean("admin", j.optBoolean("admin", false))
             .apply()
         return runCatching { sync() }.getOrElse { storedState() }
     }
@@ -185,7 +189,7 @@ class AccountRepository(context: Context) {
             .apply()
         runCatching {
             val me = JSONObject(call("GET", "/account/me"))
-            prefs.edit().putString("display", me.optString("display", "")).putBoolean("verified", me.optBoolean("verified", true)).apply()
+            prefs.edit().putString("display", me.optString("display", "")).putBoolean("verified", me.optBoolean("verified", true)).putBoolean("admin", me.optBoolean("admin", false)).apply()
         }
         return storedState()
     }

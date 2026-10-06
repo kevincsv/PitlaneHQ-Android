@@ -59,6 +59,10 @@ final class Account: ObservableObject {
     @Published var email = ""
     @Published var display = ""
     @Published var verified = true
+    /// one of the server's admins (ADMINS): only they can turn on demo data
+    @Published var admin = false {
+        didSet { if !admin && demo { demo = false } }
+    }
     @Published var busy = false
     @Published var error: String?
     @Published var syncedFiles = 0
@@ -83,6 +87,8 @@ final class Account: ObservableObject {
         email = defaults.string(forKey: "email") ?? ""
         display = defaults.string(forKey: "display") ?? ""
         verified = defaults.object(forKey: "verified") as? Bool ?? true
+        admin = defaults.bool(forKey: "admin")
+        if !admin && demo { demo = false }
         syncedFiles = defaults.integer(forKey: "syncedFiles")
         syncVersion = defaults.integer(forKey: "syncVersion")
         syncUpdated = defaults.double(forKey: "syncUpdated")
@@ -109,7 +115,7 @@ final class Account: ObservableObject {
     private func clear() {
         Vault.set("token", nil)
         Vault.set("dataKey", nil)
-        for k in ["email", "display", "verified", "syncedFiles", "syncVersion", "syncUpdated"] { defaults.removeObject(forKey: k) }
+        for k in ["email", "display", "verified", "admin", "syncedFiles", "syncVersion", "syncUpdated"] { defaults.removeObject(forKey: k) }
         try? FileManager.default.removeItem(at: dir)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         signedIn = false
@@ -117,6 +123,7 @@ final class Account: ObservableObject {
         syncedFiles = 0
         syncVersion = 0
         syncUpdated = 0
+        admin = false
         races = []
     }
 
@@ -186,6 +193,8 @@ final class Account: ObservableObject {
             email = em
             display = str(j["display"])
             verified = j["verified"] as? Bool ?? true
+            admin = j["admin"] as? Bool ?? false
+            defaults.set(admin, forKey: "admin")
             defaults.set(em, forKey: "email")
             defaults.set(display, forKey: "display")
             defaults.set(verified, forKey: "verified")
@@ -224,6 +233,8 @@ final class Account: ObservableObject {
             if let me = try? JSONSerialization.jsonObject(with: await call("GET", "/account/me")) as? [String: Any] {
                 display = str(me["display"])
                 verified = me["verified"] as? Bool ?? true
+                admin = me["admin"] as? Bool ?? false
+                defaults.set(admin, forKey: "admin")
                 defaults.set(display, forKey: "display")
                 defaults.set(verified, forKey: "verified")
             }

@@ -94,6 +94,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun signedOut() {
         live.stop()
+        demo.value = false
         _account.value = AccountState(error = "signed_out")
     }
 
@@ -101,7 +102,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         _account.value = AccountState(email = email, busy = true)
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repo.login(email, password) }
-                .onSuccess { _account.value = it; loadRaces() }
+                .onSuccess { _account.value = it; demo.value = repo.demo; loadRaces() }
                 .onFailure { _account.value = AccountState(email = email, error = errKey(it)) }
         }
     }
@@ -110,7 +111,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         _account.value = _account.value.copy(busy = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repo.sync() }
-                .onSuccess { _account.value = it; loadRaces() }
+                .onSuccess { _account.value = it; demo.value = repo.demo; loadRaces() }
                 .onFailure { e -> if (e is SignedOut) signedOut() else _account.value = _account.value.copy(busy = false, error = errKey(e)) }
         }
     }
@@ -120,11 +121,13 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         listOf(races, sessions, bests, laps, analysis, combos, board, reports, setups, devices).forEach { (it as MutableStateFlow<Loadable<*>>).value = Loadable<Any>() }
         viewModelScope.launch(Dispatchers.IO) {
             repo.logout()
+            demo.value = false
             _account.value = AccountState()
         }
     }
 
     fun setDemo(on: Boolean) {
+        if (on && !_account.value.admin) return
         repo.demo = on
         demo.value = on
         live.stop()
@@ -190,6 +193,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     // only while the live screen is open: the PC streams only while somebody watches
     fun startLive() { if (_account.value.signedIn) live.start() }
     fun stopLive() = live.stop()
+    fun setDrinks(on: Boolean, guest: String, guestAuto: Boolean) = live.setDrinks(on, guest, guestAuto)
 
     override fun onCleared() {
         live.stop()

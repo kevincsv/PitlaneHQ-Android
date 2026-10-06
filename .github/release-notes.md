@@ -1,16 +1,11 @@
-## Pitlane HQ for Android and iOS 0.2.0
+## Pitlane HQ for Android and iOS 0.2.1
 
-**Home:** your recent races (from the account sync of PitlaneHQ.exe) with finish, iRating change, incidents and SOF; a racing summary with your current iRating, the change over the last races, wins, top 5 and average incidents; and each race in detail with its laps and results. Safety rating is in development until iRacing switches its data API back on.
-
-**Analysis:** your sessions and personal bests. A lap opens speed, delta and throttle/brake charts against your best lap or the community's fastest, the three places where time goes (braking point, minimum speed, throttle) and the sector deltas.
-
-**Community:** leaderboards with your position, race reports and setups.
-
-**Settings:** account, devices signed in, language (phone, English, Spanish), demo data to test the app (only on the phone, never uploaded), and the full Pitlane HQ on the web.
-
-**No connection:** a banner, the last data saved on the phone (encrypted), retry buttons, and everything reloads when the connection comes back.
+- **Charts you can read by touch:** tap, or touch and hold and drag, on any lap chart to see the distance and the value of every line at that point.
+- **Home:** licences per category (Sports Car, Formula, Oval, Dirt Road, Dirt Oval) with licence, safety rating and iRating, in development until iRacing switches its data API back on; the summary and race boxes in even rows; how your data reaches your account through the PC agent (PitlaneHQ.exe).
+- **Analysis, Community and Live:** the full coach and the full live telemetry are in the web and PC app, with a button to open the web; we are working on bringing them to the app.
+- **Admins only:** demo data for testing, and **DRINKS mode** 🍻: switch the friend driving on your PC from the phone, so their laps go to the community under their name (needs PitlaneHQ.exe with this release's PC version).
 
 ### Files
-- `PitlaneHQ-Android-0.2.0.apk`: install on Android. If an older Pitlane HQ build signed with another key is installed, uninstall it first.
-- `PitlaneHQ-Android-0.2.0.aab`: for Google Play.
-- `PitlaneHQ-iOS-0.2.0-unsigned.ipa`: needs signing with an Apple account (for example AltStore or Sideloadly) to install.
+- `PitlaneHQ-Android-0.2.1.apk`: uninstall the previous version first, then install (it is signed with a new key on every build until a release key is set up).
+- `PitlaneHQ-Android-0.2.1.aab`: for Google Play.
+- `PitlaneHQ-iOS-0.2.1-unsigned.ipa`: needs signing with an Apple account (for example AltStore or Sideloadly) to install.

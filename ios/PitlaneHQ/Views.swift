@@ -1052,6 +1052,73 @@ struct LiveView: View {
     }
 }
 
+// ---------- DRINKS mode (admins) ----------
+
+struct DrinksView: View {
+    @EnvironmentObject var account: Account
+    @StateObject private var live = Live()
+    @State private var name = ""
+
+    var body: some View {
+        Screen(title: t("drinks"), sub: t("drinks_sub")) {
+            StatusPill(text: live.pcOnline ? t("pc_online") : live.link == .connecting ? t("connecting") : t("pc_offline"), color: live.pcOnline ? Theme.good : Theme.muted)
+            if let m = live.message { Text(t(m)).font(.caption).foregroundColor(Theme.bad) }
+            Panel { Text(t("drinks_note")).font(.caption).foregroundColor(Theme.muted) }
+            if account.demo {
+                EmptyNote(text: t("drinks_demo"))
+            } else if let d = live.drinks {
+                if !d.admin {
+                    EmptyNote(text: t("drinks_pc_admin"))
+                } else {
+                    controls(d)
+                }
+            } else {
+                EmptyNote(text: t("drinks_wait"))
+            }
+        }
+        .onAppear { live.start(token: account.token, key: account.dataKey, demo: false) }
+        .onDisappear { live.stop() }
+    }
+
+    @ViewBuilder private func controls(_ d: Drinks) -> some View {
+        Panel {
+            Toggle(t("drinks_on"), isOn: Binding(get: { d.on }, set: { live.setDrinks(on: $0, guest: d.guest, guestAuto: d.guestAuto) })).font(.subheadline.bold())
+            Text(t("drinks_now", d.driver.isEmpty ? t("you") : d.driver)).font(.subheadline.bold()).foregroundColor(d.on ? Theme.accent : Theme.muted)
+        }
+        if d.on {
+            Panel {
+                Toggle(t("drinks_auto"), isOn: Binding(get: { d.guestAuto }, set: { live.setDrinks(on: true, guest: d.guest, guestAuto: $0) })).font(.subheadline)
+                if !d.guestAuto {
+                    TextField(t("drinks_name"), text: $name).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
+                    HStack(spacing: 8) {
+                        Button(t("drinks_set")) {
+                            live.setDrinks(on: true, guest: String(name.trimmingCharacters(in: .whitespaces).prefix(32)), guestAuto: false)
+                            name = ""
+                        }
+                        .buttonStyle(.borderedProminent).foregroundColor(Theme.ink)
+                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                        Button(t("drinks_me")) { live.setDrinks(on: true, guest: "", guestAuto: false) }.buttonStyle(.bordered)
+                    }
+                }
+            }
+            if !d.guestAuto && !d.guests.isEmpty {
+                SectionLabel(text: t("drinks_recent"))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(d.guests, id: \.self) { g in
+                            let sel = g.caseInsensitiveCompare(d.guest) == .orderedSame
+                            Button { live.setDrinks(on: true, guest: g, guestAuto: false) } label: {
+                                Text(g).font(.subheadline).padding(.horizontal, 12).padding(.vertical, 6)
+                                    .background(sel ? Theme.accent : Theme.surface2).foregroundColor(sel ? Theme.ink : Theme.fg).clipShape(Capsule())
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ---------- Settings ----------
 
 struct SettingsView: View {
@@ -1103,10 +1170,14 @@ struct SettingsView: View {
                     }
                 }
             }
-            SectionLabel(text: t("testing"))
-            Panel {
-                Toggle(t("demo_mode"), isOn: $account.demo).font(.subheadline.bold())
-                Text(t("demo_note")).font(.caption).foregroundColor(Theme.muted)
+            if account.admin {
+                SectionLabel(text: t("admin_tools"))
+                NavigationLink { DrinksView() } label: { ActionRow(title: t("drinks").uppercased(), sub: t("drinks_sub"), icon: "wineglass") }
+                    .buttonStyle(.plain)
+                Panel {
+                    Toggle(t("demo_mode"), isOn: $account.demo).font(.subheadline.bold())
+                    Text(t("demo_note")).font(.caption).foregroundColor(Theme.muted)
+                }
             }
             SectionLabel(text: t("your_data"))
             Panel { Text(t("privacy")).font(.caption).foregroundColor(Theme.muted) }

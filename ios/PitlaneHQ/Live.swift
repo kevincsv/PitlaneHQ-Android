@@ -19,8 +19,10 @@ final class Live: ObservableObject {
     @Published var simConnected = false
     @Published var values: [String: Double] = [:]
     @Published var message: String?
+    @Published var drinks: Drinks?
 
     private var task: URLSessionWebSocketTask?
+    private var key: Data?
     private var loop: Task<Void, Never>?
     private var fields: [String] = []
 
@@ -67,6 +69,7 @@ final class Live: ObservableObject {
         pcOnline = false
         simConnected = false
         values = [:]
+        drinks = nil
         message = nil
     }
 
@@ -75,6 +78,7 @@ final class Live: ObservableObject {
         var r = URLRequest(url: URL(string: server.absoluteString.replacingOccurrences(of: "https://", with: "wss://") + "/live?role=view")!)
         r.setValue("Bearer " + token, forHTTPHeaderField: "authorization")
         let ws = URLSession.shared.webSocketTask(with: r)
+        self.key = key
         task = ws
         fields = []
         link = .connecting
@@ -120,6 +124,15 @@ final class Live: ObservableObject {
         return opened
     }
 
+    /// DRINKS mode on the PC: sealed like everything else, the PC checks the account is an admin.
+    func setDrinks(on: Bool, guest: String, guestAuto: Bool) {
+        guard let ws = task, let key else { return }
+        let payload: [String: Any] = ["on": on, "guest": guest, "guestAuto": guestAuto]
+        guard let raw = try? JSONSerialization.data(withJSONObject: ["drinks", payload] as [Any]),
+              let z = try? PLCrypto.gzip(raw), let sealed = try? PLCrypto.seal(key: key, plain: z, aad: PLCrypto.liveAAD) else { return }
+        ws.send(.string("e:" + sealed)) { _ in }
+    }
+
     private func want(_ ws: URLSessionWebSocketTask, _ key: Data) {
         guard let raw = try? JSONSerialization.data(withJSONObject: ["want", ["vars": liveVars, "all": false]] as [Any]),
               let z = try? PLCrypto.gzip(raw), let sealed = try? PLCrypto.seal(key: key, plain: z, aad: PLCrypto.liveAAD) else { return }
@@ -148,6 +161,12 @@ final class Live: ObservableObject {
         case "status":
             pcOnline = true
             simConnected = (a[1] as? [String: Any])?["connected"] as? Bool ?? false
+        case "drinks":
+            if let d = a[1] as? [String: Any] {
+                pcOnline = true
+                drinks = Drinks(admin: d["admin"] as? Bool ?? false, on: d["on"] as? Bool ?? false, guest: d["guest"] as? String ?? "",
+                                guestAuto: d["guestAuto"] as? Bool ?? false, guests: d["guests"] as? [String] ?? [], driver: d["driver"] as? String ?? "")
+            }
         case "fields":
             fields = a[1] as? [String] ?? []
         case "t":

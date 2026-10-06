@@ -23,7 +23,9 @@ Both apps do the same:
 - **Live:** live telemetry from PitlaneHQ.exe through the account's live room on the server,
   from any network. Messages are sealed with the account's data key; the server only passes
   them along, and the PC only streams while the Live screen is open.
-- **Settings:** account, devices signed in, language (phone, English, Spanish), demo data, web.
+- **Settings:** account, devices signed in, language (phone, English, Spanish), web. Admins also
+  get demo data and DRINKS mode (switch the friend driving on the PC; their laps go to the
+  community under their name).
 - **Offline:** a banner, the last data saved on the phone (encrypted) and retry.
 
 Real data by default. Settings → Demo data shows invented data to test the apps: only on the

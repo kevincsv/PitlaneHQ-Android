@@ -87,6 +87,16 @@ struct Device: Identifiable, Hashable {
     let current: Bool
 }
 
+/// DRINKS mode on the PC (admins only): friends drive and their laps go to the community under their name.
+struct Drinks: Equatable {
+    let admin: Bool
+    let on: Bool
+    let guest: String
+    let guestAuto: Bool
+    let guests: [String]
+    let driver: String
+}
+
 /// A race the PC recorded (races.json in the account sync).
 struct Race: Identifiable, Hashable {
     let id: String
