@@ -345,13 +345,13 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
             item { Section(t("laps").uppercase()) }
             item {
                 Panel {
-                    val best = x.laps.filter { it.time > 0 }.minOfOrNull { it.time }
+                    val best = x.laps.filter { it.time > 0 && !it.cut }.minOfOrNull { it.time }
                     x.laps.forEach { l ->
                         Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                             Text("L${l.n}", color = Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(44.dp))
                             Text(lapTime(l.time), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = if (l.time == best) Purple else Fg, modifier = Modifier.weight(1f))
                             Text("P${l.pos}", color = Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(44.dp))
-                            Text(if (l.pit) t("pit") else if (l.inc > 0) "${l.inc}x" else "", color = if (l.pit) Blue else Bad, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(40.dp))
+                            Text(if (l.cut) "✂" else if (l.pit) t("pit") else if (l.inc > 0) "${l.inc}x" else "", color = if (l.pit && !l.cut) Blue else Bad, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(40.dp))
                         }
                     }
                 }

@@ -427,7 +427,7 @@ struct RaceView: View {
     let race: Race
     var body: some View {
         let x = race
-        let best = x.laps.filter { $0.time > 0 }.map(\.time).min()
+        let best = x.laps.filter { $0.time > 0 && !$0.cut }.map(\.time).min()
         Screen(title: x.track, sub: x.car + " · " + dayTime(x.when)) {
             MetricGrid(items: [
                 MetricData(label: t("start"), value: "P\(x.start)"),
@@ -455,7 +455,7 @@ struct RaceView: View {
                             Text(lapTime(l.time)).foregroundColor(l.time == best ? Theme.purple : Theme.fg)
                             Spacer()
                             Text("P\(l.pos)").foregroundColor(Theme.muted).frame(width: 44, alignment: .leading)
-                            Text(l.pit ? t("pit") : l.inc > 0 ? "\(l.inc)x" : "").foregroundColor(l.pit ? Theme.blue : Theme.bad).frame(width: 40, alignment: .leading)
+                            Text(l.cut ? "✂" : l.pit ? t("pit") : l.inc > 0 ? "\(l.inc)x" : "").foregroundColor(l.pit && !l.cut ? Theme.blue : Theme.bad).frame(width: 40, alignment: .leading)
                         }
                         .font(.system(size: 12, design: .monospaced))
                     }

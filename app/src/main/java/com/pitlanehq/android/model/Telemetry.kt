@@ -71,7 +71,8 @@ data class Race(
     val laps: List<RaceLap>, val results: List<RaceResult>
 )
 
-data class RaceLap(val n: Int, val time: Double, val pos: Int, val inc: Int, val pit: Boolean)
+/** One lap of a race; [cut]: the car left the track, the lap is not valid. */
+data class RaceLap(val n: Int, val time: Double, val pos: Int, val inc: Int, val pit: Boolean, val cut: Boolean = false)
 
 data class RaceResult(val pos: Int, val name: String, val ir: Int, val best: Double?, val inc: Int, val laps: Int)
 

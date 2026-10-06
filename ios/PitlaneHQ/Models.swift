@@ -128,6 +128,7 @@ struct RaceLap: Hashable {
     let pos: Int
     let inc: Int
     let pit: Bool
+    var cut: Bool = false // the car left the track: not a valid lap
 }
 
 struct RaceResult: Hashable {

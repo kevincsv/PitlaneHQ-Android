@@ -8,6 +8,7 @@ when the beta ends. Every version is listed here, newest first, and gets a relea
 
 **Changed**
 - Sessions say practice, qualifying or race in your language.
+- Race laps where you left the track say ✂ (not valid) and never count as your best lap.
 
 Also in this version, on the PC and the web: sharing older sessions and laps without telemetry,
 the lap analyzer charts and My races on phones.

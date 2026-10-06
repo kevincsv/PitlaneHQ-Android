@@ -271,7 +271,7 @@ final class Account: ObservableObject {
                 start: int(r["start"]), finish: int(r["finish"]), field: int(r["field"]), inc: int(r["inc"]), best: pos(r["best"]),
                 fieldBest: pos(r["fieldBest"]), avg: pos(r["avg"]), consistency: pos(r["consistency"]), pits: int(r["pits"]), fuelUsed: pos(r["fuelUsed"]),
                 ir: int(r["ir"]), irChange: int(r["irChange"]), sof: int(r["sof"]), dnf: r["dnf"] as? Bool ?? false,
-                laps: (r["laps"] as? [[String: Any]] ?? []).map { RaceLap(n: int($0["n"]), time: num($0["t"]) ?? 0, pos: int($0["p"]), inc: int($0["i"]), pit: $0["pit"] as? Bool ?? false) },
+                laps: (r["laps"] as? [[String: Any]] ?? []).map { RaceLap(n: int($0["n"]), time: num($0["t"]) ?? 0, pos: int($0["p"]), inc: int($0["i"]), pit: $0["pit"] as? Bool ?? false, cut: $0["cut"] as? Bool ?? false) },
                 results: (r["results"] as? [[String: Any]] ?? []).map {
                     RaceResult(pos: int($0["cpos"]) > 0 ? int($0["cpos"]) : int($0["pos"]), name: str($0["name"]), ir: int($0["ir"]), best: pos($0["best"]), inc: int($0["inc"]), laps: int($0["laps"]))
                 }.sorted { $0.pos < $1.pos }
