@@ -732,7 +732,8 @@ private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
     fun match(vararg s: String) = q.isBlank() || s.any { it.contains(q, true) }
     Screen(t("community"), t("shared_by")) {
         item { WebNote(t("community_web")) }
-        item { Tabs(listOf(t("leaderboards"), t("reports"), t("setups")), tab) { tab = it } }
+        // setups are switched off for now
+        item { Tabs(listOf(t("leaderboards"), t("reports")), tab) { tab = it } }
         item { OutlinedTextField(q, { q = it }, label = { Text(t("search")) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
         when (tab) {
             0 -> {
@@ -813,6 +814,7 @@ private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
                     Column(Modifier.weight(1f)) {
                         Text(lap.alias, fontWeight = FontWeight.Bold, color = if (me) Accent else Fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (lap.sectors.isNotEmpty()) Text(lap.sectors.joinToString("  ") { "%.3f".format(it) }, color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                        if (!lap.hasTrace) Text(t("trace_not_shared"), color = Muted, fontSize = 10.sp)
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text(lapTime(lap.time), color = if (i == 0) Purple else Fg, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)

@@ -171,6 +171,7 @@ private let strings: [String: (String, String)] = [
     "community_web": ("Laps you share from PitlaneHQ.exe appear here. The full community coach and lap comparisons are in the web and PC app; we are working on bringing them to this app.", "Las vueltas que compartes desde PitlaneHQ.exe aparecen aquí. El coach completo de la comunidad y las comparaciones están en la web y en la app de PC; estamos trabajando para traerlos a esta app."),
     "live_web": ("This is a summary. The full live telemetry (every channel, track map, relative, inputs and overlays) is in the web and PC app. We are working on bringing it to this app.", "Esto es un resumen. La telemetría en vivo completa (todos los canales, mapa del circuito, relativo, entradas y overlays) está en la web y en la app de PC. Estamos trabajando para traerla a esta app."),
     "open_web": ("Open the web version", "Abrir la versión web"),
+    "trace_not_shared": ("Telemetry not shared", "Telemetría no compartida"),
     "hold_hint": ("Touch or slide along the chart to see the values", "Toca o desliza por la gráfica para ver los valores"),
     "ir_estimate": ("iRating changes are estimated by PitlaneHQ.exe from the field.", "Los cambios de iRating los estima PitlaneHQ.exe a partir del grupo."),
     "pos_gain": ("Positions", "Posiciones"),

@@ -1027,7 +1027,8 @@ struct CommunityView: View {
     var body: some View {
         Screen(title: t("community"), sub: t("shared_by")) {
             WebNote(text: t("community_web"))
-            Tabs(labels: [t("leaderboards"), t("reports"), t("setups")], selected: $tab)
+            // setups are switched off for now
+            Tabs(labels: [t("leaderboards"), t("reports")], selected: $tab)
             TextField(t("search"), text: $q).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
             switch tab {
             case 0:
@@ -1118,6 +1119,7 @@ struct ComboView: View {
                         VStack(alignment: .leading, spacing: 1) {
                             Text(lap.alias).font(.subheadline.bold()).foregroundColor(me ? Theme.accent : Theme.fg).lineLimit(1)
                             if !lap.sectors.isEmpty { Text(lap.sectors.map { String(format: "%.3f", $0) }.joined(separator: "  ")).font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.muted) }
+                            if !lap.hasTrace { Text(t("trace_not_shared")).font(.system(size: 10)).foregroundColor(Theme.muted) }
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 0) {
