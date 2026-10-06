@@ -20,7 +20,11 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -45,6 +49,7 @@ import com.pitlanehq.android.viewmodel.RefKind
 import java.text.DateFormat
 import java.util.Date
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 private val Ink = Color(0xFF11151B)
 private val Surface = Color(0xFF19202A)
@@ -227,35 +232,22 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
     val races = r.data ?: emptyList()
     Screen(a.display.ifBlank { t("driver") }, t("racing_companion")) {
         state(r) { vm.loadRaces() }
+        item { Licences() }
         item { Section(t("race_summary")) }
         item {
             val recent = races.take(10)
             val last = races.firstOrNull()
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Metric(t("current_ir"), if (last != null && last.ir > 0) "${last.ir + last.irChange}" else "—", Modifier.weight(1f))
-                val ch = recent.sumOf { it.irChange }
-                Metric(t("ir_change"), if (recent.isEmpty()) "—" else signed(ch), Modifier.weight(1f), if (ch > 0) Good else if (ch < 0) Bad else Fg, t("last_races", recent.size))
-            }
-        }
-        item {
-            val recent = races.take(10)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Metric(t("races"), "${races.size}", Modifier.weight(1f))
-                Metric(t("wins"), "${races.count { it.finish == 1 }}", Modifier.weight(1f))
-                Metric(t("top5"), "${races.count { it.finish in 1..5 }}", Modifier.weight(1f))
-                Metric(t("avg_inc"), if (recent.isEmpty()) "—" else "%.1f".format(recent.map { it.inc }.average()), Modifier.weight(1f))
-            }
-        }
-        item {
-            Panel {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(t("safety").uppercase(), fontWeight = FontWeight.Black, fontSize = 13.sp)
-                        Text(t("safety_wip"), color = Muted, fontSize = 11.sp)
-                    }
-                    Status("WIP", Accent)
-                }
-            }
+            val ch = recent.sumOf { it.irChange }
+            Grid(
+                listOf(
+                    MetricData(t("current_ir"), if (last != null && last.ir > 0) "${last.ir + last.irChange}" else "—"),
+                    MetricData(t("ir_change"), if (recent.isEmpty()) "—" else signed(ch), if (ch > 0) Good else if (ch < 0) Bad else Fg, t("last_races", recent.size)),
+                    MetricData(t("races"), "${races.size}"),
+                    MetricData(t("wins"), "${races.count { it.finish == 1 }}"),
+                    MetricData(t("top5"), "${races.count { it.finish in 1..5 }}"),
+                    MetricData(t("avg_inc"), if (recent.isEmpty()) "—" else "%.1f".format(recent.map { it.inc }.average()))
+                ), columns = 2
+            )
         }
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -271,9 +263,10 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
             Panel {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
+                        Text(t("agent_note"), fontSize = 12.sp)
                         Text(
                             if (a.syncUpdated > 0) t("synced", dayTime(a.syncUpdated)) else t("never_synced"),
-                            color = Muted, fontSize = 12.sp
+                            color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)
                         )
                         a.error?.let { Text(t(it), color = Bad, fontSize = 12.sp) }
                     }
@@ -318,18 +311,16 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
     val x = vm.race ?: return
     Screen(x.track, x.car + " · " + dayTime(x.whenMs), back = { nav.popBackStack() }) {
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Metric(t("start"), "P${x.start}", Modifier.weight(1f))
-                Metric(t("finish"), if (x.dnf) t("dnf") else "P${x.finish}", Modifier.weight(1f), if (x.finish == 1) Purple else Fg)
-                Metric("iRating", signed(x.irChange), Modifier.weight(1f), if (x.irChange > 0) Good else if (x.irChange < 0) Bad else Fg, if (x.ir > 0) "${x.ir} → ${x.ir + x.irChange}" else null)
-            }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Metric(t("incidents"), "${x.inc}x", Modifier.weight(1f), if (x.inc >= 8) Bad else Fg)
-                Metric(t("pos_gain"), signed(x.start - x.finish), Modifier.weight(1f), if (x.start > x.finish) Good else if (x.start < x.finish) Bad else Fg)
-                Metric(t("sof"), if (x.sof > 0) "${x.sof}" else "—", Modifier.weight(1f))
-            }
+            Grid(
+                listOf(
+                    MetricData(t("start"), "P${x.start}"),
+                    MetricData(t("finish"), if (x.dnf) t("dnf") else "P${x.finish}", if (x.finish == 1) Purple else Fg),
+                    MetricData("iRating", signed(x.irChange), if (x.irChange > 0) Good else if (x.irChange < 0) Bad else Fg, if (x.ir > 0) "${x.ir} → ${x.ir + x.irChange}" else null),
+                    MetricData(t("incidents"), "${x.inc}x", if (x.inc >= 8) Bad else Fg),
+                    MetricData(t("pos_gain"), signed(x.start - x.finish), if (x.start > x.finish) Good else if (x.start < x.finish) Bad else Fg),
+                    MetricData(t("sof"), if (x.sof > 0) "${x.sof}" else "—")
+                ), columns = 3
+            )
         }
         item {
             Panel {
@@ -386,6 +377,7 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(tab) { if (tab == 0 && s.data == null && !s.loading) vm.loadSessions(); if (tab == 1 && b.data == null && !b.loading) vm.loadBests() }
     Screen(t("my_laps"), t("uploaded_by_pc")) {
+        item { WebNote(t("coach_web")) }
         item { Tabs(listOf(t("sessions"), t("bests")), tab) { tab = it } }
         if (tab == 0) {
             state(s) { vm.loadSessions() }
@@ -436,9 +428,9 @@ private fun SessionDetail(vm: PitlaneViewModel, nav: NavHostController) {
     Screen(x.track, x.car, back = { nav.popBackStack() }) {
         state(l) { vm.loadLaps(x.id) }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Metric(t("best"), lapTime(best), Modifier.weight(1f), Purple)
-                Metric(t("best_sectors"), lapTime(ideal), Modifier.weight(1f))
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Metric(t("best"), lapTime(best), Modifier.weight(1f).fillMaxHeight(), Purple)
+                Metric(t("best_sectors"), lapTime(ideal), Modifier.weight(1f).fillMaxHeight())
             }
         }
         item { Row { Section(t("laps").uppercase()); Spacer(Modifier.weight(1f)); Text(t("tap_lap"), color = Muted, fontSize = 11.sp) } }
@@ -489,24 +481,27 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
             }
         }
         state(a) { an?.let { vm.analyse(x, it.lap, laps.data ?: emptyList(), kind) } }
+        item { WebNote(t("coach_web")) }
         if (an != null) {
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Metric(t("you"), lapTime(an.lap.time), Modifier.weight(1f), Accent)
-                    Metric(an.refLabel.ifBlank { t("ref") }, lapTime(an.refTime), Modifier.weight(1f), Blue)
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Metric(t("you"), lapTime(an.lap.time), Modifier.weight(1f).fillMaxHeight(), Accent)
+                    Metric(an.refLabel.ifBlank { t("ref") }, lapTime(an.refTime), Modifier.weight(1f).fillMaxHeight(), Blue)
                     val d = an.refTime?.let { an.lap.time - it }
-                    Metric(t("delta"), d?.let { "%+.3f".format(it) } ?: "—", Modifier.weight(1f), if (d == null) Fg else if (d <= 0) Good else Bad)
+                    Metric(t("delta"), d?.let { "%+.3f".format(it) } ?: "—", Modifier.weight(1f).fillMaxHeight(), if (d == null) Fg else if (d <= 0) Good else Bad)
                 }
             }
             if (an.trace == null) item { Empty(t("no_trace")) }
             else {
                 val c = compare(an.trace, an.ref)
                 if (an.ref == null) item { Text(t("no_reference"), color = Muted, fontSize = 12.sp) }
+                val refName = an.refLabel.ifBlank { t("ref") }
+                item { Text(t("hold_hint"), color = Muted, fontSize = 11.sp) }
                 item {
-                    Chart(t("speed") + " (km/h)", listOfNotNull(c.speedA to Accent, c.speedB?.let { it to Blue }))
+                    Chart(t("speed") + " (km/h)", listOfNotNull(Series(t("you"), c.speedA, Accent), c.speedB?.let { Series(refName, it, Blue) }), c.step, { "%.0f".format(it) })
                 }
-                c.delta?.let { d -> item { Chart(t("delta") + " (s)", listOf(d to Purple), zero = true) } }
-                item { Chart(t("inputs"), listOf(c.thrA to Good, c.brkA to Bad), fixedMax = 1.0) }
+                c.delta?.let { d -> item { Chart(t("delta") + " (s)", listOf(Series(t("delta"), d, Purple)), c.step, { "%+.3f".format(it) }, zero = true) } }
+                item { Chart(t("inputs"), listOf(Series(t("throttle"), c.thrA, Good), Series(t("brake"), c.brkA, Bad)), c.step, { "%.0f%%".format(it * 100) }, fixedMax = 1.0) }
                 if (an.ref != null) {
                     item { Section(t("where_time")) }
                     val ls = losses(c)
@@ -544,33 +539,66 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
     }
 }
 
-/** A line chart over the lap distance. */
+data class Series(val label: String, val values: List<Double>, val color: Color)
+
+/**
+ * A line chart over the lap distance. Tap, or touch and hold and drag, to read the values at
+ * that point, like hovering in the web and PC app.
+ */
 @Composable
-private fun Chart(title: String, series: List<Pair<List<Double>, Color>>, zero: Boolean = false, fixedMax: Double? = null) {
+private fun Chart(title: String, series: List<Series>, step: Double, fmt: (Double) -> String, zero: Boolean = false, fixedMax: Double? = null) {
+    var sel by remember { mutableStateOf<Float?>(null) }
+    var width by remember { mutableIntStateOf(1) }
     Panel {
         Section(title.uppercase())
-        Spacer(Modifier.height(6.dp))
-        val all = series.flatMap { it.first }
+        val all = series.flatMap { it.values }
         if (all.isEmpty()) return@Panel
+        val n = series.maxOf { it.values.size }
+        val idx = sel?.let { ((it / width.coerceAtLeast(1)) * (n - 1)).roundToInt().coerceIn(0, n - 1) }
+        // the values under the finger
+        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (idx == null) Text(" ", fontSize = 11.sp)
+            else {
+                Text("${(idx * step).roundToInt()} m", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                series.forEach { se -> se.values.getOrNull(idx)?.let { Text(se.label + " " + fmt(it), color = se.color, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold) } }
+            }
+        }
         val lo = if (fixedMax != null) 0.0 else if (zero) minOf(all.min(), 0.0) else all.min()
         val hi = fixedMax ?: if (zero) maxOf(all.max(), 0.0) else all.max()
         val span = (hi - lo).takeIf { it > 1e-9 } ?: 1.0
-        Canvas(Modifier.fillMaxWidth().height(120.dp)) {
+        Canvas(
+            Modifier.fillMaxWidth().height(130.dp)
+                .onSizeChanged { width = it.width }
+                .pointerInput(Unit) { detectTapGestures(onTap = { sel = it.x }) }
+                .pointerInput(Unit) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { sel = it.x },
+                        onDrag = { change, _ -> sel = change.position.x; change.consume() }
+                    )
+                }
+        ) {
             fun y(v: Double) = (size.height * (1 - (v - lo) / span)).toFloat()
             if (zero) drawLine(Line, Offset(0f, y(0.0)), Offset(size.width, y(0.0)), 1f)
-            series.forEach { (vals, color) ->
+            series.forEach { se ->
+                val vals = se.values
                 if (vals.size < 2) return@forEach
                 val p = Path()
                 vals.forEachIndexed { i, v ->
                     val px = size.width * i / (vals.size - 1)
                     if (i == 0) p.moveTo(px, y(v)) else p.lineTo(px, y(v))
                 }
-                drawPath(p, color, style = Stroke(width = 2f))
+                drawPath(p, se.color, style = Stroke(width = 2f))
+            }
+            if (idx != null) {
+                val x = size.width * idx / (n - 1).coerceAtLeast(1)
+                drawLine(Fg.copy(alpha = 0.6f), Offset(x, 0f), Offset(x, size.height), 1.5f)
+                series.forEach { se -> se.values.getOrNull(idx)?.let { drawCircle(se.color, 4f, Offset(x, y(it))) } }
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(if (fixedMax == 1.0) "0%" else "%.1f".format(lo), color = Muted, fontSize = 10.sp)
-            Text(if (fixedMax == 1.0) "100%" else "%.1f".format(hi), color = Muted, fontSize = 10.sp)
+            Text(if (fixedMax == 1.0) "0%" else fmt(lo), color = Muted, fontSize = 10.sp)
+            Text("${((n - 1) * step / 1000).let { "%.1f".format(it) }} km", color = Muted, fontSize = 10.sp)
+            Text(if (fixedMax == 1.0) "100%" else fmt(hi), color = Muted, fontSize = 10.sp)
         }
     }
 }
@@ -592,6 +620,7 @@ private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
     }
     fun match(vararg s: String) = q.isBlank() || s.any { it.contains(q, true) }
     Screen(t("community"), t("shared_by")) {
+        item { WebNote(t("community_web")) }
         item { Tabs(listOf(t("leaderboards"), t("reports"), t("setups")), tab) { tab = it } }
         item { OutlinedTextField(q, { q = it }, label = { Text(t("search")) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
         when (tab) {
@@ -700,27 +729,28 @@ private fun Live(vm: PitlaneViewModel) {
     }
     Screen(t("live_title"), t("live_sub")) {
         item { Status(label, color) }
+        item { WebNote(t("live_web")) }
         s.message?.let { item { Text(t(it), color = Bad, fontSize = 12.sp) } }
         if (s.link == LinkState.OPEN && !s.pcOnline) item { Empty(t("open_pc")) }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Metric(t("speed"), s.num("Speed")?.let { "%.0f".format(it * 3.6) } ?: "—", Modifier.weight(1f))
-                Metric(t("gear"), s.num("Gear")?.toInt()?.let { if (it < 0) "R" else if (it == 0) "N" else "$it" } ?: "—", Modifier.weight(1f))
-                Metric("RPM", s.num("RPM")?.let { "%.0f".format(it) } ?: "—", Modifier.weight(1f))
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Metric(t("speed"), s.num("Speed")?.let { "%.0f".format(it * 3.6) } ?: "—", Modifier.weight(1f).fillMaxHeight())
+                Metric(t("gear"), s.num("Gear")?.toInt()?.let { if (it < 0) "R" else if (it == 0) "N" else "$it" } ?: "—", Modifier.weight(1f).fillMaxHeight())
+                Metric("RPM", s.num("RPM")?.let { "%.0f".format(it) } ?: "—", Modifier.weight(1f).fillMaxHeight())
             }
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Metric(t("lap"), s.num("Lap")?.toInt()?.toString() ?: "—", Modifier.weight(1f))
-                Metric(t("pos"), s.num("PlayerCarPosition")?.toInt()?.takeIf { it > 0 }?.let { "P$it" } ?: "—", Modifier.weight(1f))
-                Metric(t("fuel"), s.num("FuelLevel")?.let { "%.1f L".format(it) } ?: "—", Modifier.weight(1f))
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Metric(t("lap"), s.num("Lap")?.toInt()?.toString() ?: "—", Modifier.weight(1f).fillMaxHeight())
+                Metric(t("pos"), s.num("PlayerCarPosition")?.toInt()?.takeIf { it > 0 }?.let { "P$it" } ?: "—", Modifier.weight(1f).fillMaxHeight())
+                Metric(t("fuel"), s.num("FuelLevel")?.let { "%.1f L".format(it) } ?: "—", Modifier.weight(1f).fillMaxHeight())
             }
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Metric(t("current"), lapTime(s.num("LapCurrentLapTime")), Modifier.weight(1f))
-                Metric(t("last"), lapTime(s.num("LapLastLapTime")), Modifier.weight(1f))
-                Metric(t("best"), lapTime(s.num("LapBestLapTime")), Modifier.weight(1f), Purple)
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Metric(t("current"), lapTime(s.num("LapCurrentLapTime")), Modifier.weight(1f).fillMaxHeight())
+                Metric(t("last"), lapTime(s.num("LapLastLapTime")), Modifier.weight(1f).fillMaxHeight())
+                Metric(t("best"), lapTime(s.num("LapBestLapTime")), Modifier.weight(1f).fillMaxHeight(), Purple)
             }
         }
         item {
@@ -806,6 +836,57 @@ private fun Settings(vm: PitlaneViewModel) {
 }
 
 // ---------- pieces ----------
+private data class MetricData(val label: String, val value: String, val color: Color = Fg, val sub: String? = null)
+
+/** Metric boxes in rows of the same height, so every box lines up. */
+@Composable
+private fun Grid(items: List<MetricData>, columns: Int) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items.chunked(columns).forEach { row ->
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { m -> Metric(m.label, m.value, Modifier.weight(1f).fillMaxHeight(), m.color, m.sub) }
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+/** Licences per category: in development until iRacing switches its data API back on. */
+@Composable
+private fun Licences() {
+    val cats = listOf("cat_sports", "cat_formula", "cat_oval", "cat_dirt_road", "cat_dirt_oval")
+    var cat by rememberSaveable { mutableIntStateOf(0) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Section(t("licences"))
+            Spacer(Modifier.weight(1f))
+            Status("WIP", Accent)
+        }
+        Panel {
+            Tabs(cats.map { t(it) }, cat) { cat = it }
+            Spacer(Modifier.height(8.dp))
+            Grid(listOf(MetricData(t("lic_class"), "—", Muted), MetricData(t("safety"), "—", Muted), MetricData("iRating", "—", Muted)), columns = 3)
+            Spacer(Modifier.height(8.dp))
+            Text(t("lic_wip"), color = Accent, fontSize = 12.sp)
+        }
+    }
+}
+
+/** What is only in the web and PC app for now, with a button to open the web. */
+@Composable
+private fun WebNote(text: String) {
+    val uri = LocalUriHandler.current
+    Panel {
+        Row(verticalAlignment = Alignment.Top) {
+            Icon(Icons.Default.Info, null, tint = Blue, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text(text, fontSize = 12.sp, color = Fg)
+                TextButton({ uri.openUri(WEB_APP) }, contentPadding = PaddingValues(0.dp)) { Text(t("open_web"), color = Accent, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+            }
+        }
+    }
+}
 @Composable
 private fun Tabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

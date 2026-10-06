@@ -7,7 +7,7 @@ struct Panel<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) { content }
             .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Theme.surface)
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line, lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -73,6 +73,74 @@ struct ActionRow: View {
                 }
                 Spacer()
                 Image(systemName: "chevron.right").foregroundColor(Theme.muted)
+            }
+        }
+    }
+}
+
+struct MetricData {
+    let label: String
+    let value: String
+    var color = Theme.fg
+    var sub: String? = nil
+}
+
+/// Metric boxes in rows of the same height, so every box lines up.
+struct MetricGrid: View {
+    let items: [MetricData]
+    let columns: Int
+    var body: some View {
+        let rows: [[MetricData]] = stride(from: 0, to: items.count, by: columns).map { Array(items[$0..<min($0 + columns, items.count)]) }
+        VStack(spacing: 8) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 8) {
+                    ForEach(Array(row.enumerated()), id: \.offset) { _, m in
+                        Metric(label: m.label, value: m.value, color: m.color, sub: m.sub)
+                    }
+                    ForEach(0..<(columns - row.count), id: \.self) { _ in Color.clear.frame(maxWidth: .infinity) }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+/// Licences per category: in development until iRacing switches its data API back on.
+struct Licences: View {
+    @State private var cat = 0
+    private let cats = ["cat_sports", "cat_formula", "cat_oval", "cat_dirt_road", "cat_dirt_oval"]
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                SectionLabel(text: t("licences"))
+                Spacer()
+                StatusPill(text: "WIP", color: Theme.accent)
+            }
+            Panel {
+                Tabs(labels: cats.map { t($0) }, selected: $cat)
+                MetricGrid(items: [
+                    MetricData(label: t("lic_class"), value: "—", color: Theme.muted),
+                    MetricData(label: t("safety"), value: "—", color: Theme.muted),
+                    MetricData(label: "iRating", value: "—", color: Theme.muted),
+                ], columns: 3)
+                .padding(.vertical, 6)
+                Text(t("lic_wip")).font(.caption).foregroundColor(Theme.accent)
+            }
+        }
+    }
+}
+
+/// What is only in the web and PC app for now, with a link to open the web.
+struct WebNote: View {
+    let text: String
+    var body: some View {
+        Panel {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "info.circle").foregroundColor(Theme.blue)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(text).font(.caption).foregroundColor(Theme.fg)
+                    Link(t("open_web"), destination: webApp).font(.caption.bold())
+                }
             }
         }
     }
@@ -301,28 +369,21 @@ struct HomeView: View {
         let recent = Array(races.prefix(10))
         let last = races.first
         let change = recent.reduce(0) { $0 + $1.irChange }
+        let wins = races.filter { $0.finish == 1 }.count
+        let top5 = races.filter { (1...5).contains($0.finish) }.count
+        let incSum = recent.reduce(0) { $0 + $1.inc }
+        let avgInc = recent.isEmpty ? "—" : String(format: "%.1f", Double(incSum) / Double(recent.count))
         Screen(title: account.display.isEmpty ? t("driver") : account.display, sub: t("racing_companion")) {
+            Licences()
             SectionLabel(text: t("race_summary"))
-            HStack(spacing: 8) {
-                Metric(label: t("current_ir"), value: last.map { $0.ir > 0 ? "\($0.ir + $0.irChange)" : "—" } ?? "—")
-                Metric(label: t("ir_change"), value: recent.isEmpty ? "—" : signed(change), color: change > 0 ? Theme.good : change < 0 ? Theme.bad : Theme.fg, sub: t("last_races", recent.count))
-            }
-            HStack(spacing: 8) {
-                Metric(label: t("races"), value: "\(races.count)")
-                Metric(label: t("wins"), value: "\(races.filter { $0.finish == 1 }.count)")
-                Metric(label: t("top5"), value: "\(races.filter { (1...5).contains($0.finish) }.count)")
-                Metric(label: t("avg_inc"), value: recent.isEmpty ? "—" : String(format: "%.1f", Double(recent.reduce(0) { $0 + $1.inc }) / Double(recent.count)))
-            }
-            Panel {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(t("safety").uppercased()).font(.system(size: 13, weight: .black))
-                        Text(t("safety_wip")).font(.caption2).foregroundColor(Theme.muted)
-                    }
-                    Spacer()
-                    StatusPill(text: "WIP", color: Theme.accent)
-                }
-            }
+            MetricGrid(items: [
+                MetricData(label: t("current_ir"), value: last.map { $0.ir > 0 ? "\($0.ir + $0.irChange)" : "—" } ?? "—"),
+                MetricData(label: t("ir_change"), value: recent.isEmpty ? "—" : signed(change), color: change > 0 ? Theme.good : change < 0 ? Theme.bad : Theme.fg, sub: t("last_races", recent.count)),
+                MetricData(label: t("races"), value: "\(races.count)"),
+                MetricData(label: t("wins"), value: "\(wins)"),
+                MetricData(label: t("top5"), value: "\(top5)"),
+                MetricData(label: t("avg_inc"), value: avgInc),
+            ], columns: 2)
             HStack {
                 SectionLabel(text: t("recent_races"))
                 Spacer()
@@ -335,7 +396,8 @@ struct HomeView: View {
             Text(t("ir_estimate")).font(.caption2).foregroundColor(Theme.muted)
             Panel {
                 HStack {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(t("agent_note")).font(.caption)
                         Text(account.syncUpdated > 0 ? t("synced", dayTime(account.syncUpdated)) : t("never_synced")).font(.caption).foregroundColor(Theme.muted)
                         if let e = account.error { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
                     }
@@ -365,16 +427,14 @@ struct RaceView: View {
         let x = race
         let best = x.laps.filter { $0.time > 0 }.map(\.time).min()
         Screen(title: x.track, sub: x.car + " · " + dayTime(x.when)) {
-            HStack(spacing: 8) {
-                Metric(label: t("start"), value: "P\(x.start)")
-                Metric(label: t("finish"), value: x.dnf ? t("dnf") : "P\(x.finish)", color: x.finish == 1 ? Theme.purple : Theme.fg)
-                Metric(label: "iRating", value: signed(x.irChange), color: x.irChange > 0 ? Theme.good : x.irChange < 0 ? Theme.bad : Theme.fg, sub: x.ir > 0 ? "\(x.ir) → \(x.ir + x.irChange)" : nil)
-            }
-            HStack(spacing: 8) {
-                Metric(label: t("incidents"), value: "\(x.inc)x", color: x.inc >= 8 ? Theme.bad : Theme.fg)
-                Metric(label: t("pos_gain"), value: signed(x.start - x.finish), color: x.start > x.finish ? Theme.good : x.start < x.finish ? Theme.bad : Theme.fg)
-                Metric(label: t("sof"), value: x.sof > 0 ? "\(x.sof)" : "—")
-            }
+            MetricGrid(items: [
+                MetricData(label: t("start"), value: "P\(x.start)"),
+                MetricData(label: t("finish"), value: x.dnf ? t("dnf") : "P\(x.finish)", color: x.finish == 1 ? Theme.purple : Theme.fg),
+                MetricData(label: "iRating", value: signed(x.irChange), color: x.irChange > 0 ? Theme.good : x.irChange < 0 ? Theme.bad : Theme.fg, sub: x.ir > 0 ? "\(x.ir) → \(x.ir + x.irChange)" : nil),
+                MetricData(label: t("incidents"), value: "\(x.inc)x", color: x.inc >= 8 ? Theme.bad : Theme.fg),
+                MetricData(label: t("pos_gain"), value: signed(x.start - x.finish), color: x.start > x.finish ? Theme.good : x.start < x.finish ? Theme.bad : Theme.fg),
+                MetricData(label: t("sof"), value: x.sof > 0 ? "\(x.sof)" : "—"),
+            ], columns: 3)
             Panel {
                 InfoRow(label: t("best_lap"), value: lapTime(x.best), color: Theme.purple)
                 InfoRow(label: t("field_best"), value: lapTime(x.fieldBest))
@@ -435,6 +495,7 @@ struct AnalysisView: View {
 
     var body: some View {
         Screen(title: t("my_laps"), sub: t("uploaded_by_pc")) {
+            WebNote(text: t("coach_web"))
             Tabs(labels: [t("sessions"), t("bests")], selected: $tab)
             if tab == 0 {
                 LoadState(loading: sessions.loading, error: sessions.error, stale: sessions.stale) { Task { await load() } }
@@ -505,6 +566,7 @@ struct SessionView: View {
                 Metric(label: t("best"), value: lapTime(best), color: Theme.purple)
                 Metric(label: t("best_sectors"), value: lapTime(ideal))
             }
+            .fixedSize(horizontal: false, vertical: true)
             HStack {
                 SectionLabel(text: t("laps").uppercased())
                 Spacer()
@@ -588,6 +650,12 @@ struct LapView: View {
         loading = false
     }
 
+    private func speedSeries(_ c: Compared, _ refName: String) -> [Series] {
+        var out = [Series(label: t("you"), values: c.speedA, color: Theme.accent)]
+        if let b = c.speedB { out.append(Series(label: refName, values: b, color: Theme.blue)) }
+        return out
+    }
+
     var body: some View {
         let d = refTime.map { lap.time - $0 }
         Screen(title: t("lap_analysis") + " · L\(lap.n)", sub: session.track + " · " + session.car) {
@@ -596,18 +664,23 @@ struct LapView: View {
                 Tabs(labels: [t("my_best"), t("community_fastest")], selected: Binding(get: { community ? 1 : 0 }, set: { community = $0 == 1 }))
             }
             LoadState(loading: loading, error: error) { Task { await load() } }
+            WebNote(text: t("coach_web"))
             HStack(spacing: 8) {
                 Metric(label: t("you"), value: lapTime(lap.time), color: Theme.accent)
                 Metric(label: refLabel.isEmpty ? t("ref") : refLabel, value: lapTime(refTime), color: Theme.blue)
                 Metric(label: t("delta"), value: d.map { String(format: "%+.3f", $0) } ?? "—", color: d == nil ? Theme.fg : d! <= 0 ? Theme.good : Theme.bad)
             }
+            .fixedSize(horizontal: false, vertical: true)
             if !loading {
                 if let trace {
                     let c = compare(trace, ref)
                     if ref == nil { Text(t("no_reference")).font(.caption).foregroundColor(Theme.muted) }
-                    Chart(title: t("speed") + " (km/h)", series: [(c.speedA, Theme.accent)] + (c.speedB.map { [($0, Theme.blue)] } ?? []))
-                    if let delta = c.delta { Chart(title: t("delta") + " (s)", series: [(delta, Theme.purple)], zero: true) }
-                    Chart(title: t("inputs"), series: [(c.thrA, Theme.good), (c.brkA, Theme.bad)], fixedMax: 1)
+                    let refName = refLabel.isEmpty ? t("ref") : refLabel
+                    Text(t("hold_hint")).font(.caption2).foregroundColor(Theme.muted)
+                    Chart(title: t("speed") + " (km/h)", series: speedSeries(c, refName), step: c.step, fmt: { String(format: "%.0f", $0) })
+                    if let delta = c.delta { Chart(title: t("delta") + " (s)", series: [Series(label: t("delta"), values: delta, color: Theme.purple)], step: c.step, fmt: { String(format: "%+.3f", $0) }, zero: true) }
+                    Chart(title: t("inputs"), series: [Series(label: t("throttle"), values: c.thrA, color: Theme.good), Series(label: t("brake"), values: c.brkA, color: Theme.bad)],
+                          step: c.step, fmt: { String(format: "%.0f%%", $0 * 100) }, fixedMax: 1)
                     if ref != nil {
                         SectionLabel(text: t("where_time"))
                         let ls = losses(c)
@@ -651,15 +724,33 @@ struct LapView: View {
     }
 }
 
-/// A line chart over the lap distance.
+struct Series {
+    let label: String
+    let values: [Double]
+    let color: Color
+}
+
+/// A line chart over the lap distance. Tap, or touch and hold and drag, to read the values at
+/// that point, like hovering in the web and PC app.
 struct Chart: View {
     let title: String
-    let series: [([Double], Color)]
+    let series: [Series]
+    let step: Double
+    let fmt: (Double) -> String
     var zero = false
     var fixedMax: Double? = nil
+    @State private var sel: CGFloat?
+
+    private var count: Int { series.map { $0.values.count }.max() ?? 0 }
+
+    private func index(_ width: CGFloat) -> Int? {
+        guard let sel, count > 1, width > 0 else { return nil }
+        let f: Double = Double(sel / width)
+        return max(0, min(count - 1, Int((f * Double(count - 1)).rounded())))
+    }
 
     var body: some View {
-        let all = series.flatMap { $0.0 }
+        let all: [Double] = series.flatMap { $0.values }
         let mn: Double = all.min() ?? 0
         let mx: Double = all.max() ?? 1
         let lo: Double = fixedMax != nil ? 0 : (zero ? min(mn, 0) : mn)
@@ -668,41 +759,87 @@ struct Chart: View {
         Panel {
             SectionLabel(text: title.uppercased())
             GeometryReader { g in
-                ZStack {
-                    if zero {
-                        Path { p in
-                            let h: Double = Double(g.size.height)
-                            let y: Double = h * (1 - (0 - lo) / span)
-                            p.move(to: CGPoint(x: 0, y: y))
-                            p.addLine(to: CGPoint(x: Double(g.size.width), y: y))
+                let w: Double = Double(g.size.width)
+                let h: Double = Double(g.size.height)
+                let idx = index(g.size.width)
+                VStack(alignment: .leading, spacing: 4) {
+                    readout(idx).frame(height: 14)
+                    ZStack(alignment: .topLeading) {
+                        if zero {
+                            Path { p in
+                                let y: Double = (h - 18) * (1 - (0 - lo) / span)
+                                p.move(to: CGPoint(x: 0, y: y))
+                                p.addLine(to: CGPoint(x: w, y: y))
+                            }
+                            .stroke(Theme.line, lineWidth: 1)
                         }
-                        .stroke(Theme.line, lineWidth: 1)
-                    }
-                    ForEach(Array(series.enumerated()), id: \.offset) { _, s in
-                        Path { p in
-                            let v = s.0
-                            guard v.count > 1 else { return }
-                            let w: Double = Double(g.size.width)
-                            let h: Double = Double(g.size.height)
-                            let last: Double = Double(v.count - 1)
-                            for (i, x) in v.enumerated() {
-                                let px: Double = w * Double(i) / last
-                                let py: Double = h * (1 - (x - lo) / span)
-                                let pt = CGPoint(x: px, y: py)
-                                if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
+                        ForEach(Array(series.enumerated()), id: \.offset) { _, s in
+                            line(s.values, w, h - 18, lo, span).stroke(s.color, lineWidth: 1.5)
+                        }
+                        if let idx {
+                            let x: Double = w * Double(idx) / Double(max(1, count - 1))
+                            Path { p in
+                                p.move(to: CGPoint(x: x, y: 0))
+                                p.addLine(to: CGPoint(x: x, y: h - 18))
+                            }
+                            .stroke(Theme.fg.opacity(0.6), lineWidth: 1)
+                            ForEach(Array(series.enumerated()), id: \.offset) { _, s in
+                                if idx < s.values.count {
+                                    let y: Double = (h - 18) * (1 - (s.values[idx] - lo) / span)
+                                    Circle().fill(s.color).frame(width: 7, height: 7).position(x: x, y: y)
+                                }
                             }
                         }
-                        .stroke(s.1, lineWidth: 1.5)
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture { location in sel = location.x }
+                    .gesture(
+                        LongPressGesture(minimumDuration: 0.25)
+                            .sequenced(before: DragGesture(minimumDistance: 0))
+                            .onChanged { v in
+                                if case let .second(true, drag) = v, let drag { sel = drag.location.x }
+                            }
+                    )
                 }
             }
-            .frame(height: 120)
+            .frame(height: 150)
             HStack {
-                Text(fixedMax == 1 ? "0%" : String(format: "%.1f", lo))
+                Text(fixedMax == 1 ? "0%" : fmt(lo))
                 Spacer()
-                Text(fixedMax == 1 ? "100%" : String(format: "%.1f", hi))
+                Text(String(format: "%.1f km", Double(max(0, count - 1)) * step / 1000))
+                Spacer()
+                Text(fixedMax == 1 ? "100%" : fmt(hi))
             }
             .font(.system(size: 10)).foregroundColor(Theme.muted)
+        }
+    }
+
+    // the values under the finger
+    @ViewBuilder private func readout(_ idx: Int?) -> some View {
+        if let idx {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    Text("\(Int((Double(idx) * step).rounded())) m").foregroundColor(Theme.muted)
+                    ForEach(Array(series.enumerated()), id: \.offset) { _, s in
+                        if idx < s.values.count { Text(s.label + " " + fmt(s.values[idx])).foregroundColor(s.color).bold() }
+                    }
+                }
+                .font(.system(size: 11, design: .monospaced))
+            }
+        } else {
+            Text(" ").font(.system(size: 11))
+        }
+    }
+
+    private func line(_ v: [Double], _ w: Double, _ h: Double, _ lo: Double, _ span: Double) -> Path {
+        Path { p in
+            guard v.count > 1 else { return }
+            let last: Double = Double(v.count - 1)
+            for i in 0..<v.count {
+                let px: Double = w * Double(i) / last
+                let py: Double = h * (1 - (v[i] - lo) / span)
+                if i == 0 { p.move(to: CGPoint(x: px, y: py)) } else { p.addLine(to: CGPoint(x: px, y: py)) }
+            }
         }
     }
 }
@@ -733,6 +870,7 @@ struct CommunityView: View {
 
     var body: some View {
         Screen(title: t("community"), sub: t("shared_by")) {
+            WebNote(text: t("community_web"))
             Tabs(labels: [t("leaderboards"), t("reports"), t("setups")], selected: $tab)
             TextField(t("search"), text: $q).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
             switch tab {
@@ -863,6 +1001,7 @@ struct LiveView: View {
         let delta = live.num("LapDeltaToBestLap")
         Screen(title: t("live_title"), sub: t("live_sub")) {
             StatusPill(text: status.0, color: status.1)
+            WebNote(text: t("live_web"))
             if let m = live.message { Text(t(m)).font(.caption).foregroundColor(Theme.bad) }
             if live.link == .open && !live.pcOnline { EmptyNote(text: t("open_pc")) }
             HStack(spacing: 8) {
@@ -870,16 +1009,19 @@ struct LiveView: View {
                 Metric(label: t("gear"), value: gear.map { $0 < 0 ? "R" : $0 == 0 ? "N" : "\($0)" } ?? "—")
                 Metric(label: "RPM", value: live.num("RPM").map { String(format: "%.0f", $0) } ?? "—")
             }
+            .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 Metric(label: t("lap"), value: live.num("Lap").map { "\(Int($0))" } ?? "—")
                 Metric(label: t("pos"), value: live.num("PlayerCarPosition").flatMap { $0 > 0 ? "P\(Int($0))" : nil } ?? "—")
                 Metric(label: t("fuel"), value: live.num("FuelLevel").map { String(format: "%.1f L", $0) } ?? "—")
             }
+            .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 Metric(label: t("current"), value: lapTime(live.num("LapCurrentLapTime")))
                 Metric(label: t("last"), value: lapTime(live.num("LapLastLapTime")))
                 Metric(label: t("best"), value: lapTime(live.num("LapBestLapTime")), color: Theme.purple)
             }
+            .fixedSize(horizontal: false, vertical: true)
             Metric(label: t("delta_best"), value: delta.map { String(format: "%+.3f", $0) } ?? "—", color: delta == nil ? Theme.fg : delta! <= 0 ? Theme.good : Theme.bad)
             Panel {
                 SectionLabel(text: t("inputs").uppercased())

@@ -14,8 +14,8 @@ targets:
       path: PitlaneHQ/Info.plist
       properties:
         CFBundleDisplayName: Pitlane HQ
-        CFBundleShortVersionString: "0.2.0"
-        CFBundleVersion: "2"
+        CFBundleShortVersionString: "0.2.1"
+        CFBundleVersion: "3"
         UILaunchScreen: {}
         UIUserInterfaceStyle: Dark
         UISupportedInterfaceOrientations:

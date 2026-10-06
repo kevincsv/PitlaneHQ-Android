@@ -11,8 +11,8 @@ android {
         applicationId="com.pitlanehq.android"
         minSdk=26
         targetSdk=36
-        versionCode=2
-        versionName="0.2.0"
+        versionCode=3
+        versionName="0.2.1"
     }
     // release signing from GitHub secrets (never in the repository); without them CI signs with its debug key
     val ks = System.getenv("ANDROID_KEYSTORE_FILE")
