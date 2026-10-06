@@ -174,10 +174,12 @@ struct Tabs: View {
 struct Banners: View {
     @EnvironmentObject var account: Account
     @EnvironmentObject var net: NetMonitor
+    @EnvironmentObject var updates: Updates
     var body: some View {
         VStack(spacing: 0) {
             if !net.online { banner(t("showing_saved"), Theme.bad) }
             if account.demo { banner(t("demo_banner"), Theme.accent) }
+            if let v = updates.version { Link(destination: updates.page) { banner(t("update_available", v), Theme.good) } }
         }
     }
 
@@ -750,7 +752,7 @@ struct Chart: View {
     }
 
     var body: some View {
-        let all: [Double] = series.flatMap { $0.values }
+        let all: [Double] = series.flatMap { $0.values }.filter { $0.isFinite }
         let mn: Double = all.min() ?? 0
         let mx: Double = all.max() ?? 1
         let lo: Double = fixedMax != nil ? 0 : (zero ? min(mn, 0) : mn)
@@ -1137,6 +1139,9 @@ struct SettingsView: View {
                 Text(account.verified ? t("verified") : t("not_verified")).font(.caption2).foregroundColor(account.verified ? Theme.good : Theme.accent)
             }
             Link(destination: webApp) { ActionRow(title: t("web").uppercased(), sub: t("web_sub"), icon: "safari") }
+            if let u = URL(string: patreonURL), !patreonURL.isEmpty {
+                Link(destination: u) { ActionRow(title: t("support").uppercased(), sub: t("support_sub"), icon: "heart") }
+            }
             SectionLabel(text: t("devices"))
             LoadState(loading: devices.loading, error: devices.error) { Task { await devices.load { try await account.devices() } } }
             ForEach(devices.data ?? []) { d in

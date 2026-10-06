@@ -73,5 +73,8 @@ jobs:
           # the release notes are this version's part of CHANGELOG.md
           awk -v v="$v" '$0 ~ "^## "v"( |$)" {on=1; next} on && /^## / {exit} on {print}' CHANGELOG.md > notes.md
           cat .github/release-notes.md >> notes.md
-          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --target "$GITHUB_SHA" --title "Pitlane HQ $v beta" --notes-file notes.md --prerelease || true
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --target "$GITHUB_SHA" --title "Pitlane HQ $v beta" --notes-file notes.md --latest || true
+          # also under a fixed name: the web links to releases/latest/download/<name>, always the newest
+          cp "out/PitlaneHQ-Android-$VERSION.apk" out/PitlaneHQ-Android.apk
           gh release upload "$tag" out/* --clobber
+          gh release edit "$tag" --latest --prerelease=false || true

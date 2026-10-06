@@ -65,6 +65,9 @@ private val Blue = Color(0xFF5AA9FF)
 
 private const val WEB_APP = "$SERVER/app/?companion=1"
 
+/** Support Pitlane HQ (Settings); empty: not shown. */
+private const val PATREON_URL = ""
+
 private data class Dest(val route: String, val label: String, val icon: ImageVector)
 
 private fun day(ms: Long) = if (ms <= 0) "" else DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(ms))
@@ -133,11 +136,14 @@ private fun MainApp(vm: PitlaneViewModel) {
     val nav = rememberNavController()
     val demo by vm.demo.collectAsState()
     val online by vm.online.collectAsState()
+    val upd by vm.update.collectAsState()
+    val uri = LocalUriHandler.current
     Scaffold(containerColor = Ink, bottomBar = { BottomBar(nav) }) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             Column(Modifier.statusBarsPadding()) {
                 if (!online) Banner(t("showing_saved"), Bad)
                 if (demo) Banner(t("demo_banner"), Accent)
+                upd?.let { u -> Banner(t("update_available", u.version), Good) { uri.openUri(u.url) } }
             }
             NavHost(nav, "home", Modifier.weight(1f)) {
                 composable("home") { Home(vm, nav) }
@@ -157,10 +163,10 @@ private fun MainApp(vm: PitlaneViewModel) {
 }
 
 @Composable
-private fun Banner(s: String, c: Color) {
+private fun Banner(s: String, c: Color, onClick: (() -> Unit)? = null) {
     Text(
         s, color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace,
-        modifier = Modifier.fillMaxWidth().background(c).padding(horizontal = 16.dp, vertical = 6.dp)
+        modifier = Modifier.fillMaxWidth().background(c).let { if (onClick != null) it.clickable(onClick = onClick) else it }.padding(horizontal = 16.dp, vertical = 6.dp)
     )
 }
 
@@ -552,9 +558,19 @@ private fun Chart(title: String, series: List<Series>, step: Double, fmt: (Doubl
     var width by remember { mutableIntStateOf(1) }
     Panel {
         Section(title.uppercase())
-        val all = series.flatMap { it.values }
-        if (all.isEmpty()) return@Panel
-        val n = series.maxOf { it.values.size }
+        val all = series.flatMap { it.values }.filter { it.isFinite() }
+        val n = series.maxOfOrNull { it.values.size } ?: 0
+        if (all.isNotEmpty() && n >= 2) ChartBody(series, step, fmt, zero, fixedMax, all, n, sel, { width = it }, { sel = it })
+    }
+}
+
+@Composable
+private fun ChartBody(
+    series: List<Series>, step: Double, fmt: (Double) -> String, zero: Boolean, fixedMax: Double?, all: List<Double>, n: Int,
+    sel: Float?, onWidth: (Int) -> Unit, onSel: (Float) -> Unit
+) {
+    var width by remember { mutableIntStateOf(1) }
+    Column {
         val idx = sel?.let { ((it / width.coerceAtLeast(1)) * (n - 1)).roundToInt().coerceIn(0, n - 1) }
         // the values under the finger
         Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -569,16 +585,16 @@ private fun Chart(title: String, series: List<Series>, step: Double, fmt: (Doubl
         val span = (hi - lo).takeIf { it > 1e-9 } ?: 1.0
         Canvas(
             Modifier.fillMaxWidth().height(130.dp)
-                .onSizeChanged { width = it.width }
-                .pointerInput(Unit) { detectTapGestures(onTap = { sel = it.x }) }
+                .onSizeChanged { width = it.width; onWidth(it.width) }
+                .pointerInput(Unit) { detectTapGestures(onTap = { onSel(it.x) }) }
                 .pointerInput(Unit) {
                     detectDragGesturesAfterLongPress(
-                        onDragStart = { sel = it.x },
-                        onDrag = { change, _ -> sel = change.position.x; change.consume() }
+                        onDragStart = { onSel(it.x) },
+                        onDrag = { change, _ -> onSel(change.position.x); change.consume() }
                     )
                 }
         ) {
-            fun y(v: Double) = (size.height * (1 - (v - lo) / span)).toFloat()
+            fun y(v: Double) = (size.height * (1 - ((if (v.isFinite()) v else lo) - lo) / span)).toFloat()
             if (zero) drawLine(Line, Offset(0f, y(0.0)), Offset(size.width, y(0.0)), 1f)
             series.forEach { se ->
                 val vals = se.values
@@ -849,6 +865,7 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
             }
         }
         item { Action(t("web").uppercase(), t("web_sub"), Icons.Default.OpenInBrowser) { uri.openUri(WEB_APP) } }
+        if (PATREON_URL.isNotEmpty()) item { Action(t("support").uppercase(), t("support_sub"), Icons.Default.Favorite) { uri.openUri(PATREON_URL) } }
         item { Section(t("devices")) }
         state(d) { vm.loadDevices() }
         items(d.data ?: emptyList(), key = { it.id }) { dev ->

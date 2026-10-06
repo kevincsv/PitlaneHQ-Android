@@ -181,18 +181,22 @@ struct Loss: Hashable {
 }
 
 private func at(_ tr: Trace, _ d: Double, _ k: Int) -> Double {
+    if tr.rows.isEmpty || tr.bin <= 0 { return 0 }
     let x = d / tr.bin
     let i = max(0, min(tr.rows.count - 1, Int(x)))
     let j = min(i + 1, tr.rows.count - 1)
     let f = max(0, min(1, x - Double(i)))
     let a = k < tr.rows[i].count ? tr.rows[i][k] : 0
     let b = k < tr.rows[j].count ? tr.rows[j][k] : 0
-    return a * (1 - f) + b * f
+    let v = a * (1 - f) + b * f
+    return v.isFinite ? v : 0
 }
 
-func compare(_ a: Trace, _ b: Trace?, step: Double = 10) -> Compared {
+func compare(_ a: Trace, _ b: Trace?, step step0: Double = 10) -> Compared {
     let len = Double(a.rows.count - 1) * a.bin
     let lenB = b.map { Double($0.rows.count - 1) * $0.bin } ?? len
+    // at most 400 points per line: enough for a phone screen, light to draw and to touch
+    let step = max(step0, min(len, lenB) / 400)
     let n = max(2, Int(min(len, lenB) / step))
     let d = (0..<n).map { Double($0) * step }
     let tA = d.map { at(a, $0, 5) }

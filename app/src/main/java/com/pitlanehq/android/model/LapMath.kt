@@ -10,16 +10,20 @@ class Compared(val step: Double, val speedA: List<Double>, val speedB: List<Doub
 data class Loss(val fromM: Int, val lost: Double, val brakeDiffM: Int?, val minA: Double, val minB: Double, val throttleDiffM: Int?)
 
 private fun at(tr: Trace, d: Double, k: Int): Double {
+    if (tr.rows.isEmpty() || tr.bin <= 0) return 0.0
     val x = d / tr.bin
     val i = x.toInt().coerceIn(0, tr.rows.size - 1)
     val j = min(i + 1, tr.rows.size - 1)
     val f = (x - i).coerceIn(0.0, 1.0)
-    return tr.rows[i][k] * (1 - f) + tr.rows[j][k] * f
+    val v = tr.rows[i].getOrElse(k) { 0.0 } * (1 - f) + tr.rows[j].getOrElse(k) { 0.0 } * f
+    return if (v.isFinite()) v else 0.0
 }
 
-fun compare(a: Trace, b: Trace?, step: Double = 10.0): Compared {
+fun compare(a: Trace, b: Trace?, step0: Double = 10.0): Compared {
     val len = (a.rows.size - 1) * a.bin
     val lenB = b?.let { (it.rows.size - 1) * it.bin } ?: len
+    // at most 400 points per line: enough for a phone screen, light to draw and to touch
+    val step = max(step0, min(len, lenB) / 400.0)
     val n = max(2, (min(len, lenB) / step).toInt())
     val d = (0 until n).map { it * step }
     val tA = d.map { at(a, it, 5) }

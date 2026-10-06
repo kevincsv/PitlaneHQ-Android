@@ -187,5 +187,8 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "drinks_demo" to ("Turn off demo data to switch DRINKS mode on your PC." to "Apaga los datos de prueba para cambiar el modo DRINKS en tu PC."),
     "pc_online" to ("PC ONLINE" to "PC CONECTADO"),
     "admin_tools" to ("ADMIN" to "ADMIN"),
+    "update_available" to ("New version {0} beta available · tap to download" to "Nueva versión {0} beta disponible · toca para descargar"),
+    "support" to ("Support Pitlane HQ" to "Apoya Pitlane HQ"),
+    "support_sub" to ("Pitlane HQ is free: if it helps you, support it on Patreon" to "Pitlane HQ es gratis: si te ayuda, apóyalo en Patreon"),
     "conn_lost" to ("Connection lost: reconnecting…" to "Conexión perdida: reconectando…"),
 )

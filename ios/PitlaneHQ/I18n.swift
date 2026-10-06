@@ -190,5 +190,8 @@ private let strings: [String: (String, String)] = [
     "drinks_demo": ("Turn off demo data to switch DRINKS mode on your PC.", "Apaga los datos de prueba para cambiar el modo DRINKS en tu PC."),
     "pc_online": ("PC ONLINE", "PC CONECTADO"),
     "admin_tools": ("ADMIN", "ADMIN"),
+    "update_available": ("New version {0} beta available · tap to download", "Nueva versión {0} beta disponible · toca para descargar"),
+    "support": ("Support Pitlane HQ", "Apoya Pitlane HQ"),
+    "support_sub": ("Pitlane HQ is free: if it helps you, support it on Patreon", "Pitlane HQ es gratis: si te ayuda, apóyalo en Patreon"),
     "conn_lost": ("Connection lost: reconnecting…", "Conexión perdida: reconectando…"),
 ]

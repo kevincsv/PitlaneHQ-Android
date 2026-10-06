@@ -18,9 +18,12 @@ The first numbered beta, on the same version as the PC app and the web.
 - Analysis, Community and Live say that the full coach and the full live telemetry are in the
   web and PC app, with a button to open the web.
 - The version shows "beta".
+- A banner tells you when a newer version is out, with the download.
+- Settings: support Pitlane HQ on Patreon.
 
 **Fixed**
 - Android: the status bar icons are always visible.
+- Lap charts: lighter (at most 400 points per line) and safe with incomplete laps.
 
 ## 0.2.1 and 0.2.0
 

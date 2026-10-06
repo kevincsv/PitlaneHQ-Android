@@ -29,6 +29,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     val liveState = live.state
     val demo = MutableStateFlow(repo.demo)
     val online = MutableStateFlow(true)
+    val update = MutableStateFlow<AppUpdate?>(null)
 
     val races = MutableStateFlow(Loadable<List<Race>>())
     val sessions = MutableStateFlow(Loadable<List<CloudSession>>())
@@ -64,6 +65,12 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         online.value = cm?.activeNetwork?.let { cm.getNetworkCapabilities(it)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) } ?: false
         runCatching { cm?.registerNetworkCallback(NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(), netCallback) }
         loadRaces()
+        checkUpdate()
+    }
+
+    /** A newer version on GitHub: shown as a banner on top. */
+    fun checkUpdate() {
+        viewModelScope.launch(Dispatchers.IO) { Updates.check(com.pitlanehq.android.BuildConfig.VERSION_NAME)?.let { update.value = it } }
     }
 
     // back online: load again what was shown from the phone's saved copy

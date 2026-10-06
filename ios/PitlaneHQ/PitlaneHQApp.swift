@@ -6,6 +6,7 @@ struct PitlaneHQApp: App {
     @StateObject private var account = Account()
     @StateObject private var net = NetMonitor()
     @StateObject private var i18n = I18n.shared
+    @StateObject private var updates = Updates()
 
     var body: some Scene {
         WindowGroup {
@@ -16,6 +17,8 @@ struct PitlaneHQApp: App {
             .environmentObject(account)
             .environmentObject(net)
             .environmentObject(i18n)
+            .environmentObject(updates)
+            .task { await updates.check() }
             .preferredColorScheme(.dark)
             .tint(Theme.accent)
         }
@@ -39,6 +42,39 @@ final class NetMonitor: ObservableObject {
             }
         }
         monitor.start(queue: DispatchQueue(label: "net"))
+    }
+}
+
+/// A newer Pitlane HQ for this phone on GitHub (the same release the web's download buttons point to).
+@MainActor
+final class Updates: ObservableObject {
+    @Published var version: String?
+    let page = URL(string: "https://github.com/kevincsv/PitlaneHQ-Android/releases/latest")!
+
+    private static func parts(_ v: String) -> [Int] {
+        let core = v.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "v", with: "").split(separator: "-").first.map(String.init) ?? ""
+        return core.split(separator: ".").map { Int($0) ?? 0 }
+    }
+
+    static func newer(_ latest: String, than current: String) -> Bool {
+        let a = parts(latest), b = parts(current)
+        for i in 0..<max(a.count, b.count) {
+            let x = i < a.count ? a[i] : 0, y = i < b.count ? b[i] : 0
+            if x != y { return x > y }
+        }
+        return false
+    }
+
+    func check() async {
+        var r = URLRequest(url: URL(string: "https://api.github.com/repos/kevincsv/PitlaneHQ-Android/releases/latest")!, timeoutInterval: 15)
+        r.setValue("application/vnd.github+json", forHTTPHeaderField: "accept")
+        guard let res = try? await URLSession.shared.data(for: r),
+              let j = try? JSONSerialization.jsonObject(with: res.0) as? [String: Any],
+              let tag = j["tag_name"] as? String else { return }
+        let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        if Updates.newer(tag, than: current) {
+            version = tag.replacingOccurrences(of: "v", with: "").split(separator: "-").first.map(String.init)
+        }
     }
 }
 
