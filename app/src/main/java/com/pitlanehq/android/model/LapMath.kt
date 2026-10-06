@@ -4,7 +4,11 @@ import kotlin.math.max
 import kotlin.math.min
 
 /** Two lap traces on the same distance grid (every [step] metres), ready to draw and compare. */
-class Compared(val step: Double, val speedA: List<Double>, val speedB: List<Double>?, val thrA: List<Double>, val brkA: List<Double>, val delta: List<Double>?, val tA: List<Double>, val tB: List<Double>?)
+class Compared(
+    val step: Double, val speedA: List<Double>, val speedB: List<Double>?, val thrA: List<Double>, val brkA: List<Double>,
+    val delta: List<Double>?, val tA: List<Double>, val tB: List<Double>?,
+    val thrB: List<Double>? = null, val brkB: List<Double>? = null
+)
 
 /** One place on the lap where time goes, with what is different there. */
 data class Loss(val fromM: Int, val lost: Double, val brakeDiffM: Int?, val minA: Double, val minB: Double, val throttleDiffM: Int?)
@@ -35,8 +39,104 @@ fun compare(a: Trace, b: Trace?, step0: Double = 10.0): Compared {
         d.map { at(a, it, 1) },
         d.map { at(a, it, 2) },
         tB?.let { tb -> tA.indices.map { tA[it] - tb[it] } },
-        tA, tB
+        tA, tB,
+        b?.let { tr -> d.map { at(tr, it, 1) } },
+        b?.let { tr -> d.map { at(tr, it, 2) } }
     )
+}
+
+/**
+ * One corner in four phases, as driver coaches read data: braking (brake point, how hard), entry
+ * (releasing the brake into the turn, trail braking, coasting), apex (minimum speed) and exit (when
+ * the throttle comes back). [tip] is an I18n key with [args], about the phase that loses the most.
+ * The same analysis as the web's braking coach.
+ */
+data class Corner(
+    val n: Int, val atM: Int, val lost: Double, val phases: Map<String, Double>, val phase: String?,
+    val coastA: Double, val coastB: Double, val tip: String?, val args: List<Any>
+)
+
+val PHASE_KEYS = listOf("brake", "entry", "apex", "exit")
+
+fun corners(c: Compared): List<Corner> {
+    val tB = c.tB ?: return emptyList()
+    val sB = c.speedB ?: return emptyList()
+    val bB = c.brkB ?: return emptyList()
+    val hB = c.thrB ?: return emptyList()
+    val n = minOf(c.tA.size, tB.size, sB.size, bB.size, hB.size)
+    if (n < 10) return emptyList()
+    fun bins(m: Double) = max(1, (m / c.step).toInt())
+    fun seg(x: Int, y: Int) = if (x < y) (c.tA[y] - c.tA[x]) - (tB[y] - tB[x]) else 0.0
+    // braking zones on the reference: from the brake to the slowest point before the throttle is back
+    val zones = ArrayList<Pair<Int, Int>>()
+    var i = 1
+    while (i < n) {
+        if (bB[i] > .12 && bB[i - 1] <= .12) {
+            var k = i
+            var imin = i
+            while (k < n && k < i + bins(600.0) && !(hB[k] > .6 && bB[k] < .05)) {
+                if (sB[k] < sB[imin]) imin = k
+                k++
+            }
+            if (sB[i] - sB[imin] > 15) zones.add(i to imin)
+            i = max(k, i + 1)
+        } else i++
+    }
+    return zones.mapIndexed { idx, (zi, zmin) ->
+        val i0 = max(0, zi - bins(50.0))
+        val i1 = min(n - 1, zmin + bins(150.0))
+        val lost = seg(i0, i1)
+        // the same corner on this lap: its brake point within 100 m
+        val w = bins(100.0)
+        val ja = (max(1, zi - w)..min(n - 1, zi + w)).filter { c.brkA[it] > .12 && c.brkA[it - 1] <= .12 }.minByOrNull { kotlin.math.abs(it - zi) }
+        val aMin = ja?.let { j -> (j..i1).minByOrNull { c.speedA[it] } }
+        var ipb = zi
+        for (k in zi..zmin) if (bB[k] > bB[ipb]) ipb = k
+        val rel = (ipb..zmin).firstOrNull { bB[it] < .05 } ?: zmin
+        val a0 = max(rel, zmin - bins(20.0))
+        val a1 = min(i1, zmin + bins(20.0))
+        val ph = mapOf("brake" to seg(i0, rel), "entry" to seg(rel, a0), "apex" to seg(a0, a1), "exit" to seg(a1, i1))
+        fun coast(sp: List<Double>, br: List<Double>) = (i0..i1).count { sp[it] < .05 && br[it] < .05 } * c.step
+        val coastA = coast(c.thrA, c.brkA)
+        val coastB = coast(hB, bB)
+        var tip: String? = null
+        var args: List<Any> = emptyList()
+        var phase: String? = null
+        if (lost > .03) {
+            phase = ph.maxBy { it.value }.key
+            val dd = ja?.let { ((it - zi) * c.step).toInt() }
+            var ipa = ja ?: 0
+            if (ja != null && aMin != null) for (k in ja..aMin) if (c.brkA[k] > c.brkA[ipa]) ipa = k
+            val pa = if (ja != null) c.brkA[ipa] else 0.0
+            val relA = if (ja != null && aMin != null) (ipa..aMin).firstOrNull { c.brkA[it] < .05 } ?: aMin else null
+            val trailA = relA?.let { ((it - ipa) * c.step).toInt() }
+            val trailB = ((rel - ipb) * c.step).toInt()
+            val dmin = aMin?.let { c.speedA[it] - sB[zmin] }
+            val puA = aMin?.let { m -> (m..i1).firstOrNull { c.thrA[it] > .5 } }
+            val puB = (zmin..i1).firstOrNull { hB[it] > .5 }
+            val late = if (puA != null && puB != null) ((puA - puB) * c.step).toInt() else null
+            when (phase) {
+                "brake" -> when {
+                    dd != null && dd < -6 -> { tip = "tip_brake_later"; args = listOf(-dd) }
+                    ja != null && pa < bB[ipb] - .1 -> { tip = "tip_brake_harder"; args = listOf((pa * 100).toInt(), (bB[ipb] * 100).toInt()) }
+                    dd != null && dd > 6 -> { tip = "tip_brake_earlier"; args = listOf(dd) }
+                    else -> tip = "tip_brake_generic"
+                }
+                "entry" -> when {
+                    trailA != null && trailB - trailA >= 15 -> { tip = "tip_trail"; args = listOf(trailA, trailB) }
+                    coastA - coastB >= 10 -> { tip = "tip_coast"; args = listOf(coastA.toInt(), coastB.toInt()) }
+                    else -> tip = "tip_entry_speed"
+                }
+                "apex" -> if (dmin != null && dmin < -2) { tip = "tip_apex_speed"; args = listOf((-dmin).toInt()) } else tip = "tip_apex_line"
+                else -> when {
+                    late != null && late >= 8 -> { tip = "tip_throttle"; args = listOf(late) }
+                    coastA - coastB >= 10 -> tip = "tip_no_wait"
+                    else -> tip = "tip_full_throttle"
+                }
+            }
+        }
+        Corner(idx + 1, (zi * c.step).toInt(), lost, ph, phase, coastA, coastB, tip, args)
+    }
 }
 
 /** The three stretches of about 250 m where the lap loses the most time against the reference. */

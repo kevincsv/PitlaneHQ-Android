@@ -684,21 +684,7 @@ struct LapView: View {
                     Chart(title: t("inputs"), series: [Series(label: t("throttle"), values: c.thrA, color: Theme.good), Series(label: t("brake"), values: c.brkA, color: Theme.bad)],
                           step: c.step, fmt: { String(format: "%.0f%%", $0 * 100) }, fixedMax: 1)
                     if ref != nil {
-                        SectionLabel(text: t("where_time"))
-                        let ls = losses(c)
-                        if ls.isEmpty { EmptyNote(text: t("all_clean")) }
-                        ForEach(ls, id: \.self) { lo in
-                            Panel {
-                                HStack {
-                                    Text(t("at_m", lo.fromM)).font(.headline.weight(.black))
-                                    Spacer()
-                                    Text(t("lost", String(format: "%.3f", lo.lost))).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.bad)
-                                }
-                                if let b = lo.brakeDiffM, abs(b) >= 5 { Text(b < 0 ? t("brake_earlier", -b) : t("brake_later", b)).font(.caption).foregroundColor(Theme.muted) }
-                                Text(t("min_speed", String(format: "%.0f", lo.minA), String(format: "%.0f", lo.minB))).font(.caption).foregroundColor(Theme.muted)
-                                if let th = lo.throttleDiffM, th >= 10 { Text(t("throttle_later", th)).font(.caption).foregroundColor(Theme.muted) }
-                            }
-                        }
+                        PhaseCoach(c: c)
                     }
                 } else if error == nil {
                     EmptyNote(text: t("no_trace"))
@@ -730,6 +716,68 @@ struct Series {
     let label: String
     let values: [Double]
     let color: Color
+}
+
+/// The coach in four phases (braking, entry, apex, exit), like the web's and Android's.
+struct PhaseCoach: View {
+    let c: Compared
+
+    var body: some View {
+        let cs = corners(c)
+        VStack(alignment: .leading, spacing: 10) {
+            if cs.isEmpty { fallback } else { phases(cs) }
+        }
+    }
+
+    // traces without the reference's pedals: where time goes in 250 m stretches
+    @ViewBuilder private var fallback: some View {
+        let ls = losses(c)
+        SectionLabel(text: t("where_time"))
+        if ls.isEmpty { EmptyNote(text: t("all_clean")) }
+        ForEach(ls, id: \.self) { lo in
+            Panel {
+                HStack {
+                    Text(t("at_m", lo.fromM)).font(.headline.weight(.black))
+                    Spacer()
+                    Text(t("lost", String(format: "%.3f", lo.lost))).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.bad)
+                }
+                Text(t("min_speed", String(format: "%.0f", lo.minA), String(format: "%.0f", lo.minB))).font(.caption).foregroundColor(Theme.muted)
+            }
+        }
+    }
+
+    private func total(_ cs: [Corner], _ k: String) -> Double { cs.reduce(0) { $0 + max(0, $1.phases[k] ?? 0) } }
+
+    @ViewBuilder private func phases(_ cs: [Corner]) -> some View {
+        let totals: [(String, Double)] = phaseKeys.map { ($0, total(cs, $0)) }
+        let worst = totals.max { $0.1 < $1.1 }
+        let ca = cs.reduce(0) { $0 + $1.coastA }, cb = cs.reduce(0) { $0 + $1.coastB }
+        let top = Array(cs.filter { $0.tip != nil }.sorted { $0.lost > $1.lost }.prefix(5))
+        SectionLabel(text: t("by_phase"))
+        MetricGrid(items: totals.map { kv in MetricData(label: t("phase_" + kv.0), value: (kv.1 > 0 ? "+" : "") + String(format: "%.2f", kv.1), color: kv.1 > 0.03 ? Theme.bad : Theme.muted) }, columns: 4)
+        if let w = worst, w.1 > 0.05 { Text(t("most_phase", t("phase_" + w.0).lowercased())).font(.caption).foregroundColor(Theme.muted) }
+        else { Text(t("no_phase")).font(.caption).foregroundColor(Theme.muted) }
+        Panel { InfoRow(label: t("coasting"), value: "\(Int(ca)) m · " + t("ref") + " \(Int(cb)) m", color: ca - cb > 20 ? Theme.bad : Theme.fg) }
+        SectionLabel(text: t("where_time"))
+        if top.isEmpty { EmptyNote(text: t("all_clean")) }
+        ForEach(top, id: \.self) { k in
+            Panel {
+                HStack {
+                    Text(t("corner_n", k.n)).font(.subheadline.weight(.black)).foregroundColor(Theme.accent)
+                    Text(t("at_m", k.atM) + " · " + t("phase_" + (k.phase ?? ""))).font(.caption).foregroundColor(Theme.muted)
+                    Spacer()
+                    Text(String(format: "+%.2f", k.lost)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.bad)
+                }
+                Text(tipText(k)).font(.subheadline)
+            }
+        }
+    }
+
+    private func tipText(_ k: Corner) -> String {
+        var s = t(k.tip ?? "")
+        for (i, a) in k.args.enumerated() { s = s.replacingOccurrences(of: "{\(i)}", with: a) }
+        return s
+    }
 }
 
 /// A line chart over the lap distance. Tap, or touch and hold and drag, to read the values at

@@ -4,7 +4,13 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
-## Unreleased
+## 0.3.1 beta
+
+**New**
+- Lap analysis coach in four phases, like the web's: for each corner, which phase loses the time
+  (braking, entry, apex or exit) and what to change (brake point and pressure, trail braking,
+  coasting, minimum speed, throttle). A summary shows the time lost per phase over the lap and
+  the metres spent coasting.
 
 **Changed**
 - More compact screens: smaller titles, panels and bottom bar.

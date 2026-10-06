@@ -510,18 +510,48 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
                 c.delta?.let { d -> item { Chart(t("delta") + " (s)", listOf(Series(t("delta"), d, Purple)), c.step, { "%+.3f".format(it) }, zero = true) } }
                 item { Chart(t("inputs"), listOf(Series(t("throttle"), c.thrA, Good), Series(t("brake"), c.brkA, Bad)), c.step, { "%.0f%%".format(it * 100) }, fixedMax = 1.0) }
                 if (an.ref != null) {
-                    item { Section(t("where_time")) }
-                    val ls = losses(c)
-                    if (ls.isEmpty()) item { Empty(t("all_clean")) }
-                    items(ls) { lo ->
-                        Panel {
-                            Row {
-                                Text(t("at_m", lo.fromM), fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
-                                Text(t("lost", "%.3f".format(lo.lost)), color = Bad, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    // the coach in four phases (braking, entry, apex, exit), like the web's
+                    val cs = corners(c)
+                    if (cs.isEmpty()) {
+                        item { Section(t("where_time")) }
+                        val ls = losses(c)
+                        if (ls.isEmpty()) item { Empty(t("all_clean")) }
+                        items(ls) { lo ->
+                            Panel {
+                                Row {
+                                    Text(t("at_m", lo.fromM), fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                                    Text(t("lost", "%.3f".format(lo.lost)), color = Bad, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                                }
+                                Text(t("min_speed", "%.0f".format(lo.minA), "%.0f".format(lo.minB)), color = Muted, fontSize = 12.sp)
                             }
-                            lo.brakeDiffM?.takeIf { abs(it) >= 5 }?.let { Text(if (it < 0) t("brake_earlier", -it) else t("brake_later", it), color = Muted, fontSize = 12.sp) }
-                            Text(t("min_speed", "%.0f".format(lo.minA), "%.0f".format(lo.minB)), color = Muted, fontSize = 12.sp)
-                            lo.throttleDiffM?.takeIf { it >= 10 }?.let { Text(t("throttle_later", it), color = Muted, fontSize = 12.sp) }
+                        }
+                    } else {
+                        val tot = PHASE_KEYS.associateWith { k -> cs.sumOf { maxOf(0.0, it.phases[k] ?: 0.0) } }
+                        val worst = tot.maxBy { it.value }
+                        item { Section(t("by_phase")) }
+                        item {
+                            Grid(PHASE_KEYS.map { k -> val v = tot[k] ?: 0.0; MetricData(t("phase_$k"), (if (v > 0) "+" else "") + "%.2f".format(v), if (v > .03) Bad else Muted) }, columns = 4)
+                        }
+                        item {
+                            Text(if (worst.value > .05) t("most_phase", t("phase_" + worst.key).lowercase()) else t("no_phase"), color = Muted, fontSize = 12.sp)
+                        }
+                        item {
+                            val ca = cs.sumOf { it.coastA }
+                            val cb = cs.sumOf { it.coastB }
+                            Panel { InfoRow(t("coasting"), "${ca.toInt()} m · " + t("ref") + " ${cb.toInt()} m", if (ca - cb > 20) Bad else Fg) }
+                        }
+                        item { Section(t("where_time")) }
+                        val top = cs.filter { it.tip != null }.sortedByDescending { it.lost }.take(5)
+                        if (top.isEmpty()) item { Empty(t("all_clean")) }
+                        items(top) { k ->
+                            Panel {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(t("corner_n", k.n), fontWeight = FontWeight.Black, color = Accent)
+                                    Text("  " + t("at_m", k.atM) + " · " + t("phase_" + k.phase), color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                                    Text("+%.2f".format(k.lost), color = Bad, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                                }
+                                Text(t(k.tip!!, *k.args.toTypedArray()), fontSize = 13.sp)
+                            }
                         }
                     }
                 }

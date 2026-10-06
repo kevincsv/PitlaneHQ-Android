@@ -168,6 +168,8 @@ struct Compared {
     let delta: [Double]?
     let tA: [Double]
     let tB: [Double]?
+    var thrB: [Double]? = nil
+    var brkB: [Double]? = nil
 }
 
 /// One place on the lap where time goes, with what is different there.
@@ -208,8 +210,112 @@ func compare(_ a: Trace, _ b: Trace?, step step0: Double = 10) -> Compared {
         thrA: d.map { at(a, $0, 1) },
         brkA: d.map { at(a, $0, 2) },
         delta: tB.map { tb in tA.indices.map { tA[$0] - tb[$0] } },
-        tA: tA, tB: tB
+        tA: tA, tB: tB,
+        thrB: b.map { tr in d.map { at(tr, $0, 1) } },
+        brkB: b.map { tr in d.map { at(tr, $0, 2) } }
     )
+}
+
+/// One corner in four phases, as driver coaches read data: braking (brake point, how hard), entry
+/// (releasing the brake into the turn, trail braking, coasting), apex (minimum speed) and exit (when
+/// the throttle comes back). `tip` is an I18n key with `args`, about the phase that loses the most.
+/// The same analysis as the web's braking coach and Android's LapMath.kt.
+struct Corner: Hashable {
+    let n: Int
+    let atM: Int
+    let lost: Double
+    let phases: [String: Double]
+    let phase: String?
+    let coastA: Double
+    let coastB: Double
+    let tip: String?
+    let args: [String]
+}
+
+let phaseKeys = ["brake", "entry", "apex", "exit"]
+
+func corners(_ c: Compared) -> [Corner] {
+    guard let tB = c.tB, let sB = c.speedB, let bB = c.brkB, let hB = c.thrB else { return [] }
+    let n = [c.tA.count, tB.count, sB.count, bB.count, hB.count, c.brkA.count, c.thrA.count, c.speedA.count].min() ?? 0
+    if n < 10 { return [] }
+    func bins(_ m: Double) -> Int { max(1, Int(m / c.step)) }
+    func seg(_ x: Int, _ y: Int) -> Double { x < y ? (c.tA[y] - c.tA[x]) - (tB[y] - tB[x]) : 0 }
+    // braking zones on the reference: from the brake to the slowest point before the throttle is back
+    var zones: [(Int, Int)] = []
+    var i = 1
+    while i < n {
+        if bB[i] > 0.12 && bB[i - 1] <= 0.12 {
+            var k = i
+            var imin = i
+            while k < n && k < i + bins(600) && !(hB[k] > 0.6 && bB[k] < 0.05) {
+                if sB[k] < sB[imin] { imin = k }
+                k += 1
+            }
+            if sB[i] - sB[imin] > 15 { zones.append((i, imin)) }
+            i = max(k, i + 1)
+        } else {
+            i += 1
+        }
+    }
+    var out: [Corner] = []
+    for (idx, z) in zones.enumerated() {
+        let zi = z.0, zmin = z.1
+        let i0 = max(0, zi - bins(50)), i1 = min(n - 1, zmin + bins(150))
+        let lost = seg(i0, i1)
+        // the same corner on this lap: its brake point within 100 m
+        let w = bins(100)
+        var ja: Int? = nil
+        for j in max(1, zi - w)...min(n - 1, zi + w) where c.brkA[j] > 0.12 && c.brkA[j - 1] <= 0.12 {
+            if ja == nil || abs(j - zi) < abs(ja! - zi) { ja = j }
+        }
+        var aMin: Int? = nil
+        if let j = ja { aMin = (j...i1).min { c.speedA[$0] < c.speedA[$1] } }
+        var ipb = zi
+        for k in zi...zmin where bB[k] > bB[ipb] { ipb = k }
+        let rel = (ipb...zmin).first { bB[$0] < 0.05 } ?? zmin
+        let a0 = max(rel, zmin - bins(20)), a1 = min(i1, zmin + bins(20))
+        let ph: [String: Double] = ["brake": seg(i0, rel), "entry": seg(rel, a0), "apex": seg(a0, a1), "exit": seg(a1, i1)]
+        var coastA = 0.0, coastB = 0.0
+        for k in i0...i1 {
+            if c.thrA[k] < 0.05 && c.brkA[k] < 0.05 { coastA += c.step }
+            if hB[k] < 0.05 && bB[k] < 0.05 { coastB += c.step }
+        }
+        var tip: String? = nil
+        var args: [String] = []
+        var phase: String? = nil
+        if lost > 0.03 {
+            phase = ph.max { $0.value < $1.value }?.key
+            let dd: Int? = ja.map { Int(Double($0 - zi) * c.step) }
+            var ipa = ja ?? 0
+            if let j = ja, let m = aMin { for k in j...max(j, m) where c.brkA[k] > c.brkA[ipa] { ipa = k } }
+            let pa = ja != nil ? c.brkA[ipa] : 0
+            var trailA: Int? = nil
+            if let m = aMin, ja != nil { trailA = Int(Double(((ipa...max(ipa, m)).first { c.brkA[$0] < 0.05 } ?? m) - ipa) * c.step) }
+            let trailB = Int(Double(rel - ipb) * c.step)
+            let dmin: Double? = aMin.map { c.speedA[$0] - sB[zmin] }
+            var late: Int? = nil
+            if let m = aMin, let pA = (m...max(m, i1)).first(where: { c.thrA[$0] > 0.5 }), let pB = (zmin...i1).first(where: { hB[$0] > 0.5 }) { late = Int(Double(pA - pB) * c.step) }
+            switch phase ?? "" {
+            case "brake":
+                if let d = dd, d < -6 { tip = "tip_brake_later"; args = ["\(-d)"] }
+                else if ja != nil && pa < bB[ipb] - 0.1 { tip = "tip_brake_harder"; args = ["\(Int(pa * 100))", "\(Int(bB[ipb] * 100))"] }
+                else if let d = dd, d > 6 { tip = "tip_brake_earlier"; args = ["\(d)"] }
+                else { tip = "tip_brake_generic" }
+            case "entry":
+                if let ta = trailA, trailB - ta >= 15 { tip = "tip_trail"; args = ["\(ta)", "\(trailB)"] }
+                else if coastA - coastB >= 10 { tip = "tip_coast"; args = ["\(Int(coastA))", "\(Int(coastB))"] }
+                else { tip = "tip_entry_speed" }
+            case "apex":
+                if let dm = dmin, dm < -2 { tip = "tip_apex_speed"; args = ["\(Int(-dm))"] } else { tip = "tip_apex_line" }
+            default:
+                if let l = late, l >= 8 { tip = "tip_throttle"; args = ["\(l)"] }
+                else if coastA - coastB >= 10 { tip = "tip_no_wait" }
+                else { tip = "tip_full_throttle" }
+            }
+        }
+        out.append(Corner(n: idx + 1, atM: Int(Double(zi) * c.step), lost: lost, phases: ph, phase: phase, coastA: coastA, coastB: coastB, tip: tip, args: args))
+    }
+    return out
 }
 
 /// The three stretches of about 250 m where the lap loses the most time against the reference.
