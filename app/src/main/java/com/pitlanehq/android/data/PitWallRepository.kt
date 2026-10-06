@@ -27,7 +27,7 @@ class PitWallRepository {
                     if(!response.isSuccessful) error("PitWall HTTP "+response.code)
                     _connection.value=PitWallConnection(ConnectionState.LIVE,host,port)
                     val reader=response.body?.charStream()?.buffered() ?: error("Empty stream")
-                    var line:String?
+                    var line:String? = null
                     while(isActive && reader.readLine().also{line=it}!=null){
                         val raw=line ?: continue
                         if(raw.startsWith("data:")) parseTelemetry(raw.removePrefix("data:").trim())
