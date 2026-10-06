@@ -21,7 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
@@ -476,9 +476,8 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
     val laps by vm.laps.collectAsState()
     var kind by rememberSaveable { mutableStateOf(RefKind.MY_BEST) }
     val an: LapAnalysis? = a.data
-    // the point you touch on a chart, shared by the three charts, and the chart you touch
+    // the point you touch on a chart, shared by the three charts
     var pick by remember(an) { mutableStateOf<Int?>(null) }
-    var pickIn by remember(an) { mutableStateOf("") }
     Screen(t("lap_analysis") + (an?.let { " · L${it.lap.n}" } ?: ""), x.track + " · " + x.car, back = { nav.popBackStack() }) {
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -507,17 +506,15 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
                 val c = compare(an.trace, an.ref)
                 if (an.ref == null) item { Text(t("no_reference"), color = Muted, fontSize = 12.sp) }
                 val refName = an.refLabel.ifBlank { t("ref") }
-                item { Text(t("hold_hint"), color = Muted, fontSize = 11.sp) }
                 val card: @Composable (Int) -> Unit = { i -> PointCard(c, i, refName, an.lap.sectors, an.refSectors) }
-                fun touch(key: String): (Int) -> Unit = { i -> pick = i; pickIn = key }
                 item {
                     Chart(t("speed") + " (km/h)", listOfNotNull(Series(t("you"), c.speedA, Accent), c.speedB?.let { Series(refName, it, Blue) }), c.step, { "%.0f".format(it) },
-                        sel = pick, onSel = touch("speed"), card = card.takeIf { pickIn == "speed" })
+                        sel = pick, onSel = { pick = it }, card = card)
                 }
                 c.delta?.let { d -> item { Chart(t("delta") + " (s)", listOf(Series(t("delta"), d, Purple)), c.step, { "%+.3f".format(it) }, zero = true,
-                    sel = pick, onSel = touch("delta"), card = card.takeIf { pickIn == "delta" }) } }
+                    sel = pick, onSel = { pick = it }) } }
                 item { Chart(t("inputs"), listOf(Series(t("throttle"), c.thrA, Good), Series(t("brake"), c.brkA, Bad)), c.step, { "%.0f%%".format(it * 100) }, fixedMax = 1.0,
-                    sel = pick, onSel = touch("inputs"), card = card.takeIf { pickIn == "inputs" }) }
+                    sel = pick, onSel = { pick = it }) }
                 if (an.ref != null) {
                     // the coach in four phases (braking, entry, apex, exit), like the web's
                     val cs = corners(c)
@@ -590,7 +587,7 @@ data class Series(val label: String, val values: List<Double>, val color: Color)
 /**
  * A line chart over the lap distance. Tap, or touch and hold and drag, to read the values at
  * that point, like hovering in the web and PC app. The charts of a lap share the point ([sel], a
- * point index); the one you touch shows [card], everything at that point.
+ * point index); the first one shows [card], everything at that point, the others the line and their values.
  */
 @Composable
 private fun Chart(
@@ -615,8 +612,13 @@ private fun ChartBody(
     fun pickAt(x: Float) = onSel(((x / width.coerceAtLeast(1)) * (n - 1)).roundToInt().coerceIn(0, n - 1))
     Column {
         val idx = sel?.coerceIn(0, n - 1)
-        if (idx != null && card != null) card(idx)
-        else Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (card != null) {
+            // its place is kept before you touch, so the chart does not move under your finger
+            if (idx != null) card(idx)
+            else Box(Modifier.fillMaxWidth().padding(bottom = 6.dp).heightIn(min = 108.dp).background(Surface2, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
+                Text(t("hold_hint"), color = Muted, fontSize = 12.sp)
+            }
+        } else Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             // the values under the finger
             if (idx == null) Text(" ", fontSize = 11.sp)
             else {
@@ -630,11 +632,12 @@ private fun ChartBody(
         Canvas(
             Modifier.fillMaxWidth().height(130.dp)
                 .onSizeChanged { width = it.width }
-                .pointerInput(n) { detectTapGestures(onTap = { pickAt(it.x) }) }
+                // at once: the finger down picks the point, sliding sideways follows it (up and down still scrolls)
+                .pointerInput(n) { detectTapGestures(onPress = { pickAt(it.x) }) }
                 .pointerInput(n) {
-                    detectDragGesturesAfterLongPress(
+                    detectHorizontalDragGestures(
                         onDragStart = { pickAt(it.x) },
-                        onDrag = { change, _ -> pickAt(change.position.x); change.consume() }
+                        onHorizontalDrag = { change, _ -> pickAt(change.position.x); change.consume() }
                     )
                 }
         ) {
@@ -677,7 +680,7 @@ private fun PointCard(c: Compared, i: Int, refName: String, sec: List<Double>, r
     val d = c.delta?.getOrNull(i)
     val mono = FontFamily.Monospace
     Column(
-        Modifier.fillMaxWidth().padding(bottom = 6.dp).background(Surface2, RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().padding(bottom = 6.dp).heightIn(min = 108.dp).background(Surface2, RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

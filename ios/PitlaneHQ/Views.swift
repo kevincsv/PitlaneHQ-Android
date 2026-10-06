@@ -618,7 +618,6 @@ struct LapView: View {
     @State private var refTime: Double?
     @State private var refSectors: [Double] = []
     @State private var pick: Double?
-    @State private var pickIn = ""
 
     private func load() async {
         loading = true
@@ -680,17 +679,16 @@ struct LapView: View {
                     let c = compare(trace, ref)
                     if ref == nil { Text(t("no_reference")).font(.caption).foregroundColor(Theme.muted) }
                     let refName = refLabel.isEmpty ? t("ref") : refLabel
-                    Text(t("hold_hint")).font(.caption2).foregroundColor(Theme.muted)
                     let card: (Int) -> AnyView = { i in AnyView(PointCard(c: c, i: i, refName: refName, sec: lap.sectors, refSec: refSectors)) }
                     Chart(title: t("speed") + " (km/h)", series: speedSeries(c, refName), step: c.step, fmt: { String(format: "%.0f", $0) },
-                          pick: $pick, card: pickIn == "speed" ? card : nil, onTouch: { pickIn = "speed" })
+                          pick: $pick, card: card)
                     if let delta = c.delta {
                         Chart(title: t("delta") + " (s)", series: [Series(label: t("delta"), values: delta, color: Theme.purple)], step: c.step, fmt: { String(format: "%+.3f", $0) }, zero: true,
-                              pick: $pick, card: pickIn == "delta" ? card : nil, onTouch: { pickIn = "delta" })
+                              pick: $pick)
                     }
                     Chart(title: t("inputs"), series: [Series(label: t("throttle"), values: c.thrA, color: Theme.good), Series(label: t("brake"), values: c.brkA, color: Theme.bad)],
                           step: c.step, fmt: { String(format: "%.0f%%", $0 * 100) }, fixedMax: 1,
-                          pick: $pick, card: pickIn == "inputs" ? card : nil, onTouch: { pickIn = "inputs" })
+                          pick: $pick)
                     if ref != nil {
                         PhaseCoach(c: c)
                     }
@@ -859,7 +857,7 @@ struct PointCard: View {
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
         .background(Theme.surface2)
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
@@ -867,7 +865,8 @@ struct PointCard: View {
 
 /// A line chart over the lap distance. Tap, or touch and hold and drag, to read the values at
 /// that point, like hovering in the web and PC app. The charts of a lap share the point ([pick],
-/// a fraction of the lap); the one you touch shows [card], everything at that point.
+/// a fraction of the lap); the first one shows [card], everything at that point, the others the line
+/// and their values.
 struct Chart: View {
     let title: String
     let series: [Series]
@@ -877,7 +876,6 @@ struct Chart: View {
     var fixedMax: Double? = nil
     var pick: Binding<Double?>? = nil
     var card: ((Int) -> AnyView)? = nil
-    var onTouch: (() -> Void)? = nil
     @State private var own: Double?
 
     private var count: Int { series.map { $0.values.count }.max() ?? 0 }
@@ -887,7 +885,6 @@ struct Chart: View {
     private func set(_ x: CGFloat, _ width: CGFloat) {
         let f: Double = Double(max(0, min(1, x / max(1, width))))
         if let pick { pick.wrappedValue = f } else { own = f }
-        onTouch?()
     }
 
     private func index(_ width: CGFloat) -> Int? {
@@ -904,7 +901,17 @@ struct Chart: View {
         let span: Double = hi - lo > 1e-9 ? hi - lo : 1
         Panel {
             SectionLabel(text: title.uppercased())
-            if let card, let i = index(1) { card(i) }
+            if let card {
+                // its place is kept before you touch, so the chart does not move under your finger
+                if let i = index(1) {
+                    card(i)
+                } else {
+                    Text(t("hold_hint")).font(.caption).foregroundColor(Theme.muted)
+                        .frame(maxWidth: .infinity, minHeight: 108)
+                        .background(Theme.surface2)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+            }
             GeometryReader { g in
                 let w: Double = Double(g.size.width)
                 let h: Double = Double(g.size.height)
@@ -939,12 +946,14 @@ struct Chart: View {
                         }
                     }
                     .contentShape(Rectangle())
+                    // at once: a tap picks the point, sliding sideways follows it (up and down still scrolls)
                     .onTapGesture { location in set(location.x, g.size.width) }
-                    .gesture(
-                        LongPressGesture(minimumDuration: 0.25)
-                            .sequenced(before: DragGesture(minimumDistance: 0))
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 6)
                             .onChanged { v in
-                                if case let .second(true, drag) = v, let drag { set(drag.location.x, g.size.width) }
+                                let dx: CGFloat = abs(v.translation.width)
+                                let dy: CGFloat = abs(v.translation.height)
+                                if dx > dy { set(v.location.x, g.size.width) }
                             }
                     )
                 }
