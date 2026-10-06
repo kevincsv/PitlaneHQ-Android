@@ -181,7 +181,7 @@ private fun BottomBar(nav: NavHostController) {
     )
     val current = nav.currentBackStackEntryAsState().value?.destination?.route
     val tab = when (current) { "races", "race" -> "home"; "session", "lap" -> "analysis"; "combo" -> "community"; "drinks" -> "settings"; else -> current }
-    NavigationBar(containerColor = Surface, tonalElevation = 0.dp) {
+    NavigationBar(containerColor = Surface, tonalElevation = 0.dp, modifier = Modifier.height(64.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())) {
         dests.forEach { d ->
             NavigationBarItem(
                 tab == d.route,
@@ -201,14 +201,14 @@ private fun BottomBar(nav: NavHostController) {
 private fun Screen(title: String, sub: String = "", back: (() -> Unit)? = null, content: LazyListScope.() -> Unit) {
     LazyColumn(
         Modifier.fillMaxSize().background(Ink),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         item {
-            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (back != null) IconButton(back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Fg) }
                 Column(Modifier.weight(1f)) {
-                    Text(title.uppercase(), color = Fg, fontSize = 22.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(title.uppercase(), color = Fg, fontSize = 20.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     if (sub.isNotBlank()) Text(sub, color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
@@ -985,7 +985,7 @@ private fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScop
     Card(
         modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Surface),
         border = BorderStroke(1.dp, Line), shape = MaterialTheme.shapes.small
-    ) { Column(Modifier.padding(14.dp), content = content) }
+    ) { Column(Modifier.padding(12.dp), content = content) }
 }
 
 @Composable

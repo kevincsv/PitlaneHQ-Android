@@ -6,7 +6,7 @@ struct Panel<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 4) { content }
-            .padding(14)
+            .padding(12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Theme.surface)
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line, lineWidth: 1))
@@ -199,14 +199,14 @@ struct Screen<Content: View>: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(title.uppercased()).font(.system(size: 22, weight: .black)).foregroundColor(Theme.fg).lineLimit(2)
+                        Text(title.uppercased()).font(.system(size: 20, weight: .black)).foregroundColor(Theme.fg).lineLimit(2)
                         if !sub.isEmpty { Text(sub).font(.caption).foregroundColor(Theme.muted).lineLimit(2) }
                     }
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 4)
                     content
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 24)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 20)
             }
         }
         .background(Theme.ink.ignoresSafeArea())
