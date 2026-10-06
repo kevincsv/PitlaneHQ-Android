@@ -1,13 +1,15 @@
 package com.pitlanehq.android.model
 
 import kotlin.math.max
+import kotlin.math.roundToInt
 import kotlin.math.min
 
 /** Two lap traces on the same distance grid (every [step] metres), ready to draw and compare. */
 class Compared(
     val step: Double, val speedA: List<Double>, val speedB: List<Double>?, val thrA: List<Double>, val brkA: List<Double>,
     val delta: List<Double>?, val tA: List<Double>, val tB: List<Double>?,
-    val thrB: List<Double>? = null, val brkB: List<Double>? = null
+    val thrB: List<Double>? = null, val brkB: List<Double>? = null,
+    val gearA: List<Double>? = null, val gearB: List<Double>? = null
 )
 
 /** One place on the lap where time goes, with what is different there. */
@@ -41,7 +43,9 @@ fun compare(a: Trace, b: Trace?, step0: Double = 10.0): Compared {
         tB?.let { tb -> tA.indices.map { tA[it] - tb[it] } },
         tA, tB,
         b?.let { tr -> d.map { at(tr, it, 1) } },
-        b?.let { tr -> d.map { at(tr, it, 2) } }
+        b?.let { tr -> d.map { at(tr, it, 2) } },
+        d.map { a.rows[(it / a.bin).roundToInt().coerceIn(0, a.rows.size - 1)].getOrElse(3) { 0.0 } },
+        b?.let { tr -> d.map { tr.rows[(it / tr.bin).roundToInt().coerceIn(0, tr.rows.size - 1)].getOrElse(3) { 0.0 } } }
     )
 }
 

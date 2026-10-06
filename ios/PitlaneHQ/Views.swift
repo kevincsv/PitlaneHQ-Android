@@ -617,6 +617,8 @@ struct LapView: View {
     @State private var refLabel = ""
     @State private var refTime: Double?
     @State private var refSectors: [Double] = []
+    @State private var pick: Double?
+    @State private var pickIn = ""
 
     private func load() async {
         loading = true
@@ -679,10 +681,16 @@ struct LapView: View {
                     if ref == nil { Text(t("no_reference")).font(.caption).foregroundColor(Theme.muted) }
                     let refName = refLabel.isEmpty ? t("ref") : refLabel
                     Text(t("hold_hint")).font(.caption2).foregroundColor(Theme.muted)
-                    Chart(title: t("speed") + " (km/h)", series: speedSeries(c, refName), step: c.step, fmt: { String(format: "%.0f", $0) })
-                    if let delta = c.delta { Chart(title: t("delta") + " (s)", series: [Series(label: t("delta"), values: delta, color: Theme.purple)], step: c.step, fmt: { String(format: "%+.3f", $0) }, zero: true) }
+                    let card: (Int) -> AnyView = { i in AnyView(PointCard(c: c, i: i, refName: refName, sec: lap.sectors, refSec: refSectors)) }
+                    Chart(title: t("speed") + " (km/h)", series: speedSeries(c, refName), step: c.step, fmt: { String(format: "%.0f", $0) },
+                          pick: $pick, card: pickIn == "speed" ? card : nil, onTouch: { pickIn = "speed" })
+                    if let delta = c.delta {
+                        Chart(title: t("delta") + " (s)", series: [Series(label: t("delta"), values: delta, color: Theme.purple)], step: c.step, fmt: { String(format: "%+.3f", $0) }, zero: true,
+                              pick: $pick, card: pickIn == "delta" ? card : nil, onTouch: { pickIn = "delta" })
+                    }
                     Chart(title: t("inputs"), series: [Series(label: t("throttle"), values: c.thrA, color: Theme.good), Series(label: t("brake"), values: c.brkA, color: Theme.bad)],
-                          step: c.step, fmt: { String(format: "%.0f%%", $0 * 100) }, fixedMax: 1)
+                          step: c.step, fmt: { String(format: "%.0f%%", $0 * 100) }, fixedMax: 1,
+                          pick: $pick, card: pickIn == "inputs" ? card : nil, onTouch: { pickIn = "inputs" })
                     if ref != nil {
                         PhaseCoach(c: c)
                     }
@@ -780,8 +788,86 @@ struct PhaseCoach: View {
     }
 }
 
+/// Everything at one point of the lap, like the box that follows the mouse on the web and the PC:
+/// distance and sector, speed, throttle, brake and gear of both laps, the gap there and the sector
+/// times.
+struct PointCard: View {
+    let c: Compared
+    let i: Int
+    let refName: String
+    let sec: [Double]
+    let refSec: [Double]
+
+    private func at(_ a: [Double]?) -> Double? {
+        guard let a, i < a.count else { return nil }
+        return a[i]
+    }
+
+    private func row(_ name: String, _ color: Color, _ spd: Double?, _ thr: Double?, _ brk: Double?, _ gear: Double?) -> some View {
+        let vals: [String] = [
+            spd.map { String(format: "%.0f", $0) } ?? "–",
+            thr.map { String(format: "%.0f%%", $0 * 100) } ?? "–",
+            brk.map { String(format: "%.0f%%", $0 * 100) } ?? "–",
+            gear.map { String(format: "%.0f", $0) } ?? "–",
+        ]
+        return HStack(spacing: 4) {
+            Text(name).foregroundColor(color).bold().lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+            ForEach(0..<4, id: \.self) { k in
+                Text(vals[k]).frame(maxWidth: .infinity, alignment: .trailing)
+            }
+        }
+        .font(.system(size: 12, design: .monospaced))
+    }
+
+    var body: some View {
+        let n: Int = c.speedA.count
+        let ns: Int = max(1, min(3, sec.count))
+        let s: Int = min(ns, i / max(1, n / ns) + 1)
+        let d: Double? = at(c.delta)
+        let a: Double? = s - 1 < sec.count ? sec[s - 1] : nil
+        let b: Double? = s - 1 < refSec.count ? refSec[s - 1] : nil
+        let heads: [String] = ["km/h", t("throttle"), t("brake"), t("gear")]
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text("\(Int((Double(i) * c.step).rounded())) m · S\(s)").font(.system(size: 13, weight: .black, design: .monospaced))
+                Spacer()
+                if let d {
+                    Text(String(format: "%+.3f s", d)).font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundColor(d <= 0 ? Theme.good : Theme.bad)
+                }
+            }
+            HStack(spacing: 4) {
+                Text(" ").frame(maxWidth: .infinity)
+                ForEach(0..<4, id: \.self) { k in
+                    Text(heads[k]).lineLimit(1).frame(maxWidth: .infinity, alignment: .trailing)
+                }
+            }
+            .font(.system(size: 10)).foregroundColor(Theme.muted)
+            row(t("you"), Theme.accent, at(c.speedA), at(c.thrA), at(c.brkA), at(c.gearA))
+            if c.speedB != nil {
+                row(refName, Theme.blue, at(c.speedB), at(c.thrB), at(c.brkB), at(c.gearB))
+            }
+            if let a {
+                HStack {
+                    Text("S\(s)").foregroundColor(Theme.muted)
+                    Text(String(format: "%.3f", a) + (b.map { " · " + String(format: "%.3f", $0) } ?? ""))
+                    Spacer()
+                    if let b {
+                        Text(String(format: "%+.3f", a - b)).bold().foregroundColor(a <= b ? Theme.good : Theme.bad)
+                    }
+                }
+                .font(.system(size: 12, design: .monospaced))
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface2)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
 /// A line chart over the lap distance. Tap, or touch and hold and drag, to read the values at
-/// that point, like hovering in the web and PC app.
+/// that point, like hovering in the web and PC app. The charts of a lap share the point ([pick],
+/// a fraction of the lap); the one you touch shows [card], everything at that point.
 struct Chart: View {
     let title: String
     let series: [Series]
@@ -789,13 +875,23 @@ struct Chart: View {
     let fmt: (Double) -> String
     var zero = false
     var fixedMax: Double? = nil
-    @State private var sel: CGFloat?
+    var pick: Binding<Double?>? = nil
+    var card: ((Int) -> AnyView)? = nil
+    var onTouch: (() -> Void)? = nil
+    @State private var own: Double?
 
     private var count: Int { series.map { $0.values.count }.max() ?? 0 }
 
+    private var frac: Double? { pick != nil ? pick!.wrappedValue : own }
+
+    private func set(_ x: CGFloat, _ width: CGFloat) {
+        let f: Double = Double(max(0, min(1, x / max(1, width))))
+        if let pick { pick.wrappedValue = f } else { own = f }
+        onTouch?()
+    }
+
     private func index(_ width: CGFloat) -> Int? {
-        guard let sel, count > 1, width > 0 else { return nil }
-        let f: Double = Double(sel / width)
+        guard let f = frac, count > 1 else { return nil }
         return max(0, min(count - 1, Int((f * Double(count - 1)).rounded())))
     }
 
@@ -808,12 +904,13 @@ struct Chart: View {
         let span: Double = hi - lo > 1e-9 ? hi - lo : 1
         Panel {
             SectionLabel(text: title.uppercased())
+            if let card, let i = index(1) { card(i) }
             GeometryReader { g in
                 let w: Double = Double(g.size.width)
                 let h: Double = Double(g.size.height)
                 let idx = index(g.size.width)
                 VStack(alignment: .leading, spacing: 4) {
-                    readout(idx).frame(height: 14)
+                    if card == nil || idx == nil { readout(idx).frame(height: 14) }
                     ZStack(alignment: .topLeading) {
                         if zero {
                             Path { p in
@@ -842,12 +939,12 @@ struct Chart: View {
                         }
                     }
                     .contentShape(Rectangle())
-                    .onTapGesture { location in sel = location.x }
+                    .onTapGesture { location in set(location.x, g.size.width) }
                     .gesture(
                         LongPressGesture(minimumDuration: 0.25)
                             .sequenced(before: DragGesture(minimumDistance: 0))
                             .onChanged { v in
-                                if case let .second(true, drag) = v, let drag { sel = drag.location.x }
+                                if case let .second(true, drag) = v, let drag { set(drag.location.x, g.size.width) }
                             }
                     )
                 }

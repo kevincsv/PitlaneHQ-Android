@@ -6,9 +6,13 @@ when the beta ends. Every version is listed here, newest first, and gets a relea
 
 ## 0.3.2 beta
 
-Same version as PitlaneHQ.exe and the web, where this release fixes the lap charts on scaled
-Windows screens, the demo data switch and adds DRINKS mode to Settings on the PC and the web.
-No changes in the phone apps.
+**New**
+- Lap charts: touching a chart shows everything at that point, like hovering on the web and the
+  PC: distance, sector, the gap there, speed, throttle, brake and gear of both laps, and the
+  sector times. The three charts follow the same point.
+
+Also in this version, on PitlaneHQ.exe and the web: lap charts fixed on scaled Windows screens,
+the demo data switch, and DRINKS mode in Settings on the PC and the web.
 
 ## 0.3.1 beta
 

@@ -170,6 +170,15 @@ struct Compared {
     let tB: [Double]?
     var thrB: [Double]? = nil
     var brkB: [Double]? = nil
+    var gearA: [Double]? = nil
+    var gearB: [Double]? = nil
+}
+
+/// The gear at a distance: the nearest row, not a blend of two gears.
+private func gearAt(_ tr: Trace, _ d: Double) -> Double {
+    if tr.rows.isEmpty || tr.bin <= 0 { return 0 }
+    let i = max(0, min(tr.rows.count - 1, Int((d / tr.bin).rounded())))
+    return tr.rows[i].count > 3 ? tr.rows[i][3] : 0
 }
 
 /// One place on the lap where time goes, with what is different there.
@@ -212,7 +221,9 @@ func compare(_ a: Trace, _ b: Trace?, step step0: Double = 10) -> Compared {
         delta: tB.map { tb in tA.indices.map { tA[$0] - tb[$0] } },
         tA: tA, tB: tB,
         thrB: b.map { tr in d.map { at(tr, $0, 1) } },
-        brkB: b.map { tr in d.map { at(tr, $0, 2) } }
+        brkB: b.map { tr in d.map { at(tr, $0, 2) } },
+        gearA: d.map { gearAt(a, $0) },
+        gearB: b.map { tr in d.map { gearAt(tr, $0) } }
     )
 }
 

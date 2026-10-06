@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -475,6 +476,9 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
     val laps by vm.laps.collectAsState()
     var kind by rememberSaveable { mutableStateOf(RefKind.MY_BEST) }
     val an: LapAnalysis? = a.data
+    // the point you touch on a chart, shared by the three charts, and the chart you touch
+    var pick by remember(an) { mutableStateOf<Int?>(null) }
+    var pickIn by remember(an) { mutableStateOf("") }
     Screen(t("lap_analysis") + (an?.let { " · L${it.lap.n}" } ?: ""), x.track + " · " + x.car, back = { nav.popBackStack() }) {
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -504,11 +508,16 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
                 if (an.ref == null) item { Text(t("no_reference"), color = Muted, fontSize = 12.sp) }
                 val refName = an.refLabel.ifBlank { t("ref") }
                 item { Text(t("hold_hint"), color = Muted, fontSize = 11.sp) }
+                val card: @Composable (Int) -> Unit = { i -> PointCard(c, i, refName, an.lap.sectors, an.refSectors) }
+                fun touch(key: String): (Int) -> Unit = { i -> pick = i; pickIn = key }
                 item {
-                    Chart(t("speed") + " (km/h)", listOfNotNull(Series(t("you"), c.speedA, Accent), c.speedB?.let { Series(refName, it, Blue) }), c.step, { "%.0f".format(it) })
+                    Chart(t("speed") + " (km/h)", listOfNotNull(Series(t("you"), c.speedA, Accent), c.speedB?.let { Series(refName, it, Blue) }), c.step, { "%.0f".format(it) },
+                        sel = pick, onSel = touch("speed"), card = card.takeIf { pickIn == "speed" })
                 }
-                c.delta?.let { d -> item { Chart(t("delta") + " (s)", listOf(Series(t("delta"), d, Purple)), c.step, { "%+.3f".format(it) }, zero = true) } }
-                item { Chart(t("inputs"), listOf(Series(t("throttle"), c.thrA, Good), Series(t("brake"), c.brkA, Bad)), c.step, { "%.0f%%".format(it * 100) }, fixedMax = 1.0) }
+                c.delta?.let { d -> item { Chart(t("delta") + " (s)", listOf(Series(t("delta"), d, Purple)), c.step, { "%+.3f".format(it) }, zero = true,
+                    sel = pick, onSel = touch("delta"), card = card.takeIf { pickIn == "delta" }) } }
+                item { Chart(t("inputs"), listOf(Series(t("throttle"), c.thrA, Good), Series(t("brake"), c.brkA, Bad)), c.step, { "%.0f%%".format(it * 100) }, fixedMax = 1.0,
+                    sel = pick, onSel = touch("inputs"), card = card.takeIf { pickIn == "inputs" }) }
                 if (an.ref != null) {
                     // the coach in four phases (braking, entry, apex, exit), like the web's
                     val cs = corners(c)
@@ -580,30 +589,35 @@ data class Series(val label: String, val values: List<Double>, val color: Color)
 
 /**
  * A line chart over the lap distance. Tap, or touch and hold and drag, to read the values at
- * that point, like hovering in the web and PC app.
+ * that point, like hovering in the web and PC app. The charts of a lap share the point ([sel], a
+ * point index); the one you touch shows [card], everything at that point.
  */
 @Composable
-private fun Chart(title: String, series: List<Series>, step: Double, fmt: (Double) -> String, zero: Boolean = false, fixedMax: Double? = null) {
-    var sel by remember { mutableStateOf<Float?>(null) }
-    var width by remember { mutableIntStateOf(1) }
+private fun Chart(
+    title: String, series: List<Series>, step: Double, fmt: (Double) -> String, zero: Boolean = false, fixedMax: Double? = null,
+    sel: Int? = null, onSel: ((Int) -> Unit)? = null, card: (@Composable (Int) -> Unit)? = null
+) {
+    var own by remember { mutableStateOf<Int?>(null) }
     Panel {
         Section(title.uppercase())
         val all = series.flatMap { it.values }.filter { it.isFinite() }
         val n = series.maxOfOrNull { it.values.size } ?: 0
-        if (all.isNotEmpty() && n >= 2) ChartBody(series, step, fmt, zero, fixedMax, all, n, sel, { width = it }, { sel = it })
+        if (all.isNotEmpty() && n >= 2) ChartBody(series, step, fmt, zero, fixedMax, all, n, if (onSel != null) sel else own, card, onSel ?: { own = it })
     }
 }
 
 @Composable
 private fun ChartBody(
     series: List<Series>, step: Double, fmt: (Double) -> String, zero: Boolean, fixedMax: Double?, all: List<Double>, n: Int,
-    sel: Float?, onWidth: (Int) -> Unit, onSel: (Float) -> Unit
+    sel: Int?, card: (@Composable (Int) -> Unit)?, onSel: (Int) -> Unit
 ) {
     var width by remember { mutableIntStateOf(1) }
+    fun pickAt(x: Float) = onSel(((x / width.coerceAtLeast(1)) * (n - 1)).roundToInt().coerceIn(0, n - 1))
     Column {
-        val idx = sel?.let { ((it / width.coerceAtLeast(1)) * (n - 1)).roundToInt().coerceIn(0, n - 1) }
-        // the values under the finger
-        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        val idx = sel?.coerceIn(0, n - 1)
+        if (idx != null && card != null) card(idx)
+        else Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            // the values under the finger
             if (idx == null) Text(" ", fontSize = 11.sp)
             else {
                 Text("${(idx * step).roundToInt()} m", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
@@ -615,12 +629,12 @@ private fun ChartBody(
         val span = (hi - lo).takeIf { it > 1e-9 } ?: 1.0
         Canvas(
             Modifier.fillMaxWidth().height(130.dp)
-                .onSizeChanged { width = it.width; onWidth(it.width) }
-                .pointerInput(Unit) { detectTapGestures(onTap = { onSel(it.x) }) }
-                .pointerInput(Unit) {
+                .onSizeChanged { width = it.width }
+                .pointerInput(n) { detectTapGestures(onTap = { pickAt(it.x) }) }
+                .pointerInput(n) {
                     detectDragGesturesAfterLongPress(
-                        onDragStart = { onSel(it.x) },
-                        onDrag = { change, _ -> onSel(change.position.x); change.consume() }
+                        onDragStart = { pickAt(it.x) },
+                        onDrag = { change, _ -> pickAt(change.position.x); change.consume() }
                     )
                 }
         ) {
@@ -647,6 +661,53 @@ private fun ChartBody(
             Text("${((n - 1) * step / 1000).let { "%.1f".format(it) }} km", color = Muted, fontSize = 10.sp)
             Text(if (fixedMax == 1.0) "100%" else fmt(hi), color = Muted, fontSize = 10.sp)
         }
+    }
+}
+
+/**
+ * Everything at one point of the lap, like the box that follows the mouse on the web and the PC:
+ * distance and sector, speed, throttle, brake and gear of both laps, the gap there and the sector
+ * times.
+ */
+@Composable
+private fun PointCard(c: Compared, i: Int, refName: String, sec: List<Double>, refSec: List<Double>) {
+    val n = c.speedA.size
+    val ns = sec.size.coerceAtMost(3).coerceAtLeast(1)
+    val s = minOf(ns, i / maxOf(1, n / ns) + 1)
+    val d = c.delta?.getOrNull(i)
+    val mono = FontFamily.Monospace
+    Column(
+        Modifier.fillMaxWidth().padding(bottom = 6.dp).background(Surface2, RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("${(i * c.step).roundToInt()} m · S$s", fontWeight = FontWeight.Black, fontSize = 13.sp, fontFamily = mono, modifier = Modifier.weight(1f))
+            if (d != null) Text("%+.3f s".format(d), color = if (d <= 0) Good else Bad, fontWeight = FontWeight.Bold, fontSize = 13.sp, fontFamily = mono)
+        }
+        Row(Modifier.fillMaxWidth()) {
+            Spacer(Modifier.weight(1.4f))
+            listOf("km/h", t("throttle"), t("brake"), t("gear")).forEach { h ->
+                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { Text(h, color = Muted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            }
+        }
+        PointRow(t("you"), Accent, c.speedA.getOrNull(i), c.thrA.getOrNull(i), c.brkA.getOrNull(i), c.gearA?.getOrNull(i))
+        if (c.speedB != null) PointRow(refName, Blue, c.speedB.getOrNull(i), c.thrB?.getOrNull(i), c.brkB?.getOrNull(i), c.gearB?.getOrNull(i))
+        val a = sec.getOrNull(s - 1)
+        val b = refSec.getOrNull(s - 1)
+        if (a != null) Row(Modifier.fillMaxWidth()) {
+            Text("S$s", color = Muted, fontSize = 12.sp, fontFamily = mono, modifier = Modifier.weight(1.4f))
+            Text("%.3f".format(a) + (b?.let { " · " + "%.3f".format(it) } ?: ""), fontSize = 12.sp, fontFamily = mono, modifier = Modifier.weight(3f))
+            if (b != null) Text("%+.3f".format(a - b), color = if (a <= b) Good else Bad, fontSize = 12.sp, fontFamily = mono, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun PointRow(name: String, color: Color, spd: Double?, thr: Double?, brk: Double?, gear: Double?) {
+    Row(Modifier.fillMaxWidth()) {
+        Box(Modifier.weight(1.4f)) { Text(name, color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        listOf(spd?.let { "%.0f".format(it) }, thr?.let { "%.0f%%".format(it * 100) }, brk?.let { "%.0f%%".format(it * 100) }, gear?.let { "%.0f".format(it) })
+            .forEach { v -> Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { Text(v ?: "–", fontSize = 12.sp, fontFamily = FontFamily.Monospace, maxLines = 1) } }
     }
 }
 
