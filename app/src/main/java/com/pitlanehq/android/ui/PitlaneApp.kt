@@ -66,7 +66,7 @@ private val Blue = Color(0xFF5AA9FF)
 private const val WEB_APP = "$SERVER/app/?companion=1"
 
 /** Support Pitlane HQ (Settings); empty: not shown. */
-private const val PATREON_URL = ""
+private const val PATREON_URL = "https://www.patreon.com/c/PitlaneHQ/membership"
 
 private data class Dest(val route: String, val label: String, val icon: ImageVector)
 

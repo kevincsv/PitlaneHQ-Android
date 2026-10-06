@@ -4,7 +4,7 @@ import Security
 let server = URL(string: "https://pitlanehq.app")!
 let webApp = URL(string: "https://pitlanehq.app/app/?companion=1")!
 /// Support Pitlane HQ (Settings); empty: not shown.
-let patreonURL = ""
+let patreonURL = "https://www.patreon.com/c/PitlaneHQ/membership"
 
 /// Errors the screens show in the user's language: `key` is a key of I18n (or a server message).
 struct AppError: LocalizedError {
