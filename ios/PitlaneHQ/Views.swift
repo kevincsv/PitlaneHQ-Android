@@ -660,18 +660,21 @@ struct Chart: View {
 
     var body: some View {
         let all = series.flatMap { $0.0 }
-        let lo = fixedMax != nil ? 0 : zero ? min(all.min() ?? 0, 0) : (all.min() ?? 0)
-        let hi = fixedMax ?? (zero ? max(all.max() ?? 0, 0) : (all.max() ?? 1))
-        let span = hi - lo > 1e-9 ? hi - lo : 1
+        let mn: Double = all.min() ?? 0
+        let mx: Double = all.max() ?? 1
+        let lo: Double = fixedMax != nil ? 0 : (zero ? min(mn, 0) : mn)
+        let hi: Double = fixedMax ?? (zero ? max(mx, 0) : mx)
+        let span: Double = hi - lo > 1e-9 ? hi - lo : 1
         Panel {
             SectionLabel(text: title.uppercased())
             GeometryReader { g in
                 ZStack {
                     if zero {
                         Path { p in
-                            let y = g.size.height * (1 - (0 - lo) / span)
+                            let h: Double = Double(g.size.height)
+                            let y: Double = h * (1 - (0 - lo) / span)
                             p.move(to: CGPoint(x: 0, y: y))
-                            p.addLine(to: CGPoint(x: g.size.width, y: y))
+                            p.addLine(to: CGPoint(x: Double(g.size.width), y: y))
                         }
                         .stroke(Theme.line, lineWidth: 1)
                     }
@@ -679,8 +682,13 @@ struct Chart: View {
                         Path { p in
                             let v = s.0
                             guard v.count > 1 else { return }
+                            let w: Double = Double(g.size.width)
+                            let h: Double = Double(g.size.height)
+                            let last: Double = Double(v.count - 1)
                             for (i, x) in v.enumerated() {
-                                let pt = CGPoint(x: g.size.width * Double(i) / Double(v.count - 1), y: g.size.height * (1 - (x - lo) / span))
+                                let px: Double = w * Double(i) / last
+                                let py: Double = h * (1 - (x - lo) / span)
+                                let pt = CGPoint(x: px, y: py)
                                 if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
                             }
                         }

@@ -31,46 +31,65 @@ enum Demo {
         }
     }
 
-    private static func stableHash(_ s: String) -> Int { s.unicodeScalars.reduce(7) { ($0 &* 31 &+ Int($1.value)) & 0x7FFF_FFFF } }
+    private static func stableHash(_ s: String) -> Int {
+        var h = 7
+        for u in s.unicodeScalars { h = (h &* 31 &+ Int(u.value)) & 0x7FFF_FFFF }
+        return h
+    }
 
     private static func trace(_ c: C0, _ lapTime: Double, _ seed: Int) -> Trace {
         var r = Seeded(seed)
         let bin = 10.0
         let n = Int(c.len / bin)
-        let corners = (0..<9).map { (Double($0) + 0.5 + Double.random(in: -0.2...0.2, using: &r)) / 9 }
-        let raw: [Double] = (0..<n).map { i in
-            let x = Double(i) / Double(n)
-            var v = 72.0
-            for k in corners { let d = x - k; v -= 38 * exp(-(d * d) / 0.0009) }
-            return max(18, v + sin(x * 2 * .pi * 3) * 3 + Double.random(in: -0.6...0.6, using: &r))
+        var corners: [Double] = []
+        for k in 0..<9 { corners.append((Double(k) + 0.5 + Double.random(in: -0.2...0.2, using: &r)) / 9) }
+        var raw: [Double] = []
+        for i in 0..<n {
+            let x: Double = Double(i) / Double(n)
+            var v: Double = 72
+            for k in corners {
+                let d: Double = x - k
+                v -= 38 * exp(-(d * d) / 0.0009)
+            }
+            let wave: Double = sin(x * 2 * Double.pi * 3) * 3
+            raw.append(max(18, v + wave + Double.random(in: -0.6...0.6, using: &r)))
         }
-        let f = raw.reduce(0) { $0 + bin / $1 } / lapTime
-        var t = 0.0
-        let rows: [[Double]] = (0..<n).map { i in
-            let v = raw[i] * f
+        var sumT: Double = 0
+        for v in raw { sumT += bin / v }
+        let f: Double = sumT / lapTime
+        var t: Double = 0
+        var rows: [[Double]] = []
+        for i in 0..<n {
+            let v: Double = raw[i] * f
             t += bin / v
-            let next = raw[min(n - 1, i + 3)] * f
+            let next: Double = raw[min(n - 1, i + 3)] * f
             let braking = next < v - 1.5
-            let thr = braking ? 0 : min(1, 0.55 + v / 80)
-            let brk = braking ? min(1, (v - next) / 8) : 0
-            return [v, thr, brk, Double(min(6, Int(1 + v / 14))), cos(Double(i) * 0.05) * 0.1, t]
+            let thr: Double = braking ? 0 : min(1, 0.55 + v / 80)
+            let brk: Double = braking ? min(1, (v - next) / 8) : 0
+            let gear = Double(min(6, Int(1 + v / 14)))
+            let steer: Double = cos(Double(i) * 0.05) * 0.1
+            rows.append([v, thr, brk, gear, steer, t])
         }
         return Trace(bin: bin, rows: rows)
     }
 
     private static func sectors(_ lap: Double, _ r: inout Seeded) -> [Double] {
-        let a = [0.31, 0.37, 0.32].map { $0 * lap + Double.random(in: -0.15...0.15, using: &r) }
-        let s = a.reduce(0, +)
+        var a: [Double] = []
+        for share in [0.31, 0.37, 0.32] { a.append(share * lap + Double.random(in: -0.15...0.15, using: &r)) }
+        let s: Double = a.reduce(0, +)
         return a.map { $0 * lap / s }
     }
 
     static func sessions() -> [CloudSession] {
-        combos0.enumerated().flatMap { i, c in
-            [
-                CloudSession(id: "demo:\(i):p", started: now - Double(i * 2 + 1) * dayMs, track: c.track, trackConfig: c.cfg, car: c.car, kind: "Practice", laps: 9, best: c.lap + 0.4 + Double(i) * 0.05),
-                CloudSession(id: "demo:\(i):r", started: now - Double(i * 2) * dayMs - 3_600_000, track: c.track, trackConfig: c.cfg, car: c.car, kind: "Race", laps: 14, best: c.lap + 0.2),
-            ]
-        }.sorted { $0.started > $1.started }
+        var out: [CloudSession] = []
+        for (i, c) in combos0.enumerated() {
+            let practice: Double = now - Double(i * 2 + 1) * dayMs
+            let race: Double = now - Double(i * 2) * dayMs - 3_600_000
+            let pBest: Double = c.lap + 0.4 + Double(i) * 0.05
+            out.append(CloudSession(id: "demo:\(i):p", started: practice, track: c.track, trackConfig: c.cfg, car: c.car, kind: "Practice", laps: 9, best: pBest))
+            out.append(CloudSession(id: "demo:\(i):r", started: race, track: c.track, trackConfig: c.cfg, car: c.car, kind: "Race", laps: 14, best: c.lap + 0.2))
+        }
+        return out.sorted { $0.started > $1.started }
     }
 
     private static func combo(of id: String) -> C0 { combos0[Int(id.split(separator: ":")[1]) ?? 0] }
@@ -78,10 +97,13 @@ enum Demo {
     static func laps(_ sessionId: String) -> [CloudLap] {
         var r = Seeded(stableHash(sessionId))
         guard let s = sessions().first(where: { $0.id == sessionId }), let best = s.best else { return [] }
-        return (1...s.laps).map { n in
-            let time = n == 3 ? best : best + Double.random(in: 0.1...1.6, using: &r) + (n == 1 ? 4 : 0)
-            return CloudLap(id: "\(sessionId):\(n)", n: n, time: time, valid: n != 6, sectors: sectors(time, &r))
+        var out: [CloudLap] = []
+        for n in 1...s.laps {
+            let extra: Double = Double.random(in: 0.1...1.6, using: &r) + (n == 1 ? 4.0 : 0.0)
+            let time: Double = n == 3 ? best : best + extra
+            out.append(CloudLap(id: "\(sessionId):\(n)", n: n, time: time, valid: n != 6, sectors: sectors(time, &r)))
         }
+        return out
     }
 
     static func trace(_ lapId: String) -> Trace? {
@@ -97,65 +119,97 @@ enum Demo {
     }
 
     static func bests() -> [PersonalBest] {
-        combos0.enumerated().map { i, c in
-            PersonalBest(track: c.track, trackConfig: c.cfg, car: c.car, best: c.lap + 0.2, laps: 23, last: now - Double(i * 2) * dayMs, bestLapId: "demo:\(i):r:3", bestSessionId: "demo:\(i):r")
+        var out: [PersonalBest] = []
+        for (i, c) in combos0.enumerated() {
+            let last: Double = now - Double(i * 2) * dayMs
+            out.append(PersonalBest(track: c.track, trackConfig: c.cfg, car: c.car, best: c.lap + 0.2, laps: 23, last: last, bestLapId: "demo:\(i):r:3", bestSessionId: "demo:\(i):r"))
         }
+        return out
     }
 
     static func combos() -> [Combo] {
-        combos0.map { Combo(trackId: $0.trackId, track: $0.track, carId: $0.carId, car: $0.car, laps: 40 + Int($0.carId) % 30, best: $0.lap - 0.7) }
+        var out: [Combo] = []
+        for c in combos0 {
+            out.append(Combo(trackId: c.trackId, track: c.track, carId: c.carId, car: c.car, laps: 40 + Int(c.carId) % 30, best: c.lap - 0.7))
+        }
+        return out
     }
 
     static func board(trackId: Int64, carId: Int64) -> [CommunityLap] {
         guard let i = combos0.firstIndex(where: { $0.trackId == trackId && $0.carId == carId }) else { return [] }
         let c = combos0[i]
         var r = Seeded(i * 31 + 7)
-        return names.enumerated().map { k, n in
-            let time = c.lap - 0.7 + Double(k) * Double.random(in: 0.08...0.35, using: &r)
-            return CommunityLap(id: "comm:\(i):\(k)", alias: n, time: time, created: now - Double(k) * dayMs, hasTrace: true, sectors: sectors(time, &r))
-        }.sorted { $0.time < $1.time }
+        var out: [CommunityLap] = []
+        for (k, n) in names.enumerated() {
+            let step: Double = Double.random(in: 0.08...0.35, using: &r)
+            let time: Double = c.lap - 0.7 + Double(k) * step
+            let created: Double = now - Double(k) * dayMs
+            out.append(CommunityLap(id: "comm:\(i):\(k)", alias: n, time: time, created: created, hasTrace: true, sectors: sectors(time, &r)))
+        }
+        return out.sorted { $0.time < $1.time }
     }
 
     static func reports() -> [SharedReport] {
-        combos0.enumerated().flatMap { i, c in
-            (0..<2).map { k in
-                SharedReport(id: "rep\(i)\(k)", alias: names[(i + k) % names.count], track: c.track, car: c.car, created: now - Double(i + k) * dayMs, finish: 3 + k * 4, field: 18 + i, best: c.lap + 0.3 + Double(k) * 0.2)
+        var out: [SharedReport] = []
+        for (i, c) in combos0.enumerated() {
+            for k in 0..<2 {
+                let created: Double = now - Double(i + k) * dayMs
+                let best: Double = c.lap + 0.3 + Double(k) * 0.2
+                out.append(SharedReport(id: "rep\(i)\(k)", alias: names[(i + k) % names.count], track: c.track, car: c.car, created: created, finish: 3 + k * 4, field: 18 + i, best: best))
             }
         }
+        return out
     }
 
     static func setups() -> [SharedSetup] {
-        combos0.enumerated().map { i, c in
-            SharedSetup(id: "set\(i)", alias: names[i], name: (c.track.split(separator: " ").first.map(String.init) ?? c.track) + " race", car: c.car, track: c.track,
-                        notes: "Stable on entry, a click less rear wing for the long straight.", downloads: 12 + i * 9, created: now - Double(i * 3) * dayMs)
+        var out: [SharedSetup] = []
+        for (i, c) in combos0.enumerated() {
+            let first: String = c.track.split(separator: " ").first.map(String.init) ?? c.track
+            let created: Double = now - Double(i * 3) * dayMs
+            out.append(SharedSetup(id: "set\(i)", alias: names[i], name: first + " race", car: c.car, track: c.track,
+                                   notes: "Stable on entry, a click less rear wing for the long straight.", downloads: 12 + i * 9, created: created))
         }
+        return out
     }
 
     static func races() -> [Race] {
         var ir = 2150
-        return (0..<8).map { k in
+        var out: [Race] = []
+        for k in 0..<8 {
             let c = combos0[k % combos0.count]
             var r = Seeded(k * 101)
-            let field = 16 + Int.random(in: 0..<8, using: &r)
-            let start = 1 + Int.random(in: 0..<field, using: &r)
-            let finish = max(1, min(field, start + Int.random(in: -5..<5, using: &r)))
-            let change = Int(Double(field / 2 - finish) * 6.5) + Int.random(in: -8..<8, using: &r)
-            let inc = Int.random(in: 0..<9, using: &r)
-            let best = c.lap + 0.3 + Double.random(in: 0..<0.8, using: &r)
-            let laps = (1...15).map { n in
-                RaceLap(n: n, time: best + Double.random(in: 0..<1.5, using: &r) + (n == 1 ? 5 : 0), pos: max(1, start + (finish - start) * n / 15), inc: n == 4 ? min(inc, 4) : 0, pit: n == 9)
+            let field: Int = 16 + Int.random(in: 0..<8, using: &r)
+            let start: Int = 1 + Int.random(in: 0..<field, using: &r)
+            let finish: Int = max(1, min(field, start + Int.random(in: -5..<5, using: &r)))
+            let base: Double = Double(field / 2 - finish) * 6.5
+            let change: Int = Int(base) + Int.random(in: -8..<8, using: &r)
+            let inc: Int = Int.random(in: 0..<9, using: &r)
+            let best: Double = c.lap + 0.3 + Double.random(in: 0..<0.8, using: &r)
+            var laps: [RaceLap] = []
+            for n in 1...15 {
+                let extra: Double = Double.random(in: 0..<1.5, using: &r) + (n == 1 ? 5.0 : 0.0)
+                let p: Int = max(1, start + (finish - start) * n / 15)
+                laps.append(RaceLap(n: n, time: best + extra, pos: p, inc: n == 4 ? min(inc, 4) : 0, pit: n == 9))
             }
-            let results = (1...field).map { p in
-                p == finish
-                    ? RaceResult(pos: p, name: "You", ir: ir, best: best, inc: inc, laps: 15)
-                    : RaceResult(pos: p, name: names[(p + k) % names.count], ir: 1500 + Int.random(in: 0..<1600, using: &r), best: best + Double.random(in: -0.8..<1.2, using: &r), inc: Int.random(in: 0..<10, using: &r), laps: 15)
+            var results: [RaceResult] = []
+            for p in 1...field {
+                if p == finish {
+                    results.append(RaceResult(pos: p, name: "You", ir: ir, best: best, inc: inc, laps: 15))
+                } else {
+                    let rIr: Int = 1500 + Int.random(in: 0..<1600, using: &r)
+                    let rBest: Double = best + Double.random(in: -0.8..<1.2, using: &r)
+                    let rInc: Int = Int.random(in: 0..<10, using: &r)
+                    results.append(RaceResult(pos: p, name: names[(p + k) % names.count], ir: rIr, best: rBest, inc: rInc, laps: 15))
+                }
             }
-            let rec = Race(id: "demo-race-\(k)", when: now - Double(k) * dayMs - 7_200_000, track: c.track, car: c.car, official: true, start: start, finish: finish, field: field,
-                           inc: inc, best: best, fieldBest: best - 0.4, avg: best + 0.7, consistency: 0.42, pits: 1, fuelUsed: 38.5, ir: ir, irChange: change,
-                           sof: 1800 + Int.random(in: 0..<900, using: &r), dnf: false, laps: laps, results: results)
+            let when: Double = now - Double(k) * dayMs - 7_200_000
+            let sof: Int = 1800 + Int.random(in: 0..<900, using: &r)
+            out.append(Race(id: "demo-race-\(k)", when: when, track: c.track, car: c.car, official: true, start: start, finish: finish, field: field,
+                            inc: inc, best: best, fieldBest: best - 0.4, avg: best + 0.7, consistency: 0.42, pits: 1, fuelUsed: 38.5, ir: ir, irChange: change,
+                            sof: sof, dnf: false, laps: laps, results: results))
             ir -= change
-            return rec
         }
+        return out
     }
 
     private static let liveTrace = trace(combos0[0], combos0[0].lap, 1)
@@ -164,11 +218,19 @@ enum Demo {
     static func live(_ tick: Int) -> [String: Double] {
         let c = combos0[0]
         let row = liveTrace.rows[tick % liveTrace.rows.count]
-        return [
-            "Speed": row[0], "RPM": 4000 + row[0] * 80, "Gear": row[3], "FuelLevel": 62 - Double(tick) * 0.002,
-            "Lap": Double(4 + tick / liveTrace.rows.count), "LapCurrentLapTime": row[5], "LapLastLapTime": c.lap + 0.31,
-            "LapBestLapTime": c.lap + 0.12, "LapDeltaToBestLap": sin(Double(tick) / 40) * 0.4, "Throttle": row[1],
-            "Brake": row[2], "PlayerCarPosition": 6,
-        ]
+        var m: [String: Double] = [:]
+        m["Speed"] = row[0]
+        m["RPM"] = 4000 + row[0] * 80
+        m["Gear"] = row[3]
+        m["FuelLevel"] = 62 - Double(tick) * 0.002
+        m["Lap"] = Double(4 + tick / liveTrace.rows.count)
+        m["LapCurrentLapTime"] = row[5]
+        m["LapLastLapTime"] = c.lap + 0.31
+        m["LapBestLapTime"] = c.lap + 0.12
+        m["LapDeltaToBestLap"] = sin(Double(tick) / 40) * 0.4
+        m["Throttle"] = row[1]
+        m["Brake"] = row[2]
+        m["PlayerCarPosition"] = 6
+        return m
     }
 }
