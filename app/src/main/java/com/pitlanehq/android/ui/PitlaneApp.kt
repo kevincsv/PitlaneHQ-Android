@@ -129,7 +129,32 @@ private fun Profile(vm:PitlaneViewModel,nav:NavHostController){
  }
 }
 
-@Composable private fun Telemetry(vm:PitlaneViewModel,nav:NavHostController){val t by vm.telemetry.collectAsState();val c by vm.connection.collectAsState();LazyColumn(Modifier.fillMaxSize().background(Ink),contentPadding=PaddingValues(bottom=24.dp)){item{Header("Live Telemetry","Optional PitWall PC view",{nav.popBackStack()})};item{Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Metric("SPEED",t.speedKph?.let{"%.0f km/h".format(it)}?:"—",Modifier.weight(1f));Metric("GEAR",t.gear?.toString()?:"—",Modifier.weight(1f))};Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Metric("RPM",t.rpm?.let{"%.0f".format(it)}?:"—",Modifier.weight(1f));Metric("LAP",t.lap?.toString()?:"—",Modifier.weight(1f))};Status(if(c.state==ConnectionState.LIVE)"LIVE" else "OFFLINE",if(c.state==ConnectionState.LIVE)Good:Muted);Action("CONNECTION CENTER","Connect to your PitWall PC",Icons.Default.Wifi){nav.navigate("connection")};Text("Mobile does not read iRacing shared memory directly. PitWall PC remains the telemetry gateway.",color=Muted,fontSize=12.sp)}}}}
+@Composable
+private fun Telemetry(vm:PitlaneViewModel,nav:NavHostController){
+ val t by vm.telemetry.collectAsState()
+ val c by vm.connection.collectAsState()
+ val live=c.state==ConnectionState.LIVE
+ val status=if(live) "LIVE" else "OFFLINE"
+ val statusColor=if(live) Good else Muted
+ LazyColumn(Modifier.fillMaxSize().background(Ink),contentPadding=PaddingValues(bottom=24.dp)){
+  item{Header("Live Telemetry","Optional PitWall PC view"){nav.popBackStack()}}
+  item{
+   Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
+    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+     Metric("SPEED",t.speedKph?.let{"%.0f km/h".format(it)}?:"—",Modifier.weight(1f))
+     Metric("GEAR",t.gear?.toString()?:"—",Modifier.weight(1f))
+    }
+    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+     Metric("RPM",t.rpm?.let{"%.0f".format(it)}?:"—",Modifier.weight(1f))
+     Metric("LAP",t.lap?.toString()?:"—",Modifier.weight(1f))
+    }
+    Status(status,statusColor)
+    Action("CONNECTION CENTER","Connect to your PitWall PC",Icons.Default.Wifi){nav.navigate("connection")}
+    Text("Mobile does not read iRacing shared memory directly. PitWall PC remains the telemetry gateway.",color=Muted,fontSize=12.sp)
+   }
+  }
+ }
+}
 
 @Composable private fun Connection(vm:PitlaneViewModel,nav:NavHostController){val c by vm.connection.collectAsState();var host by remember{mutableStateOf(c.host)};LazyColumn(Modifier.fillMaxSize().background(Ink),contentPadding=PaddingValues(bottom=24.dp)){item{Header("PitWall PC","Local telemetry connection",{nav.popBackStack()})};item{Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){Status(c.state.name,if(c.state==ConnectionState.LIVE)Good else Muted);OutlinedTextField(host,{host=it},label={Text("PC address")},singleLine=true,modifier=Modifier.fillMaxWidth());Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button({vm.connect(host)},colors=ButtonDefaults.buttonColors(containerColor=Accent,contentColor=Ink)){Text("CONNECT")};OutlinedButton({vm.disconnect()}){Text("DISCONNECT")}};c.message?.let{Text(it,color=Bad,fontSize=12.sp)}}}}}
 
