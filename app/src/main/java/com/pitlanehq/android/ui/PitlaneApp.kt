@@ -72,7 +72,7 @@ fun PitlaneApp(vm:PitlaneViewModel=viewModel()){
         OutlinedTextField(host,{host=it},label={Text("PC address")},singleLine=true,modifier=Modifier.fillMaxWidth())
         Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){
             Button(onClick={vm.connect(host)}){Text("Connect")}
-            OutlinedButton(onClick={vm.disconnect}){Text("Disconnect")}
+            OutlinedButton(onClick={vm.disconnect()}){Text("Disconnect")}
         }
         c.message?.let{Text(it,color=MaterialTheme.colorScheme.error)}
         Text("The app receives telemetry from PitWall PC over the local network. iRacing stays on the PC.",style=MaterialTheme.typography.bodySmall)
