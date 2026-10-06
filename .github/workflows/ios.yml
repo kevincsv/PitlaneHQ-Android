@@ -1,0 +1,46 @@
+name: iOS CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["master"]
+    tags: ["v*"]
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+  pull_request:
+    branches: ["master"]
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+      - name: Build (unsigned)
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild -project PitlaneHQ.xcodeproj -scheme PitlaneHQ -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build 2>&1 | tee build.log | grep -E "error:|warning: .*PitlaneHQ/|\*\* BUILD" || true
+          grep -q "\*\* BUILD SUCCEEDED \*\*" build.log
+      - name: Package unsigned .ipa
+        working-directory: ios
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/PitlaneHQ.app Payload/
+          zip -qry PitlaneHQ-unsigned.ipa Payload
+      - name: Upload 0.1.0 unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: pitlanehq-ios-0.1.0
+          path: ios/PitlaneHQ-unsigned.ipa
+          if-no-files-found: error

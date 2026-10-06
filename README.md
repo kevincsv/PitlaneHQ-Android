@@ -1,34 +1,51 @@
-# Pitlane HQ Android 0.1.0
+# Pitlane HQ for Android and iOS 0.1.0
 
-Native Android companion app for Pitlane HQ / PitWall.
+The phone apps of Pitlane HQ. They connect to the same Pitlane HQ server and the same account as
+the PC app (PitlaneHQ.exe) and the web app (`/app`), which live in their own repository.
 
-## 0.1.0 scope
-- Native Jetpack Compose UI; no WebView.
-- Pitlane HQ account sign-in using the same account as the PC app.
-- Secure Android Keystore storage for the session token and local data key.
-- Pulls the end-to-end encrypted PC sync bundle from the Pitlane HQ account.
-- Home, Analysis, Community and Profile companion areas.
-- Optional live telemetry from the PitWall PC over the local network.
-- Architecture prepared for future iRacing OAuth.
-- No marketplace, prices or purchases.
+| Folder | App | Built with |
+| --- | --- | --- |
+| `app/` | Android | Kotlin, Jetpack Compose (no WebView) |
+| `ios/` | iPhone and iPad | Swift, SwiftUI (no WebView), project generated with XcodeGen |
 
-## Architecture
-The Android app does not connect directly to iRacing shared memory. The PitWall PC remains the telemetry gateway.
+Both apps do the same:
 
-Account flow:
+- **Sign in** with the Pitlane HQ account. The password only derives the keys on the phone
+  (PBKDF2-SHA256, 600 000 rounds, then HKDF): the server gets the login key and returns the
+  data key sealed with AES-256-GCM. The session token and the data key are kept in the
+  Android Keystore or the iOS Keychain.
+- **Home:** account and the PC settings synced into the account (opened on the phone, never
+  readable by the server).
+- **Analysis (My laps):** the sessions and laps PitlaneHQ.exe uploaded, with the best lap and the
+  best sectors in purple.
+- **Community:** every track and car with shared iRacing laps, and the fastest drivers.
+- **Live:** live telemetry from PitlaneHQ.exe through the account's live room on the server,
+  from any network. Messages are sealed with the account's data key; the server only passes
+  them along, and the PC only streams while the Live screen is open.
+- **Profile:** sign out, and the full Pitlane HQ on the web for everything else.
 
-Pitlane HQ account -> PC sync -> Pitlane HQ cloud -> Android companion
+Only real data: nothing is invented in the apps.
 
-Live telemetry flow:
+## Server
 
-PitWall PC -> /api/stream -> Android
+`https://pitlanehq.app`
 
-The account sync payload remains encrypted end-to-end. The server stores the encrypted bundle and the Android app decrypts it only after deriving the account key locally from the user's password.
+| Use | Endpoint |
+| --- | --- |
+| Sign in / out, account | `POST /account/login`, `POST /account/logout`, `GET /account/me` |
+| Synced PC settings | `GET /account/sync` |
+| Your sessions and laps | `GET /api/sessions`, `GET /api/sessions/<id>` |
+| Community | `GET /community/combos?game=iracing`, `GET /community/laps?game=iracing&trackId=&carId=` |
+| Live telemetry | WebSocket `/live?role=view` |
 
-## Build
-GitHub Actions builds:
-- debug APK
-- release APK (app-release-unsigned.apk)
-- release Android App Bundle (app-release.aab)
+## Builds
 
-Version: 0.1.0.
+GitHub Actions (`master`, or by hand from the Actions tab):
+
+- **Android CI:** debug APK, release APK (unsigned) and release AAB.
+- **iOS CI:** unsigned `.ipa` (macOS, Xcode). To install it on an iPhone it has to be signed with
+  an Apple developer account (for example with AltStore or Sideloadly, or later with signing
+  secrets in GitHub).
+
+Build iOS locally on a Mac: `brew install xcodegen`, then `cd ios && xcodegen generate` and open
+`PitlaneHQ.xcodeproj`.
