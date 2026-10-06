@@ -10,6 +10,9 @@ on:
     branches: ["master"]
     paths: ["ios/**", ".github/workflows/ios.yml"]
 
+permissions:
+  contents: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -35,12 +38,21 @@ jobs:
       - name: Package unsigned .ipa
         working-directory: ios
         run: |
-          mkdir -p Payload
+          v=$(grep -oE 'CFBundleShortVersionString: "[^"]+"' project.yml | cut -d'"' -f2)
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+          mkdir -p Payload ../out
           cp -R build/Build/Products/Release-iphoneos/PitlaneHQ.app Payload/
-          zip -qry PitlaneHQ-unsigned.ipa Payload
-      - name: Upload 0.1.0 unsigned IPA
-        uses: actions/upload-artifact@v4
+          zip -qry "../out/PitlaneHQ-iOS-$v-unsigned.ipa" Payload
+      - uses: actions/upload-artifact@v4
         with:
-          name: pitlanehq-ios-0.1.0
-          path: ios/PitlaneHQ-unsigned.ipa
+          name: pitlanehq-ios-${{ env.VERSION }}
+          path: out/*
           if-no-files-found: error
+      - name: Attach to the GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "Pitlane HQ $tag" --notes-file .github/release-notes.md || true
+          gh release upload "$tag" out/* --clobber

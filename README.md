@@ -1,4 +1,4 @@
-# Pitlane HQ for Android and iOS 0.1.0
+# Pitlane HQ for Android and iOS 0.2.0
 
 The phone apps of Pitlane HQ. They connect to the same Pitlane HQ server and the same account as
 the PC app (PitlaneHQ.exe) and the web app (`/app`), which live in their own repository.
@@ -14,17 +14,21 @@ Both apps do the same:
   (PBKDF2-SHA256, 600 000 rounds, then HKDF): the server gets the login key and returns the
   data key sealed with AES-256-GCM. The session token and the data key are kept in the
   Android Keystore or the iOS Keychain.
-- **Home:** account and the PC settings synced into the account (opened on the phone, never
-  readable by the server).
-- **Analysis (My laps):** the sessions and laps PitlaneHQ.exe uploaded, with the best lap and the
-  best sectors in purple.
-- **Community:** every track and car with shared iRacing laps, and the fastest drivers.
+- **Home:** recent races from the account sync (races.json written by PitlaneHQ.exe): finish,
+  iRating change, incidents, SOF, a racing summary and each race with laps and results.
+  Safety rating is in development until iRacing switches its data API back on.
+- **Analysis:** sessions and personal bests; a lap compared with your best lap or the community's
+  fastest (speed, delta and input charts, where the time goes, sector deltas).
+- **Community:** leaderboards with your position, race reports and setups.
 - **Live:** live telemetry from PitlaneHQ.exe through the account's live room on the server,
   from any network. Messages are sealed with the account's data key; the server only passes
   them along, and the PC only streams while the Live screen is open.
-- **Profile:** sign out, and the full Pitlane HQ on the web for everything else.
+- **Settings:** account, devices signed in, language (phone, English, Spanish), demo data, web.
+- **Offline:** a banner, the last data saved on the phone (encrypted) and retry.
 
-Only real data: nothing is invented in the apps.
+Real data by default. Settings → Demo data shows invented data to test the apps: only on the
+phone, never uploaded, with a DEMO banner on every screen.
+
 
 ## Server
 
@@ -34,11 +38,22 @@ Only real data: nothing is invented in the apps.
 | --- | --- |
 | Sign in / out, account | `POST /account/login`, `POST /account/logout`, `GET /account/me` |
 | Synced PC settings | `GET /account/sync` |
-| Your sessions and laps | `GET /api/sessions`, `GET /api/sessions/<id>` |
-| Community | `GET /community/combos?game=iracing`, `GET /community/laps?game=iracing&trackId=&carId=` |
+| Your sessions, laps and bests | `GET /api/sessions`, `GET /api/sessions/<id>`, `GET /api/laps/<id>`, `GET /api/bests` |
+| Devices | `GET /account/sessions`, `POST /account/sessions/revoke` |
+| Community | `GET /community/combos`, `/community/laps`, `/community/laps/<id>`, `/community/reports`, `/community/setups` |
 | Live telemetry | WebSocket `/live?role=view` |
 
-## Builds
+## Builds and releases
+
+A version tag (`git tag v0.2.0 && git push origin v0.2.0`) builds both apps and attaches the
+files to the GitHub release.
+
+Android release key (optional, for updates that install over each other): add the GitHub secrets
+`ANDROID_KEYSTORE_BASE64` (the .jks file in base64), `ANDROID_KEYSTORE_PASSWORD`,
+`ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Without them the APK is signed with the CI
+debug key.
+
+## CI
 
 GitHub Actions (`master`, or by hand from the Actions tab):
 

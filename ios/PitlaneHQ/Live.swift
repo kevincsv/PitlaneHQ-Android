@@ -26,14 +26,31 @@ final class Live: ObservableObject {
 
     func num(_ k: String) -> Double? { values[k] }
 
-    func start(token: String?, key: Data?) {
-        guard loop == nil, let token, let key else { return }
+    func start(token: String?, key: Data?, demo: Bool = false) {
+        guard loop == nil else { return }
+        if demo {
+            // Settings → Demo data: an invented lap, nothing from the server
+            loop = Task { [weak self] in
+                var tick = 0
+                while !Task.isCancelled {
+                    guard let self else { return }
+                    self.link = .open
+                    self.pcOnline = true
+                    self.simConnected = true
+                    self.values = Demo.live(tick)
+                    tick += 1
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
+            }
+            return
+        }
+        guard let token, let key else { return }
         loop = Task { [weak self] in
             var wait: UInt64 = 2
             while !Task.isCancelled {
                 guard let self else { return }
                 let opened = await self.run(token: token, key: key)
-                if Task.isCancelled || self.message?.hasPrefix("Signed out") == true { break }
+                if Task.isCancelled || self.message == "signed_out" { break }
                 if opened { wait = 2 }
                 try? await Task.sleep(nanoseconds: wait * 1_000_000_000)
                 wait = min(wait * 2, 30)
@@ -95,7 +112,7 @@ final class Live: ObservableObject {
                     let code = (ws.response as? HTTPURLResponse)?.statusCode
                     link = .off
                     pcOnline = false
-                    message = code == 401 ? "Signed out: sign in again" : code == 429 ? "Too many screens are watching" : (opened ? "Connection lost" : error.localizedDescription)
+                    message = code == 401 ? "signed_out" : code == 429 ? "too_many" : "conn_lost"
                 }
                 break
             }

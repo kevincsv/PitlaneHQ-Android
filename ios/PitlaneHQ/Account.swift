@@ -4,55 +4,19 @@ import Security
 let server = URL(string: "https://pitlanehq.app")!
 let webApp = URL(string: "https://pitlanehq.app/app/?companion=1")!
 
-struct APIError: LocalizedError {
-    let message: String
-    var signedOut = false
-    var errorDescription: String? { message }
-    static let signedOutError = APIError(message: "Signed out: sign in again", signedOut: true)
+/// Errors the screens show in the user's language: `key` is a key of I18n (or a server message).
+struct AppError: LocalizedError {
+    let key: String
+    var errorDescription: String? { key }
+    static let signedOut = AppError(key: "signed_out")
+    static let offline = AppError(key: "no_internet")
+    static let serverDown = AppError(key: "server_down")
 }
 
-// ---------- the data the server sends ----------
-
-struct CloudSession: Identifiable, Hashable {
-    let id: String
-    let started: Double
-    let track: String
-    let trackConfig: String
-    let car: String
-    let kind: String
-    let laps: Int
-    let best: Double?
-}
-
-struct CloudLap: Identifiable {
-    let id = UUID()
-    let n: Int
-    let time: Double
-    let valid: Bool
-    let sectors: [Double]
-}
-
-struct Combo: Identifiable, Hashable {
-    var id: String { "\(trackId)-\(carId)" }
-    let trackId: Int64
-    let track: String
-    let carId: Int64
-    let car: String
-    let laps: Int
-    let best: Double?
-}
-
-struct CommunityLap: Identifiable {
-    let id = UUID()
-    let alias: String
-    let time: Double
-}
-
-func lapTime(_ s: Double?) -> String {
-    guard let s, s.isFinite, s > 0 else { return "—" }
-    let m = Int(s / 60)
-    let r = s - Double(m) * 60
-    return m > 0 ? String(format: "%d:%06.3f", m, r) : String(format: "%.3f", r)
+/// Data from the server, or the copy saved on this phone when the server cannot be reached (`stale`).
+struct Got<T> {
+    let data: T
+    var stale = false
 }
 
 // ---------- Keychain ----------
@@ -80,20 +44,37 @@ enum Vault {
     }
 }
 
+private func num(_ v: Any?) -> Double? { (v as? NSNumber)?.doubleValue }
+private func int(_ v: Any?) -> Int { (v as? NSNumber)?.intValue ?? 0 }
+private func str(_ v: Any?) -> String { v as? String ?? "" }
+private func pos(_ v: Any?) -> Double? { num(v).flatMap { $0.isFinite && $0 > 0 ? $0 : nil } }
+private func doubles(_ v: Any?) -> [Double] { (v as? [NSNumber] ?? []).map(\.doubleValue) }
+
 /// The Pitlane HQ account, exactly like the PC, the web app and Android: the password only
-/// derives the keys on this phone; the session token and the data key stay in the Keychain.
+/// derives the keys on this phone; the session token and the data key stay in the Keychain,
+/// and the copies saved for offline use are sealed with the data key.
 @MainActor
 final class Account: ObservableObject {
     @Published var signedIn = false
     @Published var email = ""
     @Published var display = ""
+    @Published var verified = true
     @Published var busy = false
     @Published var error: String?
     @Published var syncedFiles = 0
     @Published var syncVersion = 0
     @Published var syncUpdated: Double = 0
+    @Published var races: [Race] = []
+    @Published var demo = UserDefaults.standard.bool(forKey: "demo") {
+        didSet { UserDefaults.standard.set(demo, forKey: "demo"); loadRaces() }
+    }
 
     private let defaults = UserDefaults.standard
+    private let dir: URL = {
+        let d = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("saved", isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }()
 
     init() {
         // a reinstall keeps the Keychain but not the settings: start signed out then
@@ -101,55 +82,95 @@ final class Account: ObservableObject {
         signedIn = Vault.get("token") != nil && Vault.get("dataKey") != nil
         email = defaults.string(forKey: "email") ?? ""
         display = defaults.string(forKey: "display") ?? ""
+        verified = defaults.object(forKey: "verified") as? Bool ?? true
         syncedFiles = defaults.integer(forKey: "syncedFiles")
         syncVersion = defaults.integer(forKey: "syncVersion")
         syncUpdated = defaults.double(forKey: "syncUpdated")
+        loadRaces()
     }
 
     var token: String? { Vault.get("token").flatMap { String(data: $0, encoding: .utf8) } }
     var dataKey: Data? { Vault.get("dataKey") }
 
+    // ---------- saved copies (sealed with the account's data key) ----------
+
+    private func file(_ name: String) -> URL { dir.appendingPathComponent(String(name.map { $0.isLetter || $0.isNumber || "_.-".contains($0) ? $0 : "_" }.prefix(120))) }
+
+    private func save(_ name: String, _ data: Data) {
+        guard let key = dataKey, let s = try? PLCrypto.seal(key: key, plain: data, aad: PLCrypto.accountAAD) else { return }
+        try? Data(s.utf8).write(to: file(name), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+
+    private func saved(_ name: String) -> Data? {
+        guard let key = dataKey, let d = try? Data(contentsOf: file(name)), let s = String(data: d, encoding: .utf8) else { return nil }
+        return try? PLCrypto.open(key: key, sealed: s, aad: PLCrypto.accountAAD)
+    }
+
     private func clear() {
         Vault.set("token", nil)
         Vault.set("dataKey", nil)
-        for k in ["email", "display", "syncedFiles", "syncVersion", "syncUpdated"] { defaults.removeObject(forKey: k) }
+        for k in ["email", "display", "verified", "syncedFiles", "syncVersion", "syncUpdated"] { defaults.removeObject(forKey: k) }
+        try? FileManager.default.removeItem(at: dir)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         signedIn = false
         display = ""
         syncedFiles = 0
         syncVersion = 0
         syncUpdated = 0
+        races = []
     }
 
+    // ---------- server ----------
+
     func call(_ method: String, _ path: String, body: [String: Any]? = nil, auth: Bool = true) async throws -> Data {
-        guard let url = URL(string: server.absoluteString + path) else { throw APIError(message: "Bad address") }
-        var r = URLRequest(url: url, timeoutInterval: 30)
+        guard let url = URL(string: server.absoluteString + path) else { throw AppError.serverDown }
+        var r = URLRequest(url: url, timeoutInterval: 20)
         r.httpMethod = method
         if let body {
             r.httpBody = try JSONSerialization.data(withJSONObject: body)
             r.setValue("application/json", forHTTPHeaderField: "content-type")
         }
         if auth {
-            guard let t = token else { throw APIError.signedOutError }
+            guard let t = token else { throw AppError.signedOut }
             r.setValue("Bearer " + t, forHTTPHeaderField: "authorization")
         }
-        let (data, resp) = try await URLSession.shared.data(for: r)
+        let pair: (Data, URLResponse)
+        do {
+            pair = try await URLSession.shared.data(for: r)
+        } catch {
+            throw AppError.offline
+        }
+        let (data, resp) = pair
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401 && auth {
             clear()
-            error = APIError.signedOutError.message
-            throw APIError.signedOutError
+            error = AppError.signedOut.key
+            throw AppError.signedOut
         }
         guard (200..<300).contains(code) else {
+            if code >= 500 { throw AppError.serverDown }
             let msg = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
-            throw APIError(message: msg ?? "Server error \(code)")
+            throw AppError(key: msg ?? "server_down")
         }
         return data
     }
 
+    /// A GET whose answer is saved, so the screen still has it without a connection.
+    private func cachedGet(_ path: String) async throws -> Got<Any> {
+        do {
+            let d = try await call("GET", path)
+            save(path, d)
+            return Got(data: try JSONSerialization.jsonObject(with: d))
+        } catch let e as AppError where e.key == AppError.offline.key || e.key == AppError.serverDown.key {
+            guard let d = saved(path) else { throw e }
+            return Got(data: try JSONSerialization.jsonObject(with: d), stale: true)
+        }
+    }
+
     func login(email e: String, password: String) async {
         let em = e.trimmingCharacters(in: .whitespaces).lowercased()
-        guard em.range(of: #"^[^@\s]+@[^@\s]+\.[^@\s]+$"#, options: .regularExpression) != nil else { error = "Enter a valid email"; return }
-        guard !password.isEmpty else { error = "Enter your password"; return }
+        guard em.range(of: #"^[^@\s]+@[^@\s]+\.[^@\s]+$"#, options: .regularExpression) != nil else { error = "bad_email"; return }
+        guard !password.isEmpty else { error = "enter_pw"; return }
         busy = true
         error = nil
         defer { busy = false }
@@ -157,23 +178,25 @@ final class Account: ObservableObject {
             let keys = try await Task.detached { try PLCrypto.derive(email: em, password: password) }.value
             let data = try await call("POST", "/account/login", body: ["email": em, "auth": keys.auth, "device": "iPhone"], auth: false)
             guard let j = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let token = j["token"] as? String, let wrapped = j["wrappedKey"] as? String else { throw APIError(message: "Unexpected answer from the server") }
+                  let token = j["token"] as? String, let wrapped = j["wrappedKey"] as? String else { throw AppError.serverDown }
             let key = try PLCrypto.open(key: keys.wrap, sealed: wrapped, aad: PLCrypto.accountAAD)
-            guard key.count == 32 else { throw APIError(message: "The account key is damaged") }
+            guard key.count == 32 else { throw AppError.serverDown }
             Vault.set("token", Data(token.utf8))
             Vault.set("dataKey", key)
             email = em
-            display = j["display"] as? String ?? ""
+            display = str(j["display"])
+            verified = j["verified"] as? Bool ?? true
             defaults.set(em, forKey: "email")
             defaults.set(display, forKey: "display")
+            defaults.set(verified, forKey: "verified")
             signedIn = true
             await sync()
         } catch {
-            self.error = error.localizedDescription
+            self.error = (error as? AppError)?.key ?? error.localizedDescription
         }
     }
 
-    /// Pulls the encrypted settings bundle the PC keeps in the account and opens it here.
+    /// Pulls the encrypted settings bundle the PC keeps in the account and opens it here: your races come from it.
     func sync() async {
         busy = true
         error = nil
@@ -184,20 +207,62 @@ final class Account: ObservableObject {
             var files = 0
             if let blob = j["blob"] as? String, !blob.isEmpty, let key = dataKey {
                 let raw = try PLCrypto.gunzip(PLCrypto.open(key: key, sealed: blob, aad: PLCrypto.accountAAD))
-                files = (try JSONSerialization.jsonObject(with: raw) as? [String: Any])?.count ?? 0
+                let all = try JSONSerialization.jsonObject(with: raw) as? [String: Any] ?? [:]
+                files = all.count
+                // Go writes the files as base64 strings
+                if let b64 = all["races.json"] as? String, let racesData = Data(base64Encoded: b64), let a = try? JSONSerialization.jsonObject(with: racesData) as? [[String: Any]] {
+                    let slim = trimRaces(a)
+                    if let d = try? JSONSerialization.data(withJSONObject: slim) { save("races", d) }
+                }
             }
             syncedFiles = files
-            syncVersion = (j["version"] as? NSNumber)?.intValue ?? 0
-            syncUpdated = (j["updated"] as? NSNumber)?.doubleValue ?? 0
+            syncVersion = int(j["version"])
+            syncUpdated = num(j["updated"]) ?? 0
             defaults.set(syncedFiles, forKey: "syncedFiles")
             defaults.set(syncVersion, forKey: "syncVersion")
             defaults.set(syncUpdated, forKey: "syncUpdated")
-            if let me = try? JSONSerialization.jsonObject(with: await call("GET", "/account/me")) as? [String: Any], let d = me["display"] as? String {
-                display = d
-                defaults.set(d, forKey: "display")
+            if let me = try? JSONSerialization.jsonObject(with: await call("GET", "/account/me")) as? [String: Any] {
+                display = str(me["display"])
+                verified = me["verified"] as? Bool ?? true
+                defaults.set(display, forKey: "display")
+                defaults.set(verified, forKey: "verified")
             }
+            loadRaces()
         } catch {
-            self.error = error.localizedDescription
+            self.error = (error as? AppError)?.key ?? error.localizedDescription
+        }
+    }
+
+    // only what the phone shows, newest first: races.json also has braking points and more
+    private func trimRaces(_ a: [[String: Any]]) -> [[String: Any]] {
+        a.filter { str($0["game"]).isEmpty || str($0["game"]) == "iracing" }
+            .sorted { (num($0["when"]) ?? 0) > (num($1["when"]) ?? 0) }
+            .prefix(60)
+            .map { r0 -> [String: Any] in
+                var r = r0
+                r["brakes"] = nil
+                r["incidents"] = nil
+                r["laps"] = (r["laps"] as? [[String: Any]] ?? []).map { l -> [String: Any] in
+                    ["n": l["n"] ?? 0, "t": l["t"] ?? 0, "p": l["p"] ?? 0, "i": l["i"] ?? 0, "pit": l["pit"] ?? false]
+                }
+                return r
+            }
+    }
+
+    func loadRaces() {
+        if demo { races = Demo.races(); return }
+        guard let d = saved("races"), let a = try? JSONSerialization.jsonObject(with: d) as? [[String: Any]] else { races = []; return }
+        races = a.map { r in
+            Race(
+                id: str(r["id"]), when: num(r["when"]) ?? 0, track: str(r["track"]), car: str(r["car"]), official: r["official"] as? Bool ?? false,
+                start: int(r["start"]), finish: int(r["finish"]), field: int(r["field"]), inc: int(r["inc"]), best: pos(r["best"]),
+                fieldBest: pos(r["fieldBest"]), avg: pos(r["avg"]), consistency: pos(r["consistency"]), pits: int(r["pits"]), fuelUsed: pos(r["fuelUsed"]),
+                ir: int(r["ir"]), irChange: int(r["irChange"]), sof: int(r["sof"]), dnf: r["dnf"] as? Bool ?? false,
+                laps: (r["laps"] as? [[String: Any]] ?? []).map { RaceLap(n: int($0["n"]), time: num($0["t"]) ?? 0, pos: int($0["p"]), inc: int($0["i"]), pit: $0["pit"] as? Bool ?? false) },
+                results: (r["results"] as? [[String: Any]] ?? []).map {
+                    RaceResult(pos: int($0["cpos"]) > 0 ? int($0["cpos"]) : int($0["pos"]), name: str($0["name"]), ir: int($0["ir"]), best: pos($0["best"]), inc: int($0["inc"]), laps: int($0["laps"]))
+                }.sorted { $0.pos < $1.pos }
+            )
         }
     }
 
@@ -207,62 +272,113 @@ final class Account: ObservableObject {
         error = nil
     }
 
-    // ---------- your laps (uploaded by PitlaneHQ.exe) ----------
-
-    func sessions() async throws -> [CloudSession] {
-        let a = try JSONSerialization.jsonObject(with: await call("GET", "/api/sessions?limit=100")) as? [[String: Any]] ?? []
-        return a.compactMap { s in
-            guard let id = s["id"] as? String else { return nil }
-            return CloudSession(
-                id: id, started: (s["started"] as? NSNumber)?.doubleValue ?? 0, track: s["track"] as? String ?? "",
-                trackConfig: s["track_config"] as? String ?? "", car: s["car"] as? String ?? "", kind: s["kind"] as? String ?? "",
-                laps: (s["laps"] as? NSNumber)?.intValue ?? 0, best: (s["best"] as? NSNumber)?.doubleValue
-            )
-        }
+    func devices() async throws -> Got<[Device]> {
+        let j = try JSONSerialization.jsonObject(with: await call("GET", "/account/sessions")) as? [String: Any] ?? [:]
+        return Got(data: (j["sessions"] as? [[String: Any]] ?? []).map { Device(id: str($0["id"]), device: str($0["device"]), lastSeen: num($0["lastSeen"]) ?? 0, current: $0["current"] as? Bool ?? false) })
     }
 
-    // session ids look like acct_<id>:<…>; the ':' stays as it is in the path
-    func laps(_ sessionId: String) async throws -> [CloudLap] {
+    func revoke(_ id: String) async throws {
+        _ = try await call("POST", "/account/sessions/revoke", body: ["id": id])
+    }
+
+    // ---------- your laps (uploaded by PitlaneHQ.exe) ----------
+
+    // session and lap ids look like acct_<id>:<…>; the ':' stays as it is in the path
+    private func idPath(_ id: String) -> String {
         var allowed = CharacterSet.alphanumerics
         allowed.insert(charactersIn: "-._~:")
-        let id = sessionId.addingPercentEncoding(withAllowedCharacters: allowed) ?? sessionId
-        let j = try JSONSerialization.jsonObject(with: await call("GET", "/api/sessions/" + id)) as? [String: Any] ?? [:]
-        return (j["laps"] as? [[String: Any]] ?? []).map { l in
-            CloudLap(
-                n: (l["n"] as? NSNumber)?.intValue ?? 0, time: (l["time"] as? NSNumber)?.doubleValue ?? 0,
-                valid: ((l["valid"] as? NSNumber)?.intValue ?? 1) == 1,
-                sectors: (l["sectors"] as? [NSNumber] ?? []).map(\.doubleValue)
-            )
-        }
+        return id.addingPercentEncoding(withAllowedCharacters: allowed) ?? id
+    }
+
+    func sessions() async throws -> Got<[CloudSession]> {
+        if demo { return Got(data: Demo.sessions()) }
+        let g = try await cachedGet("/api/sessions?limit=100")
+        return Got(data: (g.data as? [[String: Any]] ?? []).compactMap { s in
+            guard let id = s["id"] as? String else { return nil }
+            return CloudSession(id: id, started: num(s["started"]) ?? 0, track: str(s["track"]), trackConfig: str(s["track_config"]), car: str(s["car"]), kind: str(s["kind"]), laps: int(s["laps"]), best: pos(s["best"]))
+        }, stale: g.stale)
+    }
+
+    func laps(_ sessionId: String) async throws -> Got<[CloudLap]> {
+        if demo { return Got(data: Demo.laps(sessionId)) }
+        let g = try await cachedGet("/api/sessions/" + idPath(sessionId))
+        let a = (g.data as? [String: Any])?["laps"] as? [[String: Any]] ?? []
+        return Got(data: a.map { l in
+            CloudLap(id: str(l["id"]), n: int(l["n"]), time: num(l["time"]) ?? 0, valid: ((l["valid"] as? NSNumber)?.intValue ?? 1) == 1, sectors: doubles(l["sectors"]))
+        }, stale: g.stale)
+    }
+
+    private func parseTrace(_ j: Any?) -> Trace? {
+        guard let t = j as? [String: Any], let d = t["d"] as? [[NSNumber]], !d.isEmpty else { return nil }
+        return Trace(bin: num(t["bin"]) ?? 10, rows: d.map { $0.map(\.doubleValue) })
+    }
+
+    func lapTrace(_ lapId: String) async throws -> Trace? {
+        if demo { return Demo.trace(lapId) }
+        return parseTrace((try await cachedGet("/api/laps/" + idPath(lapId)).data as? [String: Any])?["trace"])
+    }
+
+    func bests() async throws -> Got<[PersonalBest]> {
+        if demo { return Got(data: Demo.bests()) }
+        let g = try await cachedGet("/api/bests")
+        return Got(data: (g.data as? [[String: Any]] ?? []).compactMap { b in
+            let game = str(b["game"])
+            guard game.isEmpty || game == "iracing" else { return nil }
+            let lap = str(b["bestLapId"]), ses = str(b["bestSessionId"])
+            return PersonalBest(track: str(b["track"]), trackConfig: str(b["track_config"]), car: str(b["car"]), best: num(b["best"]) ?? 0, laps: int(b["laps"]),
+                                last: num(b["last"]) ?? 0, bestLapId: lap.isEmpty ? nil : lap, bestSessionId: ses.isEmpty ? nil : ses)
+        }.sorted { $0.last > $1.last }, stale: g.stale)
     }
 
     // ---------- community ----------
 
-    func combos() async throws -> [Combo] {
-        let j = try JSONSerialization.jsonObject(with: await call("GET", "/community/combos?game=iracing")) as? [String: Any] ?? [:]
-        return (j["combos"] as? [[String: Any]] ?? []).map { c in
-            Combo(
-                trackId: (c["trackId"] as? NSNumber)?.int64Value ?? 0, track: c["track"] as? String ?? "",
-                carId: (c["carId"] as? NSNumber)?.int64Value ?? 0, car: c["car"] as? String ?? "",
-                laps: (c["laps"] as? NSNumber)?.intValue ?? 0, best: (c["best"] as? NSNumber)?.doubleValue
-            )
-        }
+    func combos() async throws -> Got<[Combo]> {
+        if demo { return Got(data: Demo.combos()) }
+        let g = try await cachedGet("/community/combos?game=iracing")
+        let a = (g.data as? [String: Any])?["combos"] as? [[String: Any]] ?? []
+        return Got(data: a.map { c in
+            Combo(trackId: (c["trackId"] as? NSNumber)?.int64Value ?? 0, track: str(c["track"]), carId: (c["carId"] as? NSNumber)?.int64Value ?? 0, car: str(c["car"]), laps: int(c["laps"]), best: pos(c["best"]))
+        }, stale: g.stale)
     }
 
     /// One line per driver: their best lap.
-    func leaderboard(_ c: Combo) async throws -> [CommunityLap] {
-        let j = try JSONSerialization.jsonObject(with: await call("GET", "/community/laps?game=iracing&trackId=\(c.trackId)&carId=\(c.carId)")) as? [String: Any] ?? [:]
+    func leaderboard(trackId: Int64, carId: Int64) async throws -> Got<[CommunityLap]> {
+        if demo { return Got(data: Demo.board(trackId: trackId, carId: carId)) }
+        let g = try await cachedGet("/community/laps?game=iracing&trackId=\(trackId)&carId=\(carId)")
         var seen = Set<String>()
         var out: [CommunityLap] = []
-        for l in j["laps"] as? [[String: Any]] ?? [] {
-            let alias = l["alias"] as? String ?? "Driver"
-            guard let t = (l["time"] as? NSNumber)?.doubleValue else { continue }
+        for l in (g.data as? [String: Any])?["laps"] as? [[String: Any]] ?? [] {
+            let alias = (l["alias"] as? String) ?? "Driver"
+            guard let t = num(l["time"]) else { continue }
             if alias != "Anonymous" {
                 if seen.contains(alias) { continue }
                 seen.insert(alias)
             }
-            out.append(CommunityLap(alias: alias, time: t))
+            out.append(CommunityLap(id: str(l["id"]), alias: alias, time: t, created: num(l["created"]) ?? 0, hasTrace: (l["hasTrace"] as? Bool) ?? false, sectors: doubles(l["sectors"])))
         }
-        return out.sorted { $0.time < $1.time }
+        return Got(data: out.sorted { $0.time < $1.time }, stale: g.stale)
+    }
+
+    func communityTrace(_ id: String) async throws -> Trace? {
+        if demo { return Demo.trace(id) }
+        return parseTrace((try await cachedGet("/community/laps/" + idPath(id)).data as? [String: Any])?["trace"])
+    }
+
+    func reports() async throws -> Got<[SharedReport]> {
+        if demo { return Got(data: Demo.reports()) }
+        let g = try await cachedGet("/community/reports?game=iracing")
+        let a = (g.data as? [String: Any])?["reports"] as? [[String: Any]] ?? []
+        return Got(data: a.map { r in
+            SharedReport(id: str(r["id"]), alias: str(r["alias"]), track: str(r["track"]), car: str(r["car"]), created: num(r["created"]) ?? 0, finish: int(r["finish"]), field: int(r["field"]), best: pos(r["best"]))
+        }, stale: g.stale)
+    }
+
+    func setups() async throws -> Got<[SharedSetup]> {
+        if demo { return Got(data: Demo.setups()) }
+        let g = try await cachedGet("/community/setups?game=iracing")
+        let a = (g.data as? [String: Any])?["setups"] as? [[String: Any]] ?? []
+        return Got(data: a.map { s in
+            SharedSetup(id: str(s["id"]), alias: str(s["alias"]), name: str(s["name"]), car: str(s["car"]), track: str(s["track"]), notes: str(s["notes"]), downloads: int(s["downloads"]), created: num(s["created"]) ?? 0)
+        }, stale: g.stale)
     }
 }
