@@ -13,14 +13,14 @@ import androidx.navigation.compose.*
 import com.pitlanehq.android.model.PitWallConnection
 import com.pitlanehq.android.viewmodel.PitlaneViewModel
 
-private val destinations=listOf("dashboard" to "Dashboard","sessions" to "Sessions","laps" to "My Laps","telemetry" to "Telemetry")
+private val destinations=listOf("dashboard" to "Dashboard","sessions" to "Sessions","laps" to "My Laps","telemetry" to "Telemetry","connection" to "Connection","settings" to "Settings")
 
 @Composable
 fun PitlaneApp(vm:PitlaneViewModel=viewModel()){
     MaterialTheme(colorScheme=darkColorScheme()){
         val nav=rememberNavController()
         Scaffold(bottomBar={
-            NavigationBar{destinations.forEach{(route,label)->
+            NavigationBar{destinations.take(4).forEach{(route,label)->
                 NavigationBarItem(selected=false,onClick={nav.navigate(route){launchSingleTop=true}},icon={Icon(Icons.Default.Circle,null)},label={Text(label)})
             }}
         }){pad->NavHost(nav,"dashboard",Modifier.padding(pad)){
@@ -28,6 +28,8 @@ fun PitlaneApp(vm:PitlaneViewModel=viewModel()){
             composable("sessions"){SimpleScreen("Sessions","Session history")}
             composable("laps"){SimpleScreen("My Laps","Saved laps and records")}
             composable("telemetry"){TelemetryScreen(vm)}
+            composable("connection"){ConnectionScreen(vm)}
+            composable("settings"){SettingsScreen()}
         }}
     }
 }
@@ -59,6 +61,29 @@ fun PitlaneApp(vm:PitlaneViewModel=viewModel()){
         item{ListItem(headlineContent={Text("Gear")},supportingContent={Text(t.gear?.toString()?:"—")})}
         item{ListItem(headlineContent={Text("Fuel")},supportingContent={Text(t.fuelLitres?.toString()?:"—")})}
         item{ListItem(headlineContent={Text("Lap")},supportingContent={Text(t.lap?.toString()?:"—")})}
+    }
+}
+@Composable private fun ConnectionScreen(vm:PitlaneViewModel){
+    val c by vm.connection.collectAsState()
+    var host by remember{mutableStateOf(c.host)}
+    Column(Modifier.fillMaxSize().padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){
+        Text("Connection Center",style=MaterialTheme.typography.headlineMedium)
+        Text("PitWall PC • "+c.state)
+        OutlinedTextField(host,{host=it},label={Text("PC address")},singleLine=true,modifier=Modifier.fillMaxWidth())
+        Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){
+            Button(onClick={vm.connect(host)}){Text("Connect")}
+            OutlinedButton(onClick={vm.disconnect}){Text("Disconnect")}
+        }
+        c.message?.let{Text(it,color=MaterialTheme.colorScheme.error)}
+        Text("The app receives telemetry from PitWall PC over the local network. iRacing stays on the PC.",style=MaterialTheme.typography.bodySmall)
+    }
+}
+@Composable private fun SettingsScreen(){
+    Column(Modifier.fillMaxSize().padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){
+        Text("Settings",style=MaterialTheme.typography.headlineMedium)
+        ListItem(headlineContent={Text("Pitlane HQ")},supportingContent={Text("Android companion • v0.1.0")})
+        ListItem(headlineContent={Text("Telemetry")},supportingContent={Text("Live stream: 30 Hz target")})
+        ListItem(headlineContent={Text("Security")},supportingContent={Text("iRacing authentication will be added before cloud features")})
     }
 }
 @Composable private fun SimpleScreen(title:String,body:String){Column(Modifier.fillMaxSize().padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){Text(title,style=MaterialTheme.typography.headlineMedium);Text(body)}}
