@@ -10,10 +10,10 @@ on:
   push:
     branches: ["master"]
     tags: ["v*"]
-    paths: ["ios/**", ".github/workflows/ios.yml"]
+    paths: ["ios/**", ".github/workflows/ios.yml", "version.txt", "CHANGELOG.md"]
   pull_request:
     branches: ["master"]
-    paths: ["ios/**", ".github/workflows/ios.yml"]
+    paths: ["ios/**", ".github/workflows/ios.yml", "version.txt", "CHANGELOG.md"]
 
 permissions:
   contents: write
@@ -38,12 +38,12 @@ jobs:
           set -o pipefail
           xcodebuild -project PitlaneHQ.xcodeproj -scheme PitlaneHQ -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build 2>&1 | tee build.log | grep -E "error:|warning: .*PitlaneHQ/|\*\* BUILD" || true
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" MARKETING_VERSION="$(cat ../version.txt)" build 2>&1 | tee build.log | grep -E "error:|warning: .*PitlaneHQ/|\*\* BUILD" || true
           grep -q "\*\* BUILD SUCCEEDED \*\*" build.log
       - name: Package unsigned .ipa
         working-directory: ios
         run: |
-          v=$(grep -oE 'CFBundleShortVersionString: "[^"]+"' project.yml | cut -d'"' -f2)
+          v="$(cat ../version.txt)-beta"
           echo "VERSION=$v" >> "$GITHUB_ENV"
           mkdir -p Payload ../out
           cp -R build/Build/Products/Release-iphoneos/PitlaneHQ.app Payload/
@@ -58,6 +58,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="v${VERSION}"
-          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --target "$GITHUB_SHA" --title "Pitlane HQ $tag" --notes-file .github/release-notes.md || true
+          v=$(cat version.txt)
+          tag="v$v-beta"
+          # the release notes are this version's part of CHANGELOG.md
+          awk -v v="$v" '$0 ~ "^## "v"( |$)" {on=1; next} on && /^## / {exit} on {print}' CHANGELOG.md > notes.md
+          cat .github/release-notes.md >> notes.md
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --target "$GITHUB_SHA" --title "Pitlane HQ $v beta" --notes-file notes.md --prerelease || true
           gh release upload "$tag" out/* --clobber

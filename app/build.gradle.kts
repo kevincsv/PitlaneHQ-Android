@@ -11,8 +11,9 @@ android {
         applicationId="com.pitlanehq.android"
         minSdk=26
         targetSdk=36
-        versionCode=3
-        versionName="0.2.1"
+        // one version for Pitlane HQ (PC, web, phones): version.txt; "beta" until 1.0.0
+        versionCode=4
+        versionName=rootProject.file("version.txt").readText().trim() + "-beta"
     }
     // release signing from GitHub secrets (never in the repository); without them CI signs with its debug key
     val ks = System.getenv("ANDROID_KEYSTORE_FILE")

@@ -53,7 +53,7 @@ jobs:
         run: gradle :app:assembleRelease :app:bundleRelease --stacktrace
       - name: Name the files
         run: |
-          v=$(grep -oP 'versionName="\K[^"]+' app/build.gradle.kts)
+          v="$(cat version.txt)-beta"
           echo "VERSION=$v" >> "$GITHUB_ENV"
           mkdir -p out
           cp app/build/outputs/apk/release/app-release.apk "out/PitlaneHQ-Android-$v.apk"
@@ -68,6 +68,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="v${VERSION}"
-          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --target "$GITHUB_SHA" --title "Pitlane HQ $tag" --notes-file .github/release-notes.md || true
+          v=$(cat version.txt)
+          tag="v$v-beta"
+          # the release notes are this version's part of CHANGELOG.md
+          awk -v v="$v" '$0 ~ "^## "v"( |$)" {on=1; next} on && /^## / {exit} on {print}' CHANGELOG.md > notes.md
+          cat .github/release-notes.md >> notes.md
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --target "$GITHUB_SHA" --title "Pitlane HQ $v beta" --notes-file notes.md --prerelease || true
           gh release upload "$tag" out/* --clobber

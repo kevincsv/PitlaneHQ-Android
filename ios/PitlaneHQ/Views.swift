@@ -1126,7 +1126,7 @@ struct SettingsView: View {
     @EnvironmentObject var i18n: I18n
     @StateObject private var devices = Loader<[Device]>()
 
-    private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "" }
+    private var version: String { (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") + " beta" }
 
     var body: some View {
         Screen(title: t("settings")) {

@@ -895,7 +895,7 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
                 colors = ButtonDefaults.buttonColors(containerColor = Surface2, contentColor = Bad)
             ) { Text(t("sign_out").uppercase(), fontWeight = FontWeight.Bold) }
         }
-        item { Text(t("version", BuildConfig.VERSION_NAME), color = Muted, fontSize = 11.sp, modifier = Modifier.fillMaxWidth()) }
+        item { Text(t("version", BuildConfig.VERSION_NAME.replace("-", " ")), color = Muted, fontSize = 11.sp, modifier = Modifier.fillMaxWidth()) }
     }
 }
 
