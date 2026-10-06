@@ -45,8 +45,8 @@ phone, never uploaded, with a DEMO banner on every screen.
 
 ## Builds and releases
 
-A version tag (`git tag v0.2.0 && git push origin v0.2.0`) builds both apps and attaches the
-files to the GitHub release.
+To publish a release: Actions → Android CI and iOS CI → Run workflow with **release** ticked (or push a
+`v0.2.0` tag). Each build attaches its files to the GitHub release `v<version>`.
 
 Android release key (optional, for updates that install over each other): add the GitHub secrets
 `ANDROID_KEYSTORE_BASE64` (the .jks file in base64), `ANDROID_KEYSTORE_PASSWORD`,
