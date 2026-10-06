@@ -4,6 +4,12 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
+## 0.3.6 beta (not built yet)
+
+**Changed**
+- Community leaderboard: laps whose telemetry was not shared say so.
+- Setups are switched off for now.
+
 ## 0.3.5 beta
 
 Same version as PitlaneHQ.exe and the web. This release lets the PC analyse the sessions in your
