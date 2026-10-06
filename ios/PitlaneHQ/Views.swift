@@ -1037,8 +1037,7 @@ struct CommunityView: View {
     var body: some View {
         Screen(title: t("community"), sub: t("shared_by")) {
             WebNote(text: t("community_web"))
-            // setups are switched off for now
-            Tabs(labels: [t("leaderboards"), t("reports")], selected: $tab)
+            // setups and shared race analyses are switched off for now: only the leaderboards
             TextField(t("search"), text: $q).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
             switch tab {
             case 0:

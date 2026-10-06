@@ -742,10 +742,10 @@ private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
         }
     }
     fun match(vararg s: String) = q.isBlank() || s.any { it.contains(q, true) }
+    LaunchedEffect(Unit) { tab = 0 }
     Screen(t("community"), t("shared_by")) {
         item { WebNote(t("community_web")) }
-        // setups are switched off for now
-        item { Tabs(listOf(t("leaderboards"), t("reports")), tab) { tab = it } }
+        // setups and shared race analyses are switched off for now: only the leaderboards
         item { OutlinedTextField(q, { q = it }, label = { Text(t("search")) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
         when (tab) {
             0 -> {
