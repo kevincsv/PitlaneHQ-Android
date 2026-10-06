@@ -15,7 +15,7 @@ targets:
       properties:
         CFBundleDisplayName: Pitlane HQ
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
-        CFBundleVersion: "11"
+        CFBundleVersion: "12"
         UILaunchScreen: {}
         UIUserInterfaceStyle: Dark
         UISupportedInterfaceOrientations:
