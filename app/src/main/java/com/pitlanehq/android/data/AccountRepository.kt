@@ -408,11 +408,14 @@ class AccountRepository(context: Context) {
 
     // the admin profile: accounts, and shared items with who really uploaded them
     fun adminList(kind: String): List<JSONObject> {
+        if (kind == "status") return listOf(adminStatus())
         val j = JSONObject(call("GET", "/community/admin/$kind"))
         val a = j.optJSONArray(if (kind == "users") "users" else "items") ?: return emptyList()
         return (0 until a.length()).map { a.getJSONObject(it) }
     }
     fun adminDelete(kind: String, id: String) { call("DELETE", "/community/admin/$kind/" + idPath(id)) }
+    fun adminDeleteUser(id: String) { call("DELETE", "/community/admin/users/" + idPath(id)) }
+    fun adminStatus(): JSONObject = JSONObject(call("GET", "/community/admin/status"))
     // a DRINKS driver name: taken by someone else on the platform? (your own names never clash)
     fun nameFree(name: String): Boolean = runCatching { JSONObject(call("POST", "/community/name-check", JSONObject().put("name", name))).optBoolean("free", true) }.getOrDefault(true)
 

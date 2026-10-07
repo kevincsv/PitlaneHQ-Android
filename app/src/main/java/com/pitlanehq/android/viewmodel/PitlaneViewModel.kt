@@ -264,6 +264,9 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
             admin.value = runCatching { AdminState(kind, repo.adminList(kind)) }.getOrElse { AdminState(kind, error = it.message ?: "server_down") }
         }
     }
+    fun adminDeleteUser(id: String) {
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminDeleteUser(id) }; loadAdmin("users") }
+    }
     fun adminDelete(kind: String, id: String) {
         viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminDelete(kind, id) }; loadAdmin("uploads") }
     }

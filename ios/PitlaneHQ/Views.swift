@@ -1786,11 +1786,12 @@ struct AdminView: View {
     @State private var kind = "uploads"
     @State private var rows: [[String: Any]]?
     @State private var error: String?
+    @State private var confirmDelete: (String, String)?
 
     var body: some View {
         Screen(title: t("admin_profile"), sub: t("admin_profile_sub")) {
             HStack(spacing: 8) {
-                ForEach([("uploads", t("admin_shared")), ("users", t("admin_accounts"))], id: \.0) { p in
+                ForEach([("uploads", t("admin_shared")), ("users", t("admin_accounts")), ("status", t("admin_server"))], id: \.0) { p in
                     let k = p.0
                     Button { kind = k; Task { await load() } } label: {
                         Text(p.1).font(.subheadline).padding(.horizontal, 12).padding(.vertical, 6)
@@ -1808,15 +1809,36 @@ struct AdminView: View {
             }
         }
         .task { await load() }
+        .alert(t("admin_delete_ask", confirmDelete?.1 ?? ""), isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } })) {
+            Button(t("delete"), role: .destructive) {
+                let id = confirmDelete?.0 ?? ""
+                Task { try? await account.adminDeleteUser(id); await load() }
+            }
+            Button(t("cancel"), role: .cancel) {}
+        }
     }
 
     @ViewBuilder private func row(_ x: [String: Any]) -> some View {
         let str = { (k: String) in x[k] as? String ?? "" }
         let int = { (k: String) in x[k] as? Int ?? 0 }
         Panel {
-            if kind == "users" {
+            if kind == "status" {
+                let m = x["mail"] as? [String: Any] ?? [:], c = x["counts"] as? [String: Any] ?? [:]
+                let ready = m["ready"] as? Bool ?? false
+                let n = { (k: String) in "\(c[k] as? Int ?? 0)" }
+                Text(t("admin_mail") + ": " + (ready ? t("admin_mail_ok") + " (" + (m["via"] as? String ?? "") + ")" : t("admin_mail_off"))).font(.subheadline.bold()).foregroundColor(ready ? Theme.good : Theme.bad)
+                Text(m["from"] as? String ?? "").font(.caption).foregroundColor(Theme.muted)
+                if let e = m["lastError"] as? [String: Any] {
+                    Text(t("admin_mail_err") + ": " + ["message", "reply", "status", "body"].compactMap { e[$0].map { "\($0)" } }.filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.bad)
+                }
+                Text(t("admin_counts", n("accounts"), n("verified"), n("sessions"), n("shared"))).font(.caption).foregroundColor(Theme.fg)
+                Text(t("admin_model", n("learnt"), n("models"))).font(.caption).foregroundColor(Theme.muted)
+            } else if kind == "users" {
                 Text(str("display") + ((x["admin"] as? Bool ?? false) ? " · Admin" : "")).font(.subheadline.bold()).foregroundColor(Theme.fg)
                 Text(t("admin_user_line", "\(int("sessions"))", "\(int("laps"))", "\(int("guests"))")).font(.caption).foregroundColor(Theme.muted)
+                if !(x["admin"] as? Bool ?? false) {
+                    Button(t("admin_delete_account")) { confirmDelete = (str("id"), str("display")) }.foregroundColor(Theme.bad).font(.caption.bold())
+                }
             } else {
                 Text(str("track") + " · " + str("car")).font(.subheadline.bold()).foregroundColor(Theme.fg)
                 Text((str("kind") == "laps" ? t("lap") : t("race")) + " · " + lapTime(x["time"] as? Double)).font(.caption).foregroundColor(Theme.muted)

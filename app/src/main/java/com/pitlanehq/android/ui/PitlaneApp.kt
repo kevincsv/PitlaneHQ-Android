@@ -1240,7 +1240,7 @@ private fun AdminScreen(vm: PitlaneViewModel, nav: NavHostController) {
     Screen(t("admin_profile"), t("admin_profile_sub"), back = { nav.popBackStack() }) {
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("uploads" to t("admin_shared"), "users" to t("admin_accounts")).forEach { (k, l) ->
+                listOf("uploads" to t("admin_shared"), "users" to t("admin_accounts"), "status" to t("admin_server")).forEach { (k, l) ->
                     FilterChip(st.kind == k, { vm.loadAdmin(k) }, label = { Text(l) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Accent, selectedLabelColor = Ink))
                 }
             }
@@ -1250,12 +1250,38 @@ private fun AdminScreen(vm: PitlaneViewModel, nav: NavHostController) {
             st.error != null -> item { Empty(t(st.error!!)) }
             list == null -> item { Empty(t("loading")) }
             list.isEmpty() -> item { Empty(t("admin_nothing")) }
+            st.kind == "status" -> item {
+                val x = list.first()
+                val m = x.optJSONObject("mail") ?: org.json.JSONObject()
+                val c = x.optJSONObject("counts") ?: org.json.JSONObject()
+                val e = m.optJSONObject("lastError")
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Panel {
+                    Text(t("admin_mail") + ": " + if (m.optBoolean("ready")) t("admin_mail_ok") + " (" + m.optString("via") + ")" else t("admin_mail_off"), fontWeight = FontWeight.Bold, color = if (m.optBoolean("ready")) Good else Bad)
+                    Text(m.optString("from"), color = Muted, fontSize = 12.sp)
+                    Text(t("admin_mail_last", dayTime(m.optLong("lastOk"))), color = Muted, fontSize = 12.sp)
+                    if (e != null) Text(t("admin_mail_err") + ": " + listOf("message", "reply", "status", "body").map { e.optString(it) }.filter { it.isNotBlank() }.joinToString(" · "), color = Bad, fontSize = 12.sp)
+                }
+                Panel {
+                    Text(t("admin_counts", c.optInt("accounts"), c.optInt("verified"), c.optInt("sessions"), c.optInt("shared")), fontSize = 12.sp)
+                    Text(t("admin_model", c.optInt("learnt"), c.optInt("models")), color = Muted, fontSize = 12.sp)
+                }
+                }
+            }
             st.kind == "users" -> items(list.size) { i ->
                 val u = list[i]
+                var ask by remember { mutableStateOf(false) }
                 Panel {
                     Text(u.optString("display", "–") + if (u.optBoolean("admin")) " · Admin" else "", fontWeight = FontWeight.Bold)
                     Text(t("admin_user_line", u.optInt("sessions"), u.optInt("laps"), u.optInt("guests")), color = Muted, fontSize = 12.sp)
+                    if (!u.optBoolean("admin")) TextButton({ ask = true }) { Text(t("admin_delete_account"), color = Bad) }
                 }
+                if (ask) AlertDialog(
+                    onDismissRequest = { ask = false },
+                    text = { Text(t("admin_delete_ask", u.optString("display"))) },
+                    confirmButton = { TextButton({ ask = false; vm.adminDeleteUser(u.optString("id")) }) { Text(t("delete"), color = Bad) } },
+                    dismissButton = { TextButton({ ask = false }) { Text(t("cancel"), color = Muted) } }
+                )
             }
             else -> items(list.size) { i ->
                 val x = list[i]

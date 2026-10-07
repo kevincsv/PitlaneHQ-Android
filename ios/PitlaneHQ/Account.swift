@@ -489,8 +489,13 @@ final class Account: ObservableObject {
 
     // the admin profile: accounts, and shared items with who really uploaded them
     func adminList(_ kind: String) async throws -> [[String: Any]] {
+        if kind == "status" { return [try await adminStatus()] }
         let j = try JSONSerialization.jsonObject(with: await call("GET", "/community/admin/" + kind)) as? [String: Any]
         return j?[kind == "users" ? "users" : "items"] as? [[String: Any]] ?? []
+    }
+    func adminDeleteUser(_ id: String) async throws { _ = try await call("DELETE", "/community/admin/users/" + idPath(id)) }
+    func adminStatus() async throws -> [String: Any] {
+        (try JSONSerialization.jsonObject(with: await call("GET", "/community/admin/status")) as? [String: Any]) ?? [:]
     }
     func adminDelete(_ kind: String, _ id: String) async throws { _ = try await call("DELETE", "/community/admin/\(kind)/" + idPath(id)) }
     // a DRINKS driver name: taken by someone else on the platform? (your own names never clash)
