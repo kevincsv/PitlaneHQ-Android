@@ -4,6 +4,12 @@ TrackIQ (formerly Pitlane HQ) is in **beta**. The phone apps share their version
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
+## 0.5.2 beta
+
+**Changed**
+- The incidents near the point you touch on the map are named as the game does: Off track 1x,
+  Loss of control or slight contact 2x, Car contact 4x. Same version as TrackIQ.exe and the web.
+
 ## 0.5.1 beta
 
 **New**

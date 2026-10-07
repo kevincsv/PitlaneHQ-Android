@@ -837,7 +837,7 @@ struct TrackMapView: View {
             if showInc, let s = selected {
                 let d: Double = Double(s) * c.step
                 ForEach(Array(incidents.filter { abs($0.d - d) < 60 }.enumerated()), id: \.offset) { _, e in
-                    Text("⚠ " + t("inc_at", e.pts)).font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.bad)
+                    Text("⚠ " + incName(e.pts) + " \(e.pts)x").font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.bad)
                 }
             }
         }
@@ -858,6 +858,9 @@ struct TrackMapView: View {
     }
 
     private var incidents: [(d: Double, pts: Int)] { trace.incidents }
+
+    /// An incident as the game names it, from its points: 1x off track, 2x loss of control (or a slight contact), 4x car contact.
+    private func incName(_ pts: Int) -> String { t(pts >= 4 ? "inc_contact" : pts == 2 ? "inc_loss" : "inc_off") }
 
     private func cross(_ q: CGPoint) -> Path {
         var p = Path()

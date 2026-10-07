@@ -685,6 +685,9 @@ private fun ChartBody(
     }
 }
 
+/** An incident as the game names it, from its points: 1x off track, 2x loss of control (or a slight contact), 4x car contact. */
+private fun incName(pts: Int) = t(when { pts >= 4 -> "inc_contact"; pts == 2 -> "inc_loss"; else -> "inc_off" })
+
 /**
  * The track, drawn from where the car was on this lap (TrackIQ records it), coloured where you gain
  * (green) or lose (red) time against the reference, like the map in the web and the PC app. Touch
@@ -761,7 +764,7 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, onSel: (Int) -> Unit) {
         }
         if (sel != null && showInc) {
             val d = sel * c.step
-            incs.filter { kotlin.math.abs(it.first - d) < 60 }.forEach { (_, pts) -> Text("⚠ " + t("inc_at", pts), color = Bad, fontSize = 11.sp, fontFamily = FontFamily.Monospace) }
+            incs.filter { kotlin.math.abs(it.first - d) < 60 }.forEach { (_, pts) -> Text("⚠ " + incName(pts) + " ${pts}x", color = Bad, fontSize = 11.sp, fontFamily = FontFamily.Monospace) }
         }
         val d = c.delta
         Text(
