@@ -7,7 +7,7 @@ let webApp = URL(string: "https://pitlanehq.app/")!
 let patreonURL = "https://www.patreon.com/c/PitlaneHQ/membership"
 let supportEmail = "support@pitlanehq.app"
 let feedbackURL = URL(string: "mailto:support@pitlanehq.app?subject=Pitlane%20HQ%20feedback")!
-let changelogURL = "https://github.com/kevincsv/PitlaneHQ-Android/blob/master/CHANGELOG.md"
+let changelogURL = "https://pitlanehq.app/changelog/phones"
 
 /// Errors the screens show in the user's language: `key` is a key of I18n (or a server message).
 struct AppError: LocalizedError {

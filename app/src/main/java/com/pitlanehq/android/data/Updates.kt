@@ -12,11 +12,11 @@ data class AppUpdate(val version: String, val url: String)
 data class AppNews(val id: String, val date: String, val title: String, val text: String, val url: String?, val view: String?)
 
 /**
- * Looks at the newest release of the phone apps on GitHub (the same one the web's download
- * buttons point to) and says whether it is newer than this app.
+ * Looks at the newest build of the phone apps on the server (pitlanehq.app/dl/phones.json, the
+ * same one the downloads page points to) and says whether it is newer than this app.
  */
 object Updates {
-    private const val API = "https://api.github.com/repos/kevincsv/PitlaneHQ-Android/releases/latest"
+    private const val API = "https://pitlanehq.app/dl/phones.json"
     private val client = OkHttpClient.Builder().callTimeout(15, TimeUnit.SECONDS).build()
 
     private fun parts(v: String) = v.trim().removePrefix("v").substringBefore("-").split(".").map { it.toIntOrNull() ?: 0 }
@@ -49,19 +49,14 @@ object Updates {
     }.getOrDefault(emptyList())
 
     fun check(current: String): AppUpdate? = runCatching {
-        val req = Request.Builder().url(API).header("Accept", "application/vnd.github+json").build()
+        val req = Request.Builder().url(API).build()
         client.newCall(req).execute().use { r ->
             if (!r.isSuccessful) return null
             val j = JSONObject(r.body.string())
-            val tag = j.optString("tag_name")
-            if (tag.isEmpty() || !newer(tag, current)) return null
-            val assets = j.optJSONArray("assets")
-            var url = j.optString("html_url")
-            if (assets != null) for (i in 0 until assets.length()) {
-                val a = assets.getJSONObject(i)
-                if (a.optString("name") == "PitlaneHQ-Android.apk") url = a.optString("browser_download_url", url)
-            }
-            AppUpdate(tag.removePrefix("v").substringBefore("-"), url)
+            val v = j.optString("version")
+            if (v.isEmpty() || !newer(v, current)) return null
+            val apk = j.optString("apk")
+            AppUpdate(v, if (apk.isNotEmpty()) "https://pitlanehq.app/dl/$apk" else "https://pitlanehq.app/downloads")
         }
     }.getOrNull()
 }

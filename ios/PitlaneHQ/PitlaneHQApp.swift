@@ -48,11 +48,11 @@ final class NetMonitor: ObservableObject {
     }
 }
 
-/// A newer Pitlane HQ for this phone on GitHub (the same release the web's download buttons point to).
+/// A newer Pitlane HQ for this phone on the server (the same build the downloads page points to).
 @MainActor
 final class Updates: ObservableObject {
     @Published var version: String?
-    let page = URL(string: "https://github.com/kevincsv/PitlaneHQ-Android/releases/latest")!
+    let page = URL(string: "https://pitlanehq.app/downloads")!
 
     private static func parts(_ v: String) -> [Int] {
         let core = v.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "v", with: "").split(separator: "-").first.map(String.init) ?? ""
@@ -69,15 +69,13 @@ final class Updates: ObservableObject {
     }
 
     func check() async {
-        var r = URLRequest(url: URL(string: "https://api.github.com/repos/kevincsv/PitlaneHQ-Android/releases/latest")!, timeoutInterval: 15)
-        r.setValue("application/vnd.github+json", forHTTPHeaderField: "accept")
+        // the newest build on the server (pitlanehq.app/dl/phones.json), the same one the downloads page points to
+        let r = URLRequest(url: URL(string: "https://pitlanehq.app/dl/phones.json")!, timeoutInterval: 15)
         guard let res = try? await URLSession.shared.data(for: r),
               let j = try? JSONSerialization.jsonObject(with: res.0) as? [String: Any],
-              let tag = j["tag_name"] as? String else { return }
+              let v = j["version"] as? String else { return }
         let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
-        if Updates.newer(tag, than: current) {
-            version = tag.replacingOccurrences(of: "v", with: "").split(separator: "-").first.map(String.init)
-        }
+        if Updates.newer(v, than: current) { version = v }
     }
 }
 

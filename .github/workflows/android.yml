@@ -78,3 +78,17 @@ jobs:
           cp "out/PitlaneHQ-Android-$VERSION.apk" out/PitlaneHQ-Android.apk
           gh release upload "$tag" out/* --clobber
           gh release edit "$tag" --latest --prerelease=false || true
+      - name: Publish on pitlanehq.app (R2)
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx --yes wrangler@4 r2 object put "pitlanehq-downloads/PitlaneHQ-Android.apk" --file "out/PitlaneHQ-Android-$VERSION.apk" --remote --content-type application/vnd.android.package-archive
+          npx --yes wrangler@4 r2 object put "pitlanehq-downloads/PitlaneHQ-Android.aab" --file "out/PitlaneHQ-Android-$VERSION.aab" --remote --content-type application/octet-stream
+          npx --yes wrangler@4 r2 object put "pitlanehq-downloads/CHANGELOG-phones.md" --file CHANGELOG.md --remote --content-type text/markdown
+          # phones.json goes last: the apps only see a new version once its files are there (keeps the other platform's file)
+          cur=$(curl -fsSL https://pitlanehq.app/dl/phones.json 2>/dev/null || echo '{}')
+          node -e 'const c=JSON.parse(process.argv[1]);c.version=process.argv[2];c.apk="PitlaneHQ-Android.apk";c.aab="PitlaneHQ-Android.aab";c.date=new Date().toISOString();require("fs").writeFileSync("phones.json",JSON.stringify(c))' "$cur" "$VERSION"
+          npx --yes wrangler@4 r2 object put "pitlanehq-downloads/phones.json" --file phones.json --remote --content-type application/json

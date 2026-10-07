@@ -87,7 +87,7 @@ private const val WEB_APP = "$SERVER/"
 /** Support Pitlane HQ (Settings); empty: not shown. */
 private const val PATREON_URL = "https://www.patreon.com/c/PitlaneHQ/membership"
 /** The changelog of the phone apps (the "What's new" of the update notice): one entry per version. */
-private const val CHANGELOG_URL = "https://github.com/kevincsv/PitlaneHQ-Android/blob/master/CHANGELOG.md"
+private const val CHANGELOG_URL = "https://pitlanehq.app/changelog/phones"
 /** Where "Send feedback" goes. */
 private const val SUPPORT_EMAIL = "support@pitlanehq.app"
 private const val FEEDBACK_URL = "mailto:$SUPPORT_EMAIL?subject=Pitlane%20HQ%20feedback"

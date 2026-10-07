@@ -192,7 +192,7 @@ struct Banners: View {
 
     // the notice shows once per version, when the app starts
     @State private var shown = ""
-    private func changelog(_ v: String) -> URL { URL(string: "https://github.com/kevincsv/PitlaneHQ-Android/blob/master/CHANGELOG.md#" + v.replacingOccurrences(of: ".", with: "") + "-beta")! }
+    private func changelog(_ v: String) -> URL { URL(string: changelogURL + "#" + v.replacingOccurrences(of: ".", with: "") + "-beta")! }
 
     private func banner(_ s: String, _ c: Color) -> some View {
         Text(s).font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(Theme.ink)
