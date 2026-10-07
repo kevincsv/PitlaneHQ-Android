@@ -5,7 +5,8 @@ let server = URL(string: "https://pitlanehq.app")!
 let webApp = URL(string: "https://pitlanehq.app/")!
 /// Support Pitlane HQ (Settings); empty: not shown.
 let patreonURL = "https://www.patreon.com/c/PitlaneHQ/membership"
-let feedbackURL = URL(string: "https://github.com/kevincsv/Pitwall-test/issues/new?labels=feedback")!
+let supportEmail = "support@pitlanehq.app"
+let feedbackURL = URL(string: "mailto:support@pitlanehq.app?subject=Pitlane%20HQ%20feedback")!
 let changelogURL = "https://github.com/kevincsv/PitlaneHQ-Android/blob/master/CHANGELOG.md"
 
 /// Errors the screens show in the user's language: `key` is a key of I18n (or a server message).

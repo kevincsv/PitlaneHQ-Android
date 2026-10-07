@@ -225,7 +225,7 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "open" to ("Open" to "Abrir"),
     "see_it" to ("See it" to "Verlo"),
     "feedback" to ("Tell us what you think" to "Cuéntanos qué te parece"),
-    "feedback_sub" to ("A bug, an idea, something confusing: every message is read." to "Un fallo, una idea, algo confuso: todos los mensajes se leen."),
+    "feedback_sub" to ("A bug, an idea, something confusing: write to support@pitlanehq.app. Every message is read." to "Un fallo, una idea, algo confuso: escribe a support@pitlanehq.app. Todos los mensajes se leen."),
     "send_feedback" to ("Send feedback" to "Enviar feedback"),
     "two_factor_rec_short" to ("Recommended: two-step sign-in" to "Recomendado: inicio de sesión en dos pasos"),
     "two_factor_rec_sub" to ("An authenticator app on your phone. Even with your password nobody gets in without the code. Optional." to "Una app de autenticación. Ni con tu contraseña entra nadie sin el código. Opcional."),

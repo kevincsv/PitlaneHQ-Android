@@ -228,7 +228,7 @@ private let strings: [String: (String, String)] = [
     "open": ("Open", "Abrir"),
     "see_it": ("See it", "Verlo"),
     "feedback": ("Tell us what you think", "Cuéntanos qué te parece"),
-    "feedback_sub": ("A bug, an idea, something confusing: every message is read.", "Un fallo, una idea, algo confuso: todos los mensajes se leen."),
+    "feedback_sub": ("A bug, an idea, something confusing: write to support@pitlanehq.app. Every message is read.", "Un fallo, una idea, algo confuso: escribe a support@pitlanehq.app. Todos los mensajes se leen."),
     "send_feedback": ("Send feedback", "Enviar feedback"),
     "two_factor_rec_short": ("Recommended: two-step sign-in", "Recomendado: inicio de sesión en dos pasos"),
     "two_factor_rec_sub": ("An authenticator app on your phone. Even with your password nobody gets in without the code. Optional.", "Una app de autenticación. Ni con tu contraseña entra nadie sin el código. Opcional."),
