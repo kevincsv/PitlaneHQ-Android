@@ -25,6 +25,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      HAS_CLOUDFLARE: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
       - name: Set up JDK
@@ -79,7 +81,7 @@ jobs:
           gh release upload "$tag" out/* --clobber
           gh release edit "$tag" --latest --prerelease=false || true
       - name: Publish on pitlanehq.app (R2)
-        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+        if: env.HAS_CLOUDFLARE == 'true'
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
