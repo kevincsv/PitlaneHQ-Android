@@ -1,6 +1,6 @@
 package com.pitlanehq.android.model
 
-/** Live telemetry from PitlaneHQ.exe, relayed end-to-end encrypted through the Pitlane HQ server. */
+/** Live telemetry from TrackIQ.exe, relayed end-to-end encrypted through the TrackIQ server. */
 data class LiveState(
     val link: LinkState = LinkState.OFF,
     val pcOnline: Boolean = false,
@@ -38,7 +38,9 @@ data class CloudSession(
 data class CloudLap(val id: String, val n: Int, val time: Double, val valid: Boolean, val sectors: List<Double>)
 
 /** A lap trace: one row every [bin] metres: speed m/s, throttle 0-1, brake 0-1, gear, steering rad, lap time s. */
-data class Trace(val bin: Double, val rows: List<DoubleArray>) {
+data class Trace(val bin: Double, val rows: List<DoubleArray>, val x: List<Double>? = null, val y: List<Double>? = null) {
+    /** The shape of the track: where the car was at every row (TrackIQ 0.5 and later record it). */
+    val hasShape get() = x != null && y != null && x.size == rows.size && x.size > 10
     val speedKph get() = rows.map { it[0] * 3.6 }
     val throttle get() = rows.map { it.getOrElse(1) { 0.0 } }
     val brake get() = rows.map { it.getOrElse(2) { 0.0 } }

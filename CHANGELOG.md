@@ -1,8 +1,22 @@
 # Changelog
 
-Pitlane HQ is in **beta**. The phone apps share their version number with PitlaneHQ.exe and the
+TrackIQ (formerly Pitlane HQ) is in **beta**. The phone apps share their version number with TrackIQ.exe and the
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
+
+## 0.5.0 beta
+
+**New**
+- The apps are now **TrackIQ**, like the PC app and the web: the name on the phone, in every screen
+  and in the release notes. Your account and settings stay where they were.
+- **Track map** in the lap analysis: the circuit drawn from the lap itself (TrackIQ.exe 0.5 records
+  where the car was on every lap), coloured where you gain (green) or lose (red) time against the
+  reference, with the start line and the sector marks. Touch or drag on the map to read that point:
+  the speed, the reference and the gap, and the charts follow it. Demo data draws it too.
+
+**Changed**
+- Laps through the pit lane are no longer crossed out as "not valid": only leaving the track
+  (cutting) makes a lap invalid, the same as in the race summary on the PC and the web.
 
 ## 0.4.0 beta (not built yet)
 

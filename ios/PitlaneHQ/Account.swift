@@ -3,7 +3,7 @@ import Security
 
 let server = URL(string: "https://pitlanehq.app")!
 let webApp = URL(string: "https://pitlanehq.app/app/?companion=1")!
-/// Support Pitlane HQ (Settings); empty: not shown.
+/// Support TrackIQ (Settings); empty: not shown.
 let patreonURL = "https://www.patreon.com/c/PitlaneHQ/membership"
 
 /// Errors the screens show in the user's language: `key` is a key of I18n (or a server message).
@@ -52,7 +52,7 @@ private func str(_ v: Any?) -> String { v as? String ?? "" }
 private func pos(_ v: Any?) -> Double? { num(v).flatMap { $0.isFinite && $0 > 0 ? $0 : nil } }
 private func doubles(_ v: Any?) -> [Double] { (v as? [NSNumber] ?? []).map(\.doubleValue) }
 
-/// The Pitlane HQ account, exactly like the PC, the web app and Android: the password only
+/// The TrackIQ account, exactly like the PC, the web app and Android: the password only
 /// derives the keys on this phone; the session token and the data key stay in the Keychain,
 /// and the copies saved for offline use are sealed with the data key.
 @MainActor
@@ -294,7 +294,7 @@ final class Account: ObservableObject {
         _ = try await call("POST", "/account/sessions/revoke", body: ["id": id])
     }
 
-    // ---------- your laps (uploaded by PitlaneHQ.exe) ----------
+    // ---------- your laps (uploaded by TrackIQ.exe) ----------
 
     // session and lap ids look like acct_<id>:<…>; the ':' stays as it is in the path
     private func idPath(_ id: String) -> String {
@@ -323,7 +323,12 @@ final class Account: ObservableObject {
 
     private func parseTrace(_ j: Any?) -> Trace? {
         guard let t = j as? [String: Any], let d = t["d"] as? [[NSNumber]], !d.isEmpty else { return nil }
-        return Trace(bin: num(t["bin"]) ?? 10, rows: d.map { $0.map(\.doubleValue) })
+        var tr = Trace(bin: num(t["bin"]) ?? 10, rows: d.map { $0.map(\.doubleValue) })
+        if let x = t["x"] as? [NSNumber], let y = t["y"] as? [NSNumber], x.count == d.count, y.count == d.count {
+            tr.x = x.map(\.doubleValue)
+            tr.y = y.map(\.doubleValue)
+        }
+        return tr
     }
 
     func lapTrace(_ lapId: String) async throws -> Trace? {

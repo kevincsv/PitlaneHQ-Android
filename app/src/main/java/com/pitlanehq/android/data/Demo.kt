@@ -31,7 +31,9 @@ object Demo {
         val r = Random(seed)
         val bin = 10.0
         val n = (c.len / bin).toInt()
-        val corners = (0 until 9).map { (it + 0.5 + r.nextDouble(-0.2, 0.2)) / 9.0 }
+        // the corners of a track are always in the same place: every lap of a combination shares them
+        val rc = Random(c.track.hashCode())
+        val corners = (0 until 9).map { (it + 0.5 + rc.nextDouble(-0.2, 0.2)) / 9.0 }
         val raw = DoubleArray(n) { i ->
             val x = i.toDouble() / n
             var v = 72.0
@@ -54,7 +56,20 @@ object Demo {
             val brk = if (braking) min(1.0, (v - next) / 8.0) else 0.0
             doubleArrayOf(v, thr, brk, (1 + v / 14).toInt().coerceAtMost(6).toDouble(), cos(i * 0.05) * 0.1, t)
         }
-        return Trace(bin, rows)
+        // the shape of the track, like the position TrackIQ records: a loop that turns at every corner
+        val turns = corners.indices.map { k -> (if (k % 3 == 2) -0.6 else 1.0) * rc.nextDouble(0.6, 1.3) }
+        val tot = turns.sum()
+        val xs = ArrayList<Double>(n); val ys = ArrayList<Double>(n)
+        var h = 0.0; var px = 0.0; var py = 0.0
+        for (i in 0 until n) {
+            val q = i.toDouble() / n
+            var dh = 0.0
+            corners.forEachIndexed { j, k -> val dd = q - k; dh += turns[j] * 2 * PI / tot * kotlin.math.exp(-(dd * dd) / 0.0006) / (kotlin.math.sqrt(PI * 0.0006) * n) }
+            h += dh; px += bin * cos(h); py += bin * sin(h); xs.add(px); ys.add(py)
+        }
+        val ex = xs[n - 1] - xs[0]; val ey = ys[n - 1] - ys[0]
+        for (i in 0 until n) { val f = i.toDouble() / (n - 1); xs[i] = xs[i] - ex * f; ys[i] = ys[i] - ey * f }
+        return Trace(bin, rows, xs, ys)
     }
 
     private fun sectors(lap: Double, r: Random): List<Double> {

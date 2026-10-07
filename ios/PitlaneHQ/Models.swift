@@ -25,6 +25,10 @@ struct CloudLap: Identifiable, Hashable {
 struct Trace {
     let bin: Double
     let rows: [[Double]]
+    /// The shape of the track: where the car was at every row (TrackIQ 0.5 and later record it).
+    var x: [Double]? = nil
+    var y: [Double]? = nil
+    var hasShape: Bool { x != nil && y != nil && x!.count == rows.count && x!.count > 10 }
 }
 
 struct PersonalBest: Identifiable, Hashable {

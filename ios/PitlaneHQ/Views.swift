@@ -680,6 +680,7 @@ struct LapView: View {
                     if ref == nil { Text(t("no_reference")).font(.caption).foregroundColor(Theme.muted) }
                     let refName = refLabel.isEmpty ? t("ref") : refLabel
                     let card: (Int) -> AnyView = { i in AnyView(PointCard(c: c, i: i, refName: refName, sec: lap.sectors, refSec: refSectors)) }
+                    if trace.hasShape { TrackMapView(c: c, trace: trace, pick: $pick) }
                     Chart(title: t("speed") + " (km/h)", series: speedSeries(c, refName), step: c.step, fmt: { String(format: "%.0f", $0) },
                           pick: $pick, card: card)
                     if let delta = c.delta {
@@ -722,6 +723,110 @@ struct Series {
     let label: String
     let values: [Double]
     let color: Color
+}
+
+/// The track, drawn from where the car was on this lap (TrackIQ records it), coloured where you gain
+/// (green) or lose (red) time against the reference, like the map in the web and the PC app. Touch
+/// or drag on it to read that point: the charts follow it (`pick` is the fraction of the lap).
+struct TrackMapView: View {
+    let c: Compared
+    let trace: Trace
+    @Binding var pick: Double?
+    private let xs: [Double], ys: [Double]
+    private let minX: Double, maxX: Double, minY: Double, maxY: Double
+
+    init(c: Compared, trace: Trace, pick: Binding<Double?>) {
+        self.c = c
+        self.trace = trace
+        self._pick = pick
+        xs = trace.x ?? []
+        ys = trace.y ?? []
+        minX = xs.min() ?? 0; maxX = xs.max() ?? 1; minY = ys.min() ?? 0; maxY = ys.max() ?? 1
+    }
+
+    private var n: Int { xs.count }
+    private var m: Int { c.speedA.count }
+
+    private func point(_ i: Int, _ size: CGSize) -> CGPoint {
+        guard n > 1, i >= 0, i < n else { return .zero }
+        let pad: Double = 18
+        let k: Double = min((size.width - 2 * pad) / max(1e-6, maxX - minX), (size.height - 2 * pad) / max(1e-6, maxY - minY))
+        let ox: Double = (size.width - 2 * pad - (maxX - minX) * k) / 2
+        let oy: Double = (size.height - 2 * pad - (maxY - minY) * k) / 2
+        return CGPoint(x: pad + (xs[i] - minX) * k + ox, y: size.height - pad - (ys[i] - minY) * k - oy)
+    }
+
+    private func path(_ from: Int, _ to: Int, _ size: CGSize, close: Bool = false) -> Path {
+        var p = Path()
+        for i in from...to {
+            let q = point(i, size)
+            if i == from { p.move(to: q) } else { p.addLine(to: q) }
+        }
+        if close { p.closeSubpath() }
+        return p
+    }
+
+    private func pickAt(_ loc: CGPoint, _ size: CGSize) {
+        var bi = 0
+        var bd: Double = .greatestFiniteMagnitude
+        for i in 0..<n {
+            let q = point(i, size)
+            let d: Double = (q.x - loc.x) * (q.x - loc.x) + (q.y - loc.y) * (q.y - loc.y)
+            if d < bd { bd = d; bi = i }
+        }
+        if bd < 60 * 60 { pick = Double(bi) / Double(max(1, n - 1)) }
+    }
+
+    private var selected: Int? {
+        guard let f = pick, m > 1 else { return nil }
+        return max(0, min(m - 1, Int((f * Double(m - 1)).rounded())))
+    }
+
+    var body: some View {
+        Panel {
+            SectionLabel(text: t("track_map").uppercased())
+            GeometryReader { g in
+                let size = g.size
+                ZStack {
+                    path(0, n - 1, size, close: true).stroke(Theme.line, style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round))
+                    if let delta = c.delta, m > 2 {
+                        let segs = 48
+                        let vals: [Double] = (0..<segs).map { j in delta[(j + 1) * (m - 1) / segs] - delta[j * (m - 1) / segs] }
+                        let mx: Double = max(0.01, vals.map { abs($0) }.max() ?? 0.01)
+                        ForEach(0..<segs, id: \.self) { j in
+                            let v: Double = vals[j]
+                            if abs(v) >= 0.003 {
+                                path(j * (n - 1) / segs, (j + 1) * (n - 1) / segs, size)
+                                    .stroke((v > 0 ? Theme.bad : Theme.good).opacity(0.3 + 0.7 * min(1, abs(v) / mx)), style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round))
+                            }
+                        }
+                    }
+                    ForEach(1..<3, id: \.self) { k in
+                        Circle().fill(Theme.muted).frame(width: 10, height: 10).position(point(k * (n - 1) / 3, size))
+                    }
+                    Circle().fill(Theme.fg).frame(width: 10, height: 10).position(point(0, size))
+                    if let s = selected {
+                        let i = max(0, min(n - 1, Int(((Double(s) * c.step) / trace.bin).rounded())))
+                        Circle().fill(Theme.fg).frame(width: 18, height: 18).position(point(i, size))
+                        Circle().fill(Theme.accent).frame(width: 12, height: 12).position(point(i, size))
+                    }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { loc in pickAt(loc, size) }
+                .simultaneousGesture(DragGesture(minimumDistance: 6).onChanged { v in pickAt(v.location, size) })
+            }
+            .frame(height: 230)
+            Text(readout).font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.muted)
+        }
+    }
+
+    private var readout: String {
+        guard let s = selected else { return c.delta != nil ? t("map_hint") : t("map_hint_a") }
+        var out = "\(Int((Double(s) * c.step).rounded())) m · \(String(format: "%.0f", c.speedA[s])) km/h"
+        if let b = c.speedB, s < b.count { out += " · " + t("ref") + " " + String(format: "%.0f", b[s]) }
+        if let d = c.delta, s < d.count { out += String(format: " · %+.3f s", d[s]) }
+        return out
+    }
 }
 
 /// The coach in four phases (braking, entry, apex, exit), like the web's and Android's.

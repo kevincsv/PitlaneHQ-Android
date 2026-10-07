@@ -23,7 +23,7 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
- * Live telemetry from your PC through your Pitlane HQ account's live room (/live), the same
+ * Live telemetry from your PC through your TrackIQ account's live room (/live), the same
  * link the web app uses: works on any network, no PC address needed. Everything is sealed
  * with the account's data key (AES-256-GCM): the server only passes it along. The PC only
  * streams while a screen of yours is watching.

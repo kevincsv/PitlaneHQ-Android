@@ -45,7 +45,7 @@ final class NetMonitor: ObservableObject {
     }
 }
 
-/// A newer Pitlane HQ for this phone on GitHub (the same release the web's download buttons point to).
+/// A newer TrackIQ for this phone on GitHub (the same release the web's download buttons point to).
 @MainActor
 final class Updates: ObservableObject {
     @Published var version: String?

@@ -13,9 +13,9 @@ targets:
     info:
       path: PitlaneHQ/Info.plist
       properties:
-        CFBundleDisplayName: Pitlane HQ
+        CFBundleDisplayName: TrackIQ
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
-        CFBundleVersion: "14"
+        CFBundleVersion: "15"
         UILaunchScreen: {}
         UIUserInterfaceStyle: Dark
         UISupportedInterfaceOrientations:

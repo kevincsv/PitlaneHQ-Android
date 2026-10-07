@@ -45,7 +45,7 @@ class Offline : AppError("no_internet")
 class Got<T>(val data: T, val stale: Boolean = false)
 
 /**
- * The Pitlane HQ account, exactly like the PC and the web app: the password only derives the
+ * The TrackIQ account, exactly like the PC and the web app: the password only derives the
  * keys on this phone, the server gets the login key and gives back the data key sealed with
  * the wrap key. The session token, the data key and everything saved for offline use are kept
  * sealed with an Android Keystore key.
@@ -250,7 +250,7 @@ class AccountRepository(context: Context) {
         call("POST", "/account/sessions/revoke", JSONObject().put("id", id))
     }
 
-    // ---------- your laps (uploaded by PitlaneHQ.exe) ----------
+    // ---------- your laps (uploaded by TrackIQ.exe) ----------
     fun sessions(): Got<List<CloudSession>> {
         if (demo) return Got(Demo.sessions())
         val g = cachedGet("/api/sessions?limit=100")
@@ -283,7 +283,10 @@ class AccountRepository(context: Context) {
     private fun parseTrace(j: JSONObject?): Trace? {
         val d = j?.optJSONArray("d") ?: return null
         if (d.length() == 0) return null
-        return Trace(j.optDouble("bin", 10.0), (0 until d.length()).map { i -> d.getJSONArray(i).let { r -> DoubleArray(6) { k -> r.optDouble(k, 0.0) } } })
+        val x = j.optJSONArray("x")?.let { doubles(it) }
+        val y = j.optJSONArray("y")?.let { doubles(it) }
+        val xy = x != null && y != null && x.size == d.length() && y.size == d.length()
+        return Trace(j.optDouble("bin", 10.0), (0 until d.length()).map { i -> d.getJSONArray(i).let { r -> DoubleArray(6) { k -> r.optDouble(k, 0.0) } } }, if (xy) x else null, if (xy) y else null)
     }
 
     fun lapTrace(lapId: String): Trace? {

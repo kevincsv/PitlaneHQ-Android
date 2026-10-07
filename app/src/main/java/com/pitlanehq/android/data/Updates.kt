@@ -5,7 +5,7 @@ import okhttp3.Request
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-/** A newer Pitlane HQ for this phone: its version ("0.3.1") and where to download it. */
+/** A newer TrackIQ for this phone: its version ("0.3.1") and where to download it. */
 data class AppUpdate(val version: String, val url: String)
 
 /**

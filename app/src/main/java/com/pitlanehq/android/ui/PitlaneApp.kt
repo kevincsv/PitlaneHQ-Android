@@ -28,6 +28,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalUriHandler
@@ -66,7 +70,7 @@ private val Blue = Color(0xFF5AA9FF)
 
 private const val WEB_APP = "$SERVER/app/?companion=1"
 
-/** Support Pitlane HQ (Settings); empty: not shown. */
+/** Support TrackIQ (Settings); empty: not shown. */
 private const val PATREON_URL = "https://www.patreon.com/c/PitlaneHQ/membership"
 
 private data class Dest(val route: String, val label: String, val icon: ImageVector)
@@ -507,6 +511,7 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
                 if (an.ref == null) item { Text(t("no_reference"), color = Muted, fontSize = 12.sp) }
                 val refName = an.refLabel.ifBlank { t("ref") }
                 val card: @Composable (Int) -> Unit = { i -> PointCard(c, i, refName, an.lap.sectors, an.refSectors) }
+                if (an.trace.hasShape) item { TrackMap(c, an.trace, pick) { pick = it } }
                 item {
                     Chart(t("speed") + " (km/h)", listOfNotNull(Series(t("you"), c.speedA, Accent), c.speedB?.let { Series(refName, it, Blue) }), c.step, { "%.0f".format(it) },
                         sel = pick, onSel = { pick = it }, card = card)
@@ -676,6 +681,77 @@ private fun ChartBody(
             Text("${((n - 1) * step / 1000).let { "%.1f".format(it) }} km", color = Muted, fontSize = 10.sp)
             Text(if (fixedMax == 1.0) "100%" else fmt(hi), color = Muted, fontSize = 10.sp)
         }
+    }
+}
+
+/**
+ * The track, drawn from where the car was on this lap (TrackIQ records it), coloured where you gain
+ * (green) or lose (red) time against the reference, like the map in the web and the PC app. Touch
+ * or drag on it to read that point: the charts follow it.
+ */
+@Composable
+private fun TrackMap(c: Compared, tr: Trace, sel: Int?, onSel: (Int) -> Unit) {
+    val xs = tr.x ?: return
+    val ys = tr.y ?: return
+    val n = xs.size
+    val m = c.speedA.size
+    val len = (n - 1) * tr.bin
+    val idxAt = { i: Int -> ((i * tr.bin) / c.step).roundToInt().coerceIn(0, m - 1) }
+    val minX = xs.min(); val maxX = xs.max(); val minY = ys.min(); val maxY = ys.max()
+    var size by remember { mutableStateOf(IntSize(1, 1)) }
+    fun pt(i: Int): Offset {
+        val pad = 18f
+        val k = minOf((size.width - 2 * pad) / maxOf(1e-6, maxX - minX).toFloat(), (size.height - 2 * pad) / maxOf(1e-6, maxY - minY).toFloat())
+        val ox = (size.width - 2 * pad - (maxX - minX).toFloat() * k) / 2
+        val oy = (size.height - 2 * pad - (maxY - minY).toFloat() * k) / 2
+        return Offset(pad + (xs[i] - minX).toFloat() * k + ox, size.height - pad - (ys[i] - minY).toFloat() * k - oy)
+    }
+    fun pickAt(p: Offset) {
+        var bi = 0; var bd = Float.MAX_VALUE
+        for (i in 0 until n) { val q = pt(i); val d = (q.x - p.x) * (q.x - p.x) + (q.y - p.y) * (q.y - p.y); if (d < bd) { bd = d; bi = i } }
+        if (bd < 60f * 60f) onSel(idxAt(bi))
+    }
+    Panel {
+        Section(t("track_map").uppercase())
+        Canvas(
+            Modifier.fillMaxWidth().height(230.dp).onSizeChanged { size = it }
+                .pointerInput(n) { detectTapGestures(onPress = { pickAt(it) }) }
+                .pointerInput(n) { detectDragGestures(onDragStart = { pickAt(it) }, onDrag = { change, _ -> pickAt(change.position); change.consume() }) }
+        ) {
+            // the track
+            val track = Path()
+            for (i in 0 until n) { val q = pt(i); if (i == 0) track.moveTo(q.x, q.y) else track.lineTo(q.x, q.y) }
+            track.close()
+            drawPath(track, Line, style = Stroke(width = 7f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            // where lap A gains or loses against the reference: 48 stretches, stronger where more time changes hands
+            val delta = c.delta
+            if (delta != null && m > 2) {
+                val segs = 48
+                val vals = (0 until segs).map { j -> val a = j * (m - 1) / segs; val b = (j + 1) * (m - 1) / segs; delta[b] - delta[a] }
+                val mx = maxOf(0.01, vals.maxOf { kotlin.math.abs(it) })
+                for (j in 0 until segs) {
+                    val v = vals[j]
+                    if (kotlin.math.abs(v) < 0.003) continue
+                    val i0 = (j * (n - 1) / segs); val i1 = ((j + 1) * (n - 1) / segs)
+                    val p = Path()
+                    for (i in i0..i1) { val q = pt(i); if (i == i0) p.moveTo(q.x, q.y) else p.lineTo(q.x, q.y) }
+                    val col = if (v > 0) Bad else Good
+                    drawPath(p, col.copy(alpha = (0.3 + 0.7 * minOf(1.0, kotlin.math.abs(v) / mx)).toFloat()), style = Stroke(width = 7f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                }
+            }
+            // sector marks and the start line
+            val cnt = 3
+            for (k in 1 until cnt) { val q = pt((k * (n - 1) / cnt)); drawCircle(Muted, 5f, q) }
+            drawCircle(Fg, 5f, pt(0))
+            // the point under the finger
+            if (sel != null) { val i = ((sel * c.step) / tr.bin).roundToInt().coerceIn(0, n - 1); val q = pt(i); drawCircle(Fg, 9f, q); drawCircle(Accent, 6f, q) }
+        }
+        val d = c.delta
+        Text(
+            if (sel != null) "${(sel * c.step).roundToInt()} m · ${"%.0f".format(c.speedA.getOrElse(sel) { 0.0 })} km/h" + (c.speedB?.getOrNull(sel)?.let { " · " + t("ref") + " ${"%.0f".format(it)}" } ?: "") + (d?.getOrNull(sel)?.let { " · %+.3f s".format(it) } ?: "")
+            else if (d != null) t("map_hint") else t("map_hint_a"),
+            color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace
+        )
     }
 }
 

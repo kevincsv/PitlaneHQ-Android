@@ -41,8 +41,10 @@ enum Demo {
         var r = Seeded(seed)
         let bin = 10.0
         let n = Int(c.len / bin)
+        // the corners of a track are always in the same place: every lap of a combination shares them
+        var rc = Seeded(stableHash(c.track))
         var corners: [Double] = []
-        for k in 0..<9 { corners.append((Double(k) + 0.5 + Double.random(in: -0.2...0.2, using: &r)) / 9) }
+        for k in 0..<9 { corners.append((Double(k) + 0.5 + Double.random(in: -0.2...0.2, using: &rc)) / 9) }
         var raw: [Double] = []
         for i in 0..<n {
             let x: Double = Double(i) / Double(n)
@@ -70,7 +72,24 @@ enum Demo {
             let steer: Double = cos(Double(i) * 0.05) * 0.1
             rows.append([v, thr, brk, gear, steer, t])
         }
-        return Trace(bin: bin, rows: rows)
+        // the shape of the track, like the position TrackIQ records: a loop that turns at every corner
+        var turns: [Double] = []
+        for k in 0..<corners.count { turns.append((k % 3 == 2 ? -0.6 : 1.0) * Double.random(in: 0.6...1.3, using: &rc)) }
+        let tot: Double = turns.reduce(0, +)
+        var xs: [Double] = [], ys: [Double] = []
+        var h: Double = 0, px: Double = 0, py: Double = 0
+        for i in 0..<n {
+            let q: Double = Double(i) / Double(n)
+            var dh: Double = 0
+            for (j, k) in corners.enumerated() {
+                let dd: Double = q - k
+                dh += turns[j] * 2 * Double.pi / tot * exp(-(dd * dd) / 0.0006) / ((Double.pi * 0.0006).squareRoot() * Double(n))
+            }
+            h += dh; px += bin * cos(h); py += bin * sin(h); xs.append(px); ys.append(py)
+        }
+        let ex: Double = xs[n - 1] - xs[0], ey: Double = ys[n - 1] - ys[0]
+        for i in 0..<n { let f: Double = Double(i) / Double(n - 1); xs[i] -= ex * f; ys[i] -= ey * f }
+        return Trace(bin: bin, rows: rows, x: xs, y: ys)
     }
 
     private static func sectors(_ lap: Double, _ r: inout Seeded) -> [Double] {
