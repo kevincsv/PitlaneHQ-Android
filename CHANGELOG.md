@@ -9,6 +9,8 @@ when the beta ends. Every version is listed here, newest first, and gets a relea
 **Changed**
 - **The app is called Pitlane HQ again**, and it talks to the server at https://pitlanehq.app
   (same account, same laps).
+- **Info** in the header of every screen instead of the floating bell: the alerts (new version,
+  app news, the two-step sign-in recommendation; dismissable) and, always, support and feedback.
 - The track map shows the three sectors: the start/finish line, a cut at each sector change and
   S1, S2, S3 in the middle of each sector, like the PC and the web.
 

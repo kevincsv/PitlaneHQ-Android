@@ -218,6 +218,7 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "continue" to ("Continue" to "Continuar"),
     "cancel" to ("Cancel" to "Cancelar"),
     "for_you" to ("For you" to "Para ti"),
+    "alerts" to ("Alerts" to "Avisos"),
     "clear" to ("Clear" to "Limpiar"),
     "dismiss" to ("Dismiss" to "Descartar"),
     "nothing_new" to ("Nothing new. You are up to date." to "Nada nuevo. Estás al día."),

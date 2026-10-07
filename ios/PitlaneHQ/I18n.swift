@@ -221,6 +221,7 @@ private let strings: [String: (String, String)] = [
     "continue": ("Continue", "Continuar"),
     "cancel": ("Cancel", "Cancelar"),
     "for_you": ("For you", "Para ti"),
+    "alerts": ("Alerts", "Avisos"),
     "clear": ("Clear", "Limpiar"),
     "dismiss": ("Dismiss", "Descartar"),
     "nothing_new": ("Nothing new. You are up to date.", "Nada nuevo. Estás al día."),

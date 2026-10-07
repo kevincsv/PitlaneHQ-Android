@@ -223,6 +223,7 @@ struct Screen<Content: View>: View {
         .background(Theme.ink.ignoresSafeArea())
         .toolbarBackground(Theme.ink, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { InfoButton() } }
     }
 }
 
@@ -474,93 +475,103 @@ struct MainView: View {
             NavigationStack { LiveView() }.tabItem { Label(t("live"), systemImage: "antenna.radiowaves.left.and.right") }.tag(3)
             NavigationStack { SettingsView() }.tabItem { Label(t("settings"), systemImage: "gearshape") }.tag(4)
         }
-        .overlay(alignment: .bottomTrailing) { InboxButton(tab: $tab).padding(.trailing, 16).padding(.bottom, 64) }
+        .onReceive(inbox.$goTab.compactMap { $0 }) { t in tab = t; inbox.goTab = nil }
     }
+    @EnvironmentObject private var inbox: Inbox
 }
 
-/// One entry of the inbox.
-private struct InboxItem: Identifiable {
+/// One entry of Info: an alert (dismissable) or one of the permanent items (support, feedback).
+private struct InfoItem: Identifiable {
     let id: String, icon: String, title: String, text: String
-    var keep = false, quiet = false
+    var keep = false
     let acts: [(String, () -> Void)]
 }
 
-/// The inbox: a floating button with what matters now (new version, app news, account to-dos, support, feedback).
-struct InboxButton: View {
-    @Binding var tab: Int
+/// Info, in the header of every screen: the alerts that matter now (new version, app news, account to-dos) and,
+/// always, how to support the app and send feedback. Alerts can be dismissed; the badge counts the new ones.
+struct InfoButton: View {
     @EnvironmentObject var account: Account
     @EnvironmentObject var updates: Updates
     @EnvironmentObject var inbox: Inbox
     @State private var open = false
 
-    private var items: [InboxItem] {
-        var a: [InboxItem] = []
+    private var alerts: [InfoItem] {
+        var a: [InfoItem] = []
         if let v = updates.version {
-            a.append(InboxItem(id: "upd:" + v, icon: "arrow.down.circle", title: t("update_title", v), text: t("update_body", Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""), acts: [
+            a.append(InfoItem(id: "upd:" + v, icon: "arrow.down.circle", title: t("update_title", v), text: t("update_body", Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""), acts: [
                 (t("download"), { UIApplication.shared.open(updates.page) }),
                 (t("whats_new"), { UIApplication.shared.open(URL(string: changelogURL + "#" + v.replacingOccurrences(of: ".", with: "") + "-beta")!) }),
             ]))
         }
-        if !account.twoFactor { a.append(InboxItem(id: "2fa", icon: "lock", title: t("two_factor_rec_short"), text: t("two_factor_rec_sub"), acts: [(t("turn_on"), { tab = 4 })])) }
+        if !account.twoFactor { a.append(InfoItem(id: "2fa", icon: "lock", title: t("two_factor_rec_short"), text: t("two_factor_rec_sub"), acts: [(t("turn_on"), { inbox.goTab = 4 })])) }
         for n in inbox.news {
             var acts: [(String, () -> Void)] = []
             if let u = n.url { acts.append((t("open"), { UIApplication.shared.open(u) })) }
-            if let v = n.view { acts.append((t("see_it"), { tab = v == "me" ? 4 : v == "community" ? 2 : 0 })) }
-            a.append(InboxItem(id: "news:" + n.id, icon: "newspaper", title: n.title, text: n.text + (n.date.isEmpty ? "" : " · " + n.date), acts: acts))
+            if let v = n.view { acts.append((t("see_it"), { inbox.goTab = v == "me" ? 4 : v == "community" ? 2 : 0 })) }
+            a.append(InfoItem(id: "news:" + n.id, icon: "newspaper", title: n.title, text: n.text + (n.date.isEmpty ? "" : " · " + n.date), acts: acts))
         }
-        if let u = URL(string: patreonURL), !patreonURL.isEmpty { a.append(InboxItem(id: "support", icon: "heart", title: t("support"), text: t("support_sub"), quiet: true, acts: [("Patreon", { UIApplication.shared.open(u) })])) }
-        a.append(InboxItem(id: "feedback", icon: "bubble.left", title: t("feedback"), text: t("feedback_sub"), quiet: true, acts: [(t("send_feedback"), { UIApplication.shared.open(feedbackURL) })]))
         return a.filter { $0.keep || !inbox.seen.contains($0.id) }
     }
 
+    private var always: [InfoItem] {
+        var a: [InfoItem] = []
+        if let u = URL(string: patreonURL), !patreonURL.isEmpty { a.append(InfoItem(id: "support", icon: "heart", title: t("support"), text: t("support_sub"), keep: true, acts: [("Patreon", { UIApplication.shared.open(u) })])) }
+        a.append(InfoItem(id: "feedback", icon: "bubble.left", title: t("feedback"), text: t("feedback_sub"), keep: true, acts: [(t("send_feedback"), { UIApplication.shared.open(feedbackURL) })]))
+        return a
+    }
+
     var body: some View {
-        let list = items
-        let fresh = list.filter { !$0.quiet && !inbox.seen.contains("seen:" + $0.id) }.count
+        let list = alerts
+        let fresh = list.filter { !inbox.seen.contains("seen:" + $0.id) }.count
         Button { open = true } label: {
             ZStack(alignment: .topTrailing) {
-                Image(systemName: "bell").font(.system(size: 20)).foregroundColor(Theme.fg).frame(width: 48, height: 48)
-                    .background(Theme.surface).clipShape(Circle()).overlay(Circle().stroke(Theme.line)).shadow(radius: 8)
+                Image(systemName: "info.circle").font(.system(size: 17)).foregroundColor(Theme.muted).frame(width: 32, height: 32)
                 if fresh > 0 {
-                    Text("\(fresh)").font(.system(size: 11, weight: .black, design: .monospaced)).foregroundColor(Theme.ink).padding(.horizontal, 6).frame(minWidth: 20, minHeight: 20).background(Theme.accent).clipShape(Capsule()).offset(x: 4, y: -4)
+                    Text("\(fresh)").font(.system(size: 10, weight: .black, design: .monospaced)).foregroundColor(Theme.ink).padding(.horizontal, 5).frame(minWidth: 16, minHeight: 16).background(Theme.accent).clipShape(Capsule()).offset(x: 4, y: -2)
                 }
             }
         }
         .sheet(isPresented: $open, onDismiss: { inbox.mark(list.map { "seen:" + $0.id }) }) {
             NavigationStack {
                 ScrollView {
-                    VStack(spacing: 8) {
-                        if list.isEmpty { Text(t("nothing_new")).font(.subheadline).foregroundColor(Theme.muted).padding(.vertical, 18) }
-                        ForEach(list) { it in
-                            HStack(alignment: .top, spacing: 10) {
-                                Image(systemName: it.icon).foregroundColor(Theme.accent).frame(width: 24)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(it.title).font(.subheadline.bold()).foregroundColor(Theme.fg)
-                                    Text(it.text).font(.caption).foregroundColor(Theme.muted)
-                                    HStack(spacing: 6) {
-                                        ForEach(Array(it.acts.enumerated()), id: \.offset) { i, act in
-                                            Button { open = false; act.1() } label: {
-                                                Text(act.0.uppercased()).font(.system(size: 11, weight: .black)).padding(.horizontal, 12).padding(.vertical, 6)
-                                                    .background(i == 0 ? Theme.accent : Theme.surface2).foregroundColor(i == 0 ? Theme.ink : Theme.fg).clipShape(RoundedRectangle(cornerRadius: 6))
-                                            }
-                                        }
-                                    }
-                                    .padding(.top, 2)
-                                }
-                                Spacer(minLength: 0)
-                                if !it.keep { Button { inbox.mark([it.id]) } label: { Image(systemName: "xmark").font(.caption).foregroundColor(Theme.muted) } }
-                            }
-                            .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 10))
-                        }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(t("alerts").uppercased()).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(Theme.muted)
+                        if list.isEmpty { Text(t("nothing_new")).font(.subheadline).foregroundColor(Theme.muted).padding(.vertical, 10) }
+                        ForEach(list) { it in row(it, dismissable: true) }
+                        Text("PITLANE HQ").font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(Theme.muted).padding(.top, 8)
+                        ForEach(always) { it in row(it, dismissable: false) }
                     }
                     .padding(16)
                 }
                 .background(Theme.ink.ignoresSafeArea())
-                .navigationTitle(t("for_you"))
+                .navigationTitle("Info")
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button(t("clear")) { inbox.mark(list.filter { !$0.keep }.map { $0.id }) } } }
+                .toolbar { if list.contains(where: { !$0.keep }) { ToolbarItem(placement: .cancellationAction) { Button(t("clear")) { inbox.mark(list.filter { !$0.keep }.map { $0.id }) } } } }
             }
             .presentationDetents([.medium, .large])
         }
+    }
+
+    private func row(_ it: InfoItem, dismissable: Bool) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: it.icon).foregroundColor(Theme.accent).frame(width: 24)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(it.title).font(.subheadline.bold()).foregroundColor(Theme.fg)
+                Text(it.text).font(.caption).foregroundColor(Theme.muted)
+                HStack(spacing: 6) {
+                    ForEach(Array(it.acts.enumerated()), id: \.offset) { i, act in
+                        Button { open = false; act.1() } label: {
+                            Text(act.0.uppercased()).font(.system(size: 11, weight: .black)).padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(i == 0 ? Theme.accent : Theme.surface2).foregroundColor(i == 0 ? Theme.ink : Theme.fg).clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                    }
+                }
+                .padding(.top, 2)
+            }
+            Spacer(minLength: 0)
+            if dismissable && !it.keep { Button { inbox.mark([it.id]) } label: { Image(systemName: "xmark").font(.caption).foregroundColor(Theme.muted) } }
+        }
+        .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 

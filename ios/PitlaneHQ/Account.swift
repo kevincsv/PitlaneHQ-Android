@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 let server = URL(string: "https://pitlanehq.app")!
-let webApp = URL(string: "https://pitlanehq.app/app/?companion=1")!
+let webApp = URL(string: "https://pitlanehq.app/")!
 /// Support Pitlane HQ (Settings); empty: not shown.
 let patreonURL = "https://www.patreon.com/c/PitlaneHQ/membership"
 let feedbackURL = URL(string: "https://github.com/kevincsv/Pitwall-test/issues/new?labels=feedback")!

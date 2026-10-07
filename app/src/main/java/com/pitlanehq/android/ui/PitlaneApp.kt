@@ -16,6 +16,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
 import com.pitlanehq.android.data.AppUpdate
 import com.pitlanehq.android.data.AccountState
@@ -81,7 +82,7 @@ private val Bad = Color(0xFFFF6363)
 private val Purple = Color(0xFFB98CFF)
 private val Blue = Color(0xFF5AA9FF)
 
-private const val WEB_APP = "$SERVER/app/?companion=1"
+private const val WEB_APP = "$SERVER/"
 
 /** Support Pitlane HQ (Settings); empty: not shown. */
 private const val PATREON_URL = "https://www.patreon.com/c/PitlaneHQ/membership"
@@ -178,7 +179,9 @@ private fun MainApp(vm: PitlaneViewModel) {
     val online by vm.online.collectAsState()
     val upd by vm.update.collectAsState()
     val uri = LocalUriHandler.current
-    Scaffold(containerColor = Ink, bottomBar = { BottomBar(nav) }, floatingActionButton = { InboxButton(vm, nav) }) { pad ->
+    val info = rememberInfo(vm, nav)
+    CompositionLocalProvider(LocalInfo provides info) {
+    Scaffold(containerColor = Ink, bottomBar = { BottomBar(nav) }) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             Column(Modifier.statusBarsPadding()) {
                 if (!online) Banner(t("showing_saved"), Bad)
@@ -201,56 +204,74 @@ private fun MainApp(vm: PitlaneViewModel) {
             }
         }
     }
+    }
 }
 
-/** One entry of the inbox. */
-private class InboxItem(val id: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val title: String, val text: String, val keep: Boolean = false, val quiet: Boolean = false, val acts: List<Pair<String, () -> Unit>>)
+/** One entry of Info: an alert (dismissable) or one of the permanent items (support, feedback). */
+private class InfoItem(val id: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val title: String, val text: String, val keep: Boolean = false, val acts: List<Pair<String, () -> Unit>>)
 
-/** The inbox: a floating button with what matters now (new version, app news, account to-dos, support, feedback). */
+/** Info, shared by every screen's header: the alerts, how many are new, and the sheet. */
+private class InfoState(val alerts: List<InfoItem>, val always: List<InfoItem>, val fresh: Int, val open: () -> Unit)
+private val LocalInfo = compositionLocalOf<InfoState?> { null }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun InboxButton(vm: PitlaneViewModel, nav: NavHostController) {
+private fun rememberInfo(vm: PitlaneViewModel, nav: NavHostController): InfoState {
     val a by vm.account.collectAsState()
     val upd by vm.update.collectAsState()
     val news by vm.news.collectAsState()
     val seen by vm.inboxSeen.collectAsState()
     var open by remember { mutableStateOf(false) }
     val uri = LocalUriHandler.current
-    val items = buildList {
-        upd?.let { u -> add(InboxItem("upd:" + u.version, Icons.Default.Download, t("update_title", u.version), t("update_body", BuildConfig.VERSION_NAME.replace("-", " ")), acts = listOf(t("download") to { uri.openUri(u.url) }, t("whats_new") to { uri.openUri(CHANGELOG_URL + "#" + u.version.replace(".", "") + "-beta") }))) }
-        if (!a.twoFactor) add(InboxItem("2fa", Icons.Default.Lock, t("two_factor_rec_short"), t("two_factor_rec_sub"), acts = listOf(t("turn_on") to { nav.navigate("settings") })))
-        news.forEach { n -> add(InboxItem("news:" + n.id, Icons.Default.Newspaper, n.title, n.text + if (n.date.isNotBlank()) " · " + n.date else "", acts = listOfNotNull(n.url?.let { u -> t("open") to { uri.openUri(u) } }, n.view?.let { v -> t("see_it") to { nav.navigate(if (v == "me") "settings" else v) } }))) }
-        if (PATREON_URL.isNotEmpty()) add(InboxItem("support", Icons.Default.Favorite, t("support"), t("support_sub"), quiet = true, acts = listOf("Patreon" to { uri.openUri(PATREON_URL) })))
-        add(InboxItem("feedback", Icons.Default.Forum, t("feedback"), t("feedback_sub"), quiet = true, acts = listOf(t("send_feedback") to { uri.openUri(FEEDBACK_URL) })))
+    val alerts = buildList {
+        upd?.let { u -> add(InfoItem("upd:" + u.version, Icons.Default.Download, t("update_title", u.version), t("update_body", BuildConfig.VERSION_NAME.replace("-", " ")), acts = listOf(t("download") to { uri.openUri(u.url) }, t("whats_new") to { uri.openUri(CHANGELOG_URL + "#" + u.version.replace(".", "") + "-beta") }))) }
+        if (!a.twoFactor) add(InfoItem("2fa", Icons.Default.Lock, t("two_factor_rec_short"), t("two_factor_rec_sub"), acts = listOf(t("turn_on") to { nav.navigate("settings") })))
+        news.forEach { n -> add(InfoItem("news:" + n.id, Icons.Default.Newspaper, n.title, n.text + if (n.date.isNotBlank()) " · " + n.date else "", acts = listOfNotNull(n.url?.let { u -> t("open") to { uri.openUri(u) } }, n.view?.let { v -> t("see_it") to { nav.navigate(if (v == "me") "settings" else v) } }))) }
     }.filter { it.keep || it.id !in seen }
-    val fresh = items.count { !it.quiet && "seen:" + it.id !in seen }
-    BadgedBox(badge = { if (fresh > 0) Badge(containerColor = Accent, contentColor = Ink) { Text("$fresh") } }) {
-        FloatingActionButton({ open = true }, containerColor = Surface, contentColor = Fg) { Icon(Icons.Default.Notifications, t("for_you")) }
+    val always = buildList {
+        if (PATREON_URL.isNotEmpty()) add(InfoItem("support", Icons.Default.Favorite, t("support"), t("support_sub"), keep = true, acts = listOf("Patreon" to { uri.openUri(PATREON_URL) })))
+        add(InfoItem("feedback", Icons.Default.Forum, t("feedback"), t("feedback_sub"), keep = true, acts = listOf(t("send_feedback") to { uri.openUri(FEEDBACK_URL) })))
     }
-    if (open) ModalBottomSheet(onDismissRequest = { open = false; vm.inboxMark(items.map { "seen:" + it.id }) }, containerColor = Surface) {
-        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val fresh = alerts.count { "seen:" + it.id !in seen }
+    if (open) ModalBottomSheet(onDismissRequest = { open = false; vm.inboxMark(alerts.map { "seen:" + it.id }) }, containerColor = Surface) {
+        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(t("for_you").uppercase(), color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
-                TextButton({ vm.inboxMark(items.filter { !it.keep }.map { it.id }) }) { Text(t("clear"), color = Muted, fontSize = 12.sp) }
+                Text(t("alerts").uppercase(), color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                if (alerts.any { !it.keep }) TextButton({ vm.inboxMark(alerts.filter { !it.keep }.map { it.id }) }) { Text(t("clear"), color = Muted, fontSize = 12.sp) }
             }
-            if (items.isEmpty()) Text(t("nothing_new"), color = Muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(vertical = 18.dp))
-            items.forEach { it ->
-                Row(Modifier.fillMaxWidth().background(Surface2, androidx.compose.foundation.shape.RoundedCornerShape(10.dp)).padding(10.dp), verticalAlignment = Alignment.Top) {
-                    Icon(it.icon, null, tint = Accent, modifier = Modifier.padding(end = 10.dp, top = 2.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(it.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        Text(it.text, color = Muted, fontSize = 12.sp)
-                        Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            it.acts.forEachIndexed { i, (label, run) ->
-                                if (i == 0) Button({ open = false; run() }, colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) { Text(label.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.Black) }
-                                else OutlinedButton({ open = false; run() }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) { Text(label.uppercase(), fontSize = 11.sp, color = Fg) }
-                            }
-                        }
-                    }
-                    if (!it.keep) IconButton({ vm.inboxMark(listOf(it.id)) }, modifier = Modifier.size(28.dp)) { Icon(Icons.Default.Close, t("dismiss"), tint = Muted) }
+            if (alerts.isEmpty()) Text(t("nothing_new"), color = Muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp))
+            alerts.forEach { InfoRow(it, { open = false }) { vm.inboxMark(listOf(it.id)) } }
+            Text("PITLANE HQ", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(top = 8.dp))
+            always.forEach { InfoRow(it, { open = false }, null) }
+        }
+    }
+    return InfoState(alerts, always, fresh) { open = true }
+}
+
+@Composable
+private fun InfoRow(it: InfoItem, close: () -> Unit, dismiss: (() -> Unit)?) {
+    Row(Modifier.fillMaxWidth().background(Surface2, androidx.compose.foundation.shape.RoundedCornerShape(10.dp)).padding(10.dp), verticalAlignment = Alignment.Top) {
+        Icon(it.icon, null, tint = Accent, modifier = Modifier.padding(end = 10.dp, top = 2.dp))
+        Column(Modifier.weight(1f)) {
+            Text(it.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Text(it.text, color = Muted, fontSize = 12.sp)
+            Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                it.acts.forEachIndexed { i, (label, run) ->
+                    if (i == 0) Button({ close(); run() }, colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) { Text(label.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.Black) }
+                    else OutlinedButton({ close(); run() }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) { Text(label.uppercase(), fontSize = 11.sp, color = Fg) }
                 }
             }
         }
+        if (dismiss != null && !it.keep) IconButton(dismiss, modifier = Modifier.size(28.dp)) { Icon(Icons.Default.Close, t("dismiss"), tint = Muted) }
+    }
+}
+
+/** The Info button in the header of every screen, with the number of new alerts. */
+@Composable
+private fun InfoButton() {
+    val info = LocalInfo.current ?: return
+    BadgedBox(badge = { if (info.fresh > 0) Badge(containerColor = Accent, contentColor = Ink) { Text("${info.fresh}") } }) {
+        IconButton(info.open) { Icon(Icons.Outlined.Info, "Info", tint = Muted) }
     }
 }
 
@@ -323,6 +344,7 @@ private fun Screen(title: String, sub: String = "", back: (() -> Unit)? = null, 
                     Text(title.uppercase(), color = Fg, fontSize = 20.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     if (sub.isNotBlank()) Text(sub, color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
+                InfoButton()
             }
         }
         content()

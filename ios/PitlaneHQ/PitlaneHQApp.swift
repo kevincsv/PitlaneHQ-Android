@@ -90,6 +90,7 @@ struct AppNews: Identifiable {
 @MainActor
 final class Inbox: ObservableObject {
     @Published var news: [AppNews] = []
+    @Published var goTab: Int?          // a tab an Info action asks the main view to open
     @Published var seen: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "inboxSeen") ?? [])
 
     func mark(_ ids: [String]) {
