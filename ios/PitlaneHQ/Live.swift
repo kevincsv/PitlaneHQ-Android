@@ -6,7 +6,7 @@ let liveVars = [
     "LapDeltaToBestLap", "Throttle", "Brake", "PlayerCarPosition",
 ]
 
-/// Live telemetry from your PC through your TrackIQ account's live room (/live), the same
+/// Live telemetry from your PC through your Pitlane HQ account's live room (/live), the same
 /// link the web app and Android use: any network, no PC address. Everything is sealed with the
 /// account's data key (AES-256-GCM): the server only passes it along. The PC only streams
 /// while a screen of yours is watching, so this runs only while the Live screen is open.

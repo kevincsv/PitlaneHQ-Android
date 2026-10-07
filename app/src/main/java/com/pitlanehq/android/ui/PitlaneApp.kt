@@ -83,7 +83,7 @@ private val Blue = Color(0xFF5AA9FF)
 
 private const val WEB_APP = "$SERVER/app/?companion=1"
 
-/** Support TrackIQ (Settings); empty: not shown. */
+/** Support Pitlane HQ (Settings); empty: not shown. */
 private const val PATREON_URL = "https://www.patreon.com/c/PitlaneHQ/membership"
 /** The changelog of the phone apps (the "What's new" of the update notice): one entry per version. */
 private const val CHANGELOG_URL = "https://github.com/kevincsv/PitlaneHQ-Android/blob/master/CHANGELOG.md"
@@ -868,7 +868,7 @@ private fun Chip(label: String, on: Boolean, onClick: () -> Unit) {
 private fun incName(kind: String) = t(when (kind) { "contact" -> "inc_contact"; "light" -> "inc_light"; "loss" -> "inc_loss"; else -> "inc_off" })
 
 /**
- * The track, drawn from where the car was on this lap (TrackIQ records it), coloured where you gain
+ * The track, drawn from where the car was on this lap (Pitlane HQ records it), coloured where you gain
  * (green) or lose (red) time against the reference, like the map in the web and the PC app. Touch
  * or drag on it to read that point: the charts follow it.
  */
@@ -885,6 +885,7 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, onSel: (Int) -> Unit) {
     val rings = remember(c) { if (c.delta != null) corners(c).filter { it.lost > .05 } else emptyList() }
     val labelPx = with(LocalDensity.current) { 9.sp.toPx() }
     val incPaint = remember(labelPx) { android.graphics.Paint().apply { color = android.graphics.Color.rgb(0xFF, 0x63, 0x63); textSize = labelPx; isFakeBoldText = true; isAntiAlias = true } }
+    val secPaint = remember(labelPx) { android.graphics.Paint().apply { color = android.graphics.Color.rgb(0xFF, 0xB0, 0x2E); textSize = labelPx * 1.1f; isFakeBoldText = true; isAntiAlias = true } }
     val n = xs.size
     val m = c.speedA.size
     val len = (n - 1) * tr.bin
@@ -931,10 +932,21 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, onSel: (Int) -> Unit) {
                     drawPath(p, col.copy(alpha = (0.3 + 0.7 * minOf(1.0, kotlin.math.abs(v) / mx)).toFloat()), style = Stroke(width = 7f, cap = StrokeCap.Round, join = StrokeJoin.Round))
                 }
             }
-            // sector marks and the start line
+            // the sectors like the web: the start/finish line, a cut at each sector change, S1, S2, S3 in the middle of each
             val cnt = 3
-            for (k in 1 until cnt) { val q = pt((k * (n - 1) / cnt)); drawCircle(Muted, 5f, q) }
-            drawCircle(Fg, 5f, pt(0))
+            fun bar(i: Int, len: Float, col: Color, width: Float) {
+                val q = pt(i); val q2 = pt((i + 3).coerceAtMost(n - 1)); val tx = q2.x - q.x; val ty = q2.y - q.y; val tm = maxOf(1e-3f, kotlin.math.hypot(tx, ty)); val nx = -ty / tm; val ny = tx / tm
+                drawLine(col, Offset(q.x - nx * len, q.y - ny * len), Offset(q.x + nx * len, q.y + ny * len), width, StrokeCap.Round)
+            }
+            bar(0, 10f, Fg, 4f)
+            for (k in 1 until cnt) bar(k * (n - 1) / cnt, 8f, Fg.copy(alpha = .8f), 2.5f)
+            val cx = size.width / 2f; val cy = size.height / 2f
+            for (k in 0 until cnt) {
+                val i = ((k + .5f) * (n - 1) / cnt).toInt().coerceIn(0, n - 1); val q = pt(i); val q2 = pt((i + 3).coerceAtMost(n - 1))
+                val tx = q2.x - q.x; val ty = q2.y - q.y; val tm = maxOf(1e-3f, kotlin.math.hypot(tx, ty)); var nx = -ty / tm; var ny = tx / tm
+                if (nx * (q.x - cx) + ny * (q.y - cy) > 0) { nx = -nx; ny = -ny } // the label on the inside of the track
+                drawContext.canvas.nativeCanvas.drawText("S${k + 1}", q.x + nx * 22f - labelPx * .6f, q.y + ny * 22f + labelPx * .35f, secPaint)
+            }
             // the coach: the corners where you lose time against the reference
             if (showCoach) rings.forEach { k ->
                 val q = pt((k.atM / tr.bin).roundToInt().coerceIn(0, n - 1))

@@ -1,8 +1,16 @@
 # Changelog
 
-TrackIQ (formerly Pitlane HQ) is in **beta**. The phone apps share their version number with TrackIQ.exe and the
+Pitlane HQ is in **beta**. The phone apps share their version number with PitlaneHQ.exe and the
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
+
+## 0.6.2 beta
+
+**Changed**
+- **The app is called Pitlane HQ again**, and it talks to the server at https://pitlanehq.app
+  (same account, same laps).
+- The track map shows the three sectors: the start/finish line, a cut at each sector change and
+  S1, S2, S3 in the middle of each sector, like the PC and the web.
 
 ## 0.6.1 beta
 
@@ -26,7 +34,7 @@ when the beta ends. Every version is listed here, newest first, and gets a relea
 
 ## 0.5.9 beta
 
-Same version as TrackIQ.exe and the web, which now open on Home like the phone apps and run a
+Same version as PitlaneHQ.exe and the web, which now open on Home like the phone apps and run a
 live demo race. No changes in the phone apps.
 
 ## 0.5.8 beta
@@ -48,11 +56,11 @@ live demo race. No changes in the phone apps.
 
 **Changed**
 - Light contact and loss of control are told apart (both 2x in iRacing): the map readout and the
-  incident summary name them separately, from what TrackIQ.exe 0.5.6 records.
+  incident summary name them separately, from what PitlaneHQ.exe 0.5.6 records.
 
 ## 0.5.5 beta
 
-Same version as TrackIQ.exe and the web, which now need your account like the phone apps already
+Same version as PitlaneHQ.exe and the web, which now need your account like the phone apps already
 did, and where the session bar on phones was fixed. No changes in the phone apps.
 
 ## 0.5.4 beta
@@ -65,13 +73,13 @@ did, and where the session bar on phones was fixed. No changes in the phone apps
 
 ## 0.5.3 beta
 
-Same version as TrackIQ.exe and the web (fixes on the web app). No changes in the phone apps.
+Same version as PitlaneHQ.exe and the web (fixes on the web app). No changes in the phone apps.
 
 ## 0.5.2 beta
 
 **Changed**
 - The incidents near the point you touch on the map are named as the game does: Off track 1x,
-  Loss of control or slight contact 2x, Car contact 4x. Same version as TrackIQ.exe and the web.
+  Loss of control or slight contact 2x, Car contact 4x. Same version as PitlaneHQ.exe and the web.
 
 ## 0.5.1 beta
 
@@ -83,9 +91,9 @@ Same version as TrackIQ.exe and the web (fixes on the web app). No changes in th
 ## 0.5.0 beta
 
 **New**
-- The apps are now **TrackIQ**, like the PC app and the web: the name on the phone, in every screen
+- The apps are now **Pitlane HQ**, like the PC app and the web: the name on the phone, in every screen
   and in the release notes. Your account and settings stay where they were.
-- **Track map** in the lap analysis: the circuit drawn from the lap itself (TrackIQ.exe 0.5 records
+- **Track map** in the lap analysis: the circuit drawn from the lap itself (PitlaneHQ.exe 0.5 records
   where the car was on every lap), coloured where you gain (green) or lose (red) time against the
   reference, with the start line and the sector marks. Touch or drag on the map to read that point:
   the speed, the reference and the gap, and the charts follow it. Demo data draws it too.

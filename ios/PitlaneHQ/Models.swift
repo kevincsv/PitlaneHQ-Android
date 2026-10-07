@@ -26,7 +26,7 @@ struct CloudLap: Identifiable, Hashable {
 struct Trace {
     let bin: Double
     let rows: [[Double]]
-    /// The shape of the track: where the car was at every row (TrackIQ 0.5 and later record it).
+    /// The shape of the track: where the car was at every row (Pitlane HQ 0.5 and later record it).
     var x: [Double]? = nil
     var y: [Double]? = nil
     /// The incidents of the lap as [d, pts, d, pts…] (lap distance in m, incident points).

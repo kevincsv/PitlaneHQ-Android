@@ -11,7 +11,7 @@ android {
         applicationId="com.pitlanehq.android"
         minSdk=26
         targetSdk=36
-        // one version for TrackIQ (PC, web, phones): version.txt; "beta" until 1.0.0
+        // one version for Pitlane HQ (PC, web, phones): version.txt; "beta" until 1.0.0
         versionCode=24
         versionName=rootProject.file("version.txt").readText().trim() + "-beta"
     }

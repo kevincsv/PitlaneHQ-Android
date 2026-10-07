@@ -1,7 +1,7 @@
-# TrackIQ for Android and iOS 0.6.0
+# Pitlane HQ for Android and iOS 0.6.2
 
-The phone apps of TrackIQ (formerly Pitlane HQ). They connect to the same TrackIQ server and the same account as
-the PC app (TrackIQ.exe) and the web app (`/app`), which live in their own repository.
+The phone apps of Pitlane HQ. They connect to the same Pitlane HQ server and the same account as
+the PC app (PitlaneHQ.exe) and the web app (`/app`), which live in their own repository.
 
 | Folder | App | Built with |
 | --- | --- | --- |
@@ -10,17 +10,17 @@ the PC app (TrackIQ.exe) and the web app (`/app`), which live in their own repos
 
 Both apps do the same:
 
-- **Sign in** with the TrackIQ account. The password only derives the keys on the phone
+- **Sign in** with the Pitlane HQ account. The password only derives the keys on the phone
   (PBKDF2-SHA256, 600 000 rounds, then HKDF): the server gets the login key and returns the
   data key sealed with AES-256-GCM. The session token and the data key are kept in the
   Android Keystore or the iOS Keychain.
-- **Home:** recent races from the account sync (races.json written by TrackIQ.exe): finish,
+- **Home:** recent races from the account sync (races.json written by PitlaneHQ.exe): finish,
   iRating change, incidents, SOF, a racing summary and each race with laps and results.
   Safety rating is in development until iRacing switches its data API back on.
 - **Analysis:** sessions and personal bests; a lap compared with your best lap or the community's
   fastest (speed, delta and input charts, where the time goes, sector deltas).
 - **Community:** leaderboards with your position, race reports and setups.
-- **Live:** live telemetry from TrackIQ.exe through the account's live room on the server,
+- **Live:** live telemetry from PitlaneHQ.exe through the account's live room on the server,
   from any network. Messages are sealed with the account's data key; the server only passes
   them along, and the PC only streams while the Live screen is open.
 - **Settings:** account, devices signed in, language (phone, English, Spanish), web. Admins also

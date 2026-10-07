@@ -1,6 +1,6 @@
 package com.pitlanehq.android.model
 
-/** Live telemetry from TrackIQ.exe, relayed end-to-end encrypted through the TrackIQ server. */
+/** Live telemetry from PitlaneHQ.exe, relayed end-to-end encrypted through the Pitlane HQ server. */
 data class LiveState(
     val link: LinkState = LinkState.OFF,
     val pcOnline: Boolean = false,
@@ -47,7 +47,7 @@ data class Trace(val bin: Double, val rows: List<DoubleArray>, val x: List<Doubl
         val pts = inc[2 * i + 1].toInt()
         Incident(inc[2 * i], pts, incK.getOrNull(i) ?: when { pts >= 4 -> "contact"; pts == 2 -> "loss"; else -> "off" })
     }
-    /** The shape of the track: where the car was at every row (TrackIQ 0.5 and later record it). */
+    /** The shape of the track: where the car was at every row (Pitlane HQ 0.5 and later record it). */
     val hasShape get() = x != null && y != null && x.size == rows.size && x.size > 10
     val speedKph get() = rows.map { it[0] * 3.6 }
     val throttle get() = rows.map { it.getOrElse(1) { 0.0 } }

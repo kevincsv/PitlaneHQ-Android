@@ -1026,7 +1026,7 @@ struct Series {
     let color: Color
 }
 
-/// The track, drawn from where the car was on this lap (TrackIQ records it), coloured where you gain
+/// The track, drawn from where the car was on this lap (Pitlane HQ records it), coloured where you gain
 /// (green) or lose (red) time against the reference, like the map in the web and the PC app. Touch
 /// or drag on it to read that point: the charts follow it (`pick` is the fraction of the lap).
 struct TrackMapView: View {
@@ -1229,10 +1229,33 @@ struct TrackMapView: View {
         return t("incidents_sum", incidents.count, pts) + ": " + parts.joined(separator: " · ")
     }
 
+    /// A short line across the track at row `i` (the start/finish line, a sector cut).
+    private func bar(_ i: Int, _ len: Double, _ size: CGSize) -> Path {
+        let q = point(i, size), q2 = point(min(n - 1, i + 3), size)
+        let tx = q2.x - q.x, ty = q2.y - q.y, tm = max(1e-3, (tx * tx + ty * ty).squareRoot()), nx = -ty / tm, ny = tx / tm
+        var p = Path()
+        p.move(to: CGPoint(x: q.x - nx * len, y: q.y - ny * len)); p.addLine(to: CGPoint(x: q.x + nx * len, y: q.y + ny * len))
+        return p
+    }
+
+    /// Where the S1, S2, S3 label of sector `k` goes: the middle of the sector, on the inside of the track.
+    private func secLabel(_ k: Int, _ size: CGSize) -> CGPoint {
+        let i = max(0, min(n - 1, Int((Double(k) + 0.5) * Double(n - 1) / 3)))
+        let q = point(i, size), q2 = point(min(n - 1, i + 3), size)
+        let tx = q2.x - q.x, ty = q2.y - q.y, tm = max(1e-3, (tx * tx + ty * ty).squareRoot())
+        var nx = -ty / tm, ny = tx / tm
+        if nx * (q.x - size.width / 2) + ny * (q.y - size.height / 2) > 0 { nx = -nx; ny = -ny }
+        return CGPoint(x: q.x + nx * 22, y: q.y + ny * 22)
+    }
+
+    // the sectors like the web: the start/finish line, a cut at each sector change, S1, S2, S3 in the middle of each
     @ViewBuilder private func dots(_ size: CGSize) -> some View {
-        Circle().fill(Theme.muted).frame(width: 10, height: 10).position(point((n - 1) / 3, size))
-        Circle().fill(Theme.muted).frame(width: 10, height: 10).position(point(2 * (n - 1) / 3, size))
-        Circle().fill(Theme.fg).frame(width: 10, height: 10).position(point(0, size))
+        bar(0, 10, size).stroke(Theme.fg, style: StrokeStyle(lineWidth: 4, dash: [3, 3]))
+        bar((n - 1) / 3, 8, size).stroke(Theme.fg.opacity(0.8), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+        bar(2 * (n - 1) / 3, 8, size).stroke(Theme.fg.opacity(0.8), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+        ForEach(0..<3, id: \.self) { k in
+            Text("S\(k + 1)").font(.system(size: 11, weight: .black, design: .monospaced)).foregroundColor(Theme.accent).position(secLabel(k, size))
+        }
         if let i = selectedRow {
             Circle().fill(Theme.fg).frame(width: 18, height: 18).position(point(i, size))
             Circle().fill(Theme.accent).frame(width: 12, height: 12).position(point(i, size))

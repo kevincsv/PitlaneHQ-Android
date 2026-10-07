@@ -72,7 +72,7 @@ enum Demo {
             let steer: Double = cos(Double(i) * 0.05) * 0.1
             rows.append([v, thr, brk, gear, steer, t])
         }
-        // the shape of the track, like the position TrackIQ records: a loop that turns at every corner
+        // the shape of the track, like the position Pitlane HQ records: a loop that turns at every corner
         var turns: [Double] = []
         for k in 0..<corners.count { turns.append((k % 3 == 2 ? -0.6 : 1.0) * Double.random(in: 0.6...1.3, using: &rc)) }
         let tot: Double = turns.reduce(0, +)

@@ -56,7 +56,7 @@ object Demo {
             val brk = if (braking) min(1.0, (v - next) / 8.0) else 0.0
             doubleArrayOf(v, thr, brk, (1 + v / 14).toInt().coerceAtMost(6).toDouble(), cos(i * 0.05) * 0.1, t)
         }
-        // the shape of the track, like the position TrackIQ records: a loop that turns at every corner
+        // the shape of the track, like the position Pitlane HQ records: a loop that turns at every corner
         val turns = corners.indices.map { k -> (if (k % 3 == 2) -0.6 else 1.0) * rc.nextDouble(0.6, 1.3) }
         val tot = turns.sum()
         val xs = ArrayList<Double>(n); val ys = ArrayList<Double>(n)

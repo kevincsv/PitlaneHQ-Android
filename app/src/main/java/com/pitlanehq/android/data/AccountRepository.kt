@@ -51,7 +51,7 @@ class Offline : AppError("no_internet")
 class Got<T>(val data: T, val stale: Boolean = false)
 
 /**
- * The TrackIQ account, exactly like the PC and the web app: the password only derives the
+ * The Pitlane HQ account, exactly like the PC and the web app: the password only derives the
  * keys on this phone, the server gets the login key and gives back the data key sealed with
  * the wrap key. The session token, the data key and everything saved for offline use are kept
  * sealed with an Android Keystore key.
@@ -319,7 +319,7 @@ class AccountRepository(context: Context) {
         call("POST", "/account/sessions/revoke", JSONObject().put("id", id))
     }
 
-    // ---------- your laps (uploaded by TrackIQ.exe) ----------
+    // ---------- your laps (uploaded by PitlaneHQ.exe) ----------
     fun sessions(): Got<List<CloudSession>> {
         if (demo) return Got(Demo.sessions())
         val g = cachedGet("/api/sessions?limit=100")

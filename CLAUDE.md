@@ -1,4 +1,4 @@
-# TrackIQ phone apps: rules for working on this project
+# Pitlane HQ phone apps: rules for working on this project
 
 - Reply to the owner in Spanish.
 - Push only when the owner says so ("súbelo", "sube todo"…). Never create pull requests unless asked.
@@ -14,7 +14,7 @@
   must keep its protocol: account keys (PBKDF2 600 000 + HKDF, AES-GCM with "pitlanehq-v1"),
   live relay (`/live`, "e:" messages with "pitlanehq-live-v1", gzip JSON [event, data]).
 - Android and iOS stay the same app: same screens, same features, same wording.
-- One version for TrackIQ everywhere: `version.txt` (the same number as TrackIQ.exe and the
+- One version for Pitlane HQ everywhere: `version.txt` (the same number as PitlaneHQ.exe and the
   web), shown with "beta" until 1.0.0. Raise it slowly (PATCH for fixes, MINOR for a set of
   features) and add the version to CHANGELOG.md: its section becomes the release notes.
 - `master` is the main branch the builds come from. Running both workflows by hand with `release` ticked

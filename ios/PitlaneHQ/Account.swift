@@ -3,7 +3,7 @@ import Security
 
 let server = URL(string: "https://pitlanehq.app")!
 let webApp = URL(string: "https://pitlanehq.app/app/?companion=1")!
-/// Support TrackIQ (Settings); empty: not shown.
+/// Support Pitlane HQ (Settings); empty: not shown.
 let patreonURL = "https://www.patreon.com/c/PitlaneHQ/membership"
 let feedbackURL = URL(string: "https://github.com/kevincsv/Pitwall-test/issues/new?labels=feedback")!
 let changelogURL = "https://github.com/kevincsv/PitlaneHQ-Android/blob/master/CHANGELOG.md"
@@ -54,7 +54,7 @@ private func str(_ v: Any?) -> String { v as? String ?? "" }
 private func pos(_ v: Any?) -> Double? { num(v).flatMap { $0.isFinite && $0 > 0 ? $0 : nil } }
 private func doubles(_ v: Any?) -> [Double] { (v as? [NSNumber] ?? []).map(\.doubleValue) }
 
-/// The TrackIQ account, exactly like the PC, the web app and Android: the password only
+/// The Pitlane HQ account, exactly like the PC, the web app and Android: the password only
 /// derives the keys on this phone; the session token and the data key stay in the Keychain,
 /// and the copies saved for offline use are sealed with the data key.
 @MainActor
@@ -401,7 +401,7 @@ final class Account: ObservableObject {
         _ = try await call("POST", "/account/sessions/revoke", body: ["id": id])
     }
 
-    // ---------- your laps (uploaded by TrackIQ.exe) ----------
+    // ---------- your laps (uploaded by PitlaneHQ.exe) ----------
 
     // session and lap ids look like acct_<id>:<…>; the ':' stays as it is in the path
     private func idPath(_ id: String) -> String {
