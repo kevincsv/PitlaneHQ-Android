@@ -7,6 +7,7 @@ struct PitlaneHQApp: App {
     @StateObject private var net = NetMonitor()
     @StateObject private var i18n = I18n.shared
     @StateObject private var updates = Updates()
+    @StateObject private var inbox = Inbox()
 
     var body: some Scene {
         WindowGroup {
@@ -18,7 +19,9 @@ struct PitlaneHQApp: App {
             .environmentObject(net)
             .environmentObject(i18n)
             .environmentObject(updates)
+            .environmentObject(inbox)
             .task { await updates.check() }
+            .task { await inbox.load() }
             .preferredColorScheme(.dark)
             .tint(Theme.accent)
         }
@@ -74,6 +77,33 @@ final class Updates: ObservableObject {
         let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         if Updates.newer(tag, than: current) {
             version = tag.replacingOccurrences(of: "v", with: "").split(separator: "-").first.map(String.init)
+        }
+    }
+}
+
+/// One piece of news of the app (web/dist/app-news.json on the server, edited by hand).
+struct AppNews: Identifiable {
+    let id: String, date: String, title: String, text: String, url: URL?, view: String?
+}
+
+/// The inbox: app news from the server and which items were dismissed on this phone.
+@MainActor
+final class Inbox: ObservableObject {
+    @Published var news: [AppNews] = []
+    @Published var seen: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "inboxSeen") ?? [])
+
+    func mark(_ ids: [String]) {
+        seen.formUnion(ids)
+        UserDefaults.standard.set(Array(seen), forKey: "inboxSeen")
+    }
+
+    func load() async {
+        guard let res = try? await URLSession.shared.data(from: server.appendingPathComponent("app/app-news.json")),
+              let j = try? JSONSerialization.jsonObject(with: res.0) as? [String: Any], let items = j["items"] as? [[String: Any]] else { return }
+        let lang = I18n.shared.lang
+        func pick(_ o: Any?) -> String { let d = o as? [String: String] ?? [:]; return d[lang] ?? d["en"] ?? "" }
+        news = items.prefix(10).map { it in
+            AppNews(id: it["id"] as? String ?? "", date: it["date"] as? String ?? "", title: pick(it["title"]), text: pick(it["text"]), url: (it["url"] as? String).flatMap(URL.init), view: it["view"] as? String)
         }
     }
 }

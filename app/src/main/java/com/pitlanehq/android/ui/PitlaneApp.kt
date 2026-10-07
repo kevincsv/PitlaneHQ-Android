@@ -17,6 +17,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import com.pitlanehq.android.data.AppUpdate
+import com.pitlanehq.android.data.AccountState
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -81,6 +85,10 @@ private const val WEB_APP = "$SERVER/app/?companion=1"
 
 /** Support TrackIQ (Settings); empty: not shown. */
 private const val PATREON_URL = "https://www.patreon.com/c/PitlaneHQ/membership"
+/** The changelog of the phone apps (the "What's new" of the update notice): one entry per version. */
+private const val CHANGELOG_URL = "https://github.com/kevincsv/PitlaneHQ-Android/blob/master/CHANGELOG.md"
+/** Where "Send feedback" goes. */
+private const val FEEDBACK_URL = "https://github.com/kevincsv/Pitwall-test/issues/new?labels=feedback"
 
 private data class Dest(val route: String, val label: String, val icon: ImageVector)
 
@@ -105,7 +113,25 @@ fun PitlaneApp(vm: PitlaneViewModel = viewModel()) {
 private fun LoginScreen(vm: PitlaneViewModel, error: String?, busy: Boolean) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var code by remember { mutableStateOf("") }
+    val needCode by vm.account.collectAsState()
     val uri = LocalUriHandler.current
+    if (needCode.needCode) {
+        // the password was right: the authenticator code (or a recovery code) finishes the sign-in
+        AlertDialog(
+            onDismissRequest = { vm.cancelCode() },
+            title = { Text(t("two_factor"), fontWeight = FontWeight.Black) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(t("two_factor_code"), color = Muted, fontSize = 12.sp)
+                    OutlinedTextField(code, { code = it }, label = { Text(t("code")) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                    error?.let { Text(t(it), color = Bad, fontSize = 12.sp) }
+                }
+            },
+            confirmButton = { TextButton({ vm.loginCode(code) }, enabled = !busy && code.isNotBlank()) { Text(t("sign_in"), color = Accent) } },
+            dismissButton = { TextButton({ vm.cancelCode() }) { Text(t("cancel"), color = Muted) } }
+        )
+    }
     LazyColumn(
         Modifier.fillMaxSize().background(Ink).systemBarsPadding().imePadding(),
         contentPadding = PaddingValues(24.dp),
@@ -152,13 +178,14 @@ private fun MainApp(vm: PitlaneViewModel) {
     val online by vm.online.collectAsState()
     val upd by vm.update.collectAsState()
     val uri = LocalUriHandler.current
-    Scaffold(containerColor = Ink, bottomBar = { BottomBar(nav) }) { pad ->
+    Scaffold(containerColor = Ink, bottomBar = { BottomBar(nav) }, floatingActionButton = { InboxButton(vm, nav) }) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             Column(Modifier.statusBarsPadding()) {
                 if (!online) Banner(t("showing_saved"), Bad)
                 if (demo) Banner(t("demo_banner"), Accent)
                 upd?.let { u -> Banner(t("update_available", u.version), Good) { uri.openUri(u.url) } }
             }
+            UpdateNotice(upd)
             NavHost(nav, "home", Modifier.weight(1f)) {
                 composable("home") { Home(vm, nav) }
                 composable("races") { RacesAll(vm, nav) }
@@ -174,6 +201,77 @@ private fun MainApp(vm: PitlaneViewModel) {
             }
         }
     }
+}
+
+/** One entry of the inbox. */
+private class InboxItem(val id: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val title: String, val text: String, val keep: Boolean = false, val quiet: Boolean = false, val acts: List<Pair<String, () -> Unit>>)
+
+/** The inbox: a floating button with what matters now (new version, app news, account to-dos, support, feedback). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InboxButton(vm: PitlaneViewModel, nav: NavHostController) {
+    val a by vm.account.collectAsState()
+    val upd by vm.update.collectAsState()
+    val news by vm.news.collectAsState()
+    val seen by vm.inboxSeen.collectAsState()
+    var open by remember { mutableStateOf(false) }
+    val uri = LocalUriHandler.current
+    val items = buildList {
+        upd?.let { u -> add(InboxItem("upd:" + u.version, Icons.Default.Download, t("update_title", u.version), t("update_body", BuildConfig.VERSION_NAME.replace("-", " ")), acts = listOf(t("download") to { uri.openUri(u.url) }, t("whats_new") to { uri.openUri(CHANGELOG_URL + "#" + u.version.replace(".", "") + "-beta") }))) }
+        if (!a.twoFactor) add(InboxItem("2fa", Icons.Default.Lock, t("two_factor_rec_short"), t("two_factor_rec_sub"), acts = listOf(t("turn_on") to { nav.navigate("settings") })))
+        news.forEach { n -> add(InboxItem("news:" + n.id, Icons.Default.Newspaper, n.title, n.text + if (n.date.isNotBlank()) " · " + n.date else "", acts = listOfNotNull(n.url?.let { u -> t("open") to { uri.openUri(u) } }, n.view?.let { v -> t("see_it") to { nav.navigate(if (v == "me") "settings" else v) } }))) }
+        if (PATREON_URL.isNotEmpty()) add(InboxItem("support", Icons.Default.Favorite, t("support"), t("support_sub"), quiet = true, acts = listOf("Patreon" to { uri.openUri(PATREON_URL) })))
+        add(InboxItem("feedback", Icons.Default.Forum, t("feedback"), t("feedback_sub"), quiet = true, acts = listOf(t("send_feedback") to { uri.openUri(FEEDBACK_URL) })))
+    }.filter { it.keep || it.id !in seen }
+    val fresh = items.count { !it.quiet && "seen:" + it.id !in seen }
+    BadgedBox(badge = { if (fresh > 0) Badge(containerColor = Accent, contentColor = Ink) { Text("$fresh") } }) {
+        FloatingActionButton({ open = true }, containerColor = Surface, contentColor = Fg) { Icon(Icons.Default.Notifications, t("for_you")) }
+    }
+    if (open) ModalBottomSheet(onDismissRequest = { open = false; vm.inboxMark(items.map { "seen:" + it.id }) }, containerColor = Surface) {
+        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(t("for_you").uppercase(), color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                TextButton({ vm.inboxMark(items.filter { !it.keep }.map { it.id }) }) { Text(t("clear"), color = Muted, fontSize = 12.sp) }
+            }
+            if (items.isEmpty()) Text(t("nothing_new"), color = Muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(vertical = 18.dp))
+            items.forEach { it ->
+                Row(Modifier.fillMaxWidth().background(Surface2, androidx.compose.foundation.shape.RoundedCornerShape(10.dp)).padding(10.dp), verticalAlignment = Alignment.Top) {
+                    Icon(it.icon, null, tint = Accent, modifier = Modifier.padding(end = 10.dp, top = 2.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(it.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(it.text, color = Muted, fontSize = 12.sp)
+                        Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            it.acts.forEachIndexed { i, (label, run) ->
+                                if (i == 0) Button({ open = false; run() }, colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) { Text(label.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.Black) }
+                                else OutlinedButton({ open = false; run() }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) { Text(label.uppercase(), fontSize = 11.sp, color = Fg) }
+                            }
+                        }
+                    }
+                    if (!it.keep) IconButton({ vm.inboxMark(listOf(it.id)) }, modifier = Modifier.size(28.dp)) { Icon(Icons.Default.Close, t("dismiss"), tint = Muted) }
+                }
+            }
+        }
+    }
+}
+
+/** When the app starts with a newer version published: what's new, download, or later (the banner stays). */
+@Composable
+private fun UpdateNotice(u: AppUpdate?) {
+    var shown by rememberSaveable { mutableStateOf("") }
+    val uri = LocalUriHandler.current
+    if (u == null || shown == u.version) return
+    AlertDialog(
+        onDismissRequest = { shown = u.version },
+        title = { Text(t("update_title", u.version), fontWeight = FontWeight.Black) },
+        text = { Text(t("update_body", BuildConfig.VERSION_NAME.replace("-", " ")), color = Muted, fontSize = 13.sp) },
+        confirmButton = {
+            Row {
+                TextButton({ uri.openUri(CHANGELOG_URL + "#" + u.version.replace(".", "") + "-beta") }) { Text(t("whats_new"), color = Accent) }
+                TextButton({ shown = u.version; uri.openUri(u.url) }) { Text(t("download"), color = Accent, fontWeight = FontWeight.Bold) }
+            }
+        },
+        dismissButton = { TextButton({ shown = u.version }) { Text(t("later"), color = Muted) } }
+    )
 }
 
 @Composable
@@ -1175,6 +1273,7 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
                 Text(if (a.verified) t("verified") else t("not_verified"), color = if (a.verified) Good else Accent, fontSize = 11.sp)
             }
         }
+        item { TwoFactorPanel(vm, a) }
         item { Action(t("web").uppercase(), t("web_sub"), Icons.Default.OpenInBrowser) { uri.openUri(WEB_APP) } }
         if (PATREON_URL.isNotEmpty()) item { Action(t("support").uppercase(), t("support_sub"), Icons.Default.Favorite) { uri.openUri(PATREON_URL) } }
         item { Section(t("devices")) }
@@ -1225,6 +1324,81 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
         }
         item { Text(t("version", BuildConfig.VERSION_NAME.replace("-", " ")), color = Muted, fontSize = 11.sp, modifier = Modifier.fillMaxWidth()) }
     }
+}
+
+/** Two-step sign-in with an authenticator app: optional, recommended. Setup: password → link/key → first code → recovery codes once. */
+@Composable
+private fun TwoFactorPanel(vm: PitlaneViewModel, a: AccountState) {
+    val setup by vm.twoFactorSetup.collectAsState()
+    val codes by vm.recoveryCodes.collectAsState()
+    val err by vm.twoFactorError.collectAsState()
+    var step by remember { mutableStateOf("") } // "", "pw", "off"
+    var pw by remember { mutableStateOf("") }
+    var code by remember { mutableStateOf("") }
+    val uri = LocalUriHandler.current
+    val clip = LocalClipboardManager.current
+    Panel {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(t("two_factor"), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Text(if (a.twoFactor) t("two_factor_on").uppercase() else t("recommended").uppercase(), color = if (a.twoFactor) Good else Accent, fontSize = 10.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+        }
+        Text(if (a.twoFactor) t("two_factor_is_on", a.recoveryLeft) else t("two_factor_rec"), color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+        Spacer(Modifier.height(8.dp))
+        if (a.twoFactor) OutlinedButton({ pw = ""; code = ""; vm.twoFactorError.value = null; step = "off" }) { Text(t("turn_off").uppercase(), color = Bad) }
+        else Button({ pw = ""; code = ""; vm.twoFactorError.value = null; step = "pw" }, colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) { Text(t("turn_on").uppercase(), fontWeight = FontWeight.Black) }
+    }
+    val field: @Composable (String, Boolean) -> Unit = { label, secret ->
+        OutlinedTextField(
+            if (secret) pw else code, { if (secret) pw = it else code = it }, label = { Text(label) }, singleLine = true,
+            visualTransformation = if (secret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+            keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else KeyboardType.Number), modifier = Modifier.fillMaxWidth()
+        )
+    }
+    if (step == "pw" && setup == null) AlertDialog(
+        onDismissRequest = { step = "" },
+        title = { Text(t("turn_on") + " · " + t("two_factor"), fontWeight = FontWeight.Black) },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(t("two_factor_pw"), color = Muted, fontSize = 12.sp); field(t("password"), true); err?.let { Text(t(it), color = Bad, fontSize = 12.sp) } } },
+        confirmButton = { TextButton({ vm.setup2fa(pw) }, enabled = pw.isNotEmpty()) { Text(t("continue"), color = Accent) } },
+        dismissButton = { TextButton({ step = "" }) { Text(t("cancel"), color = Muted) } }
+    )
+    setup?.let { st ->
+        AlertDialog(
+            onDismissRequest = { vm.twoFactorSetup.value = null; step = "" },
+            title = { Text(t("two_factor"), fontWeight = FontWeight.Black) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(t("two_factor_scan"), color = Muted, fontSize = 12.sp)
+                    Button({ uri.openUri(st.url) }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) { Text(t("open_in_app").uppercase(), fontWeight = FontWeight.Black) }
+                    Text(t("key") + ": " + st.secret.chunked(4).joinToString(" "), fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.clickable { clip.setText(AnnotatedString(st.secret)) })
+                    field(t("code"), false)
+                    err?.let { Text(t(it), color = Bad, fontSize = 12.sp) }
+                }
+            },
+            confirmButton = { TextButton({ vm.enable2fa(code) }, enabled = code.length >= 6) { Text(t("turn_on"), color = Accent) } },
+            dismissButton = { TextButton({ vm.twoFactorSetup.value = null; step = "" }) { Text(t("cancel"), color = Muted) } }
+        )
+    }
+    codes?.let { cs ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(t("two_factor") + " · " + t("two_factor_on"), fontWeight = FontWeight.Black) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(t("two_factor_codes"), color = Muted, fontSize = 12.sp)
+                    Text(cs.joinToString("\n"), fontFamily = FontFamily.Monospace, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().background(Surface2).padding(10.dp))
+                }
+            },
+            confirmButton = { TextButton({ vm.recoveryCodes.value = null; step = "" }) { Text(t("saved_them"), color = Accent, fontWeight = FontWeight.Bold) } },
+            dismissButton = { TextButton({ clip.setText(AnnotatedString(cs.joinToString("\n"))) }) { Text(t("copy"), color = Muted) } }
+        )
+    }
+    if (step == "off") AlertDialog(
+        onDismissRequest = { step = "" },
+        title = { Text(t("turn_off") + " · " + t("two_factor"), fontWeight = FontWeight.Black) },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(t("two_factor_off"), color = Muted, fontSize = 12.sp); field(t("password"), true); field(t("code"), false); err?.let { Text(t(it), color = Bad, fontSize = 12.sp) } } },
+        confirmButton = { TextButton({ vm.disable2fa(pw, code) { step = "" } }, enabled = pw.isNotEmpty() && code.isNotBlank()) { Text(t("turn_off"), color = Bad) } },
+        dismissButton = { TextButton({ step = "" }) { Text(t("cancel"), color = Muted) } }
+    )
 }
 
 // ---------- pieces ----------

@@ -8,6 +8,9 @@ import java.util.concurrent.TimeUnit
 /** A newer TrackIQ for this phone: its version ("0.3.1") and where to download it. */
 data class AppUpdate(val version: String, val url: String)
 
+/** One piece of news of the app (web/dist/app-news.json on the server, edited by hand). */
+data class AppNews(val id: String, val date: String, val title: String, val text: String, val url: String?, val view: String?)
+
 /**
  * Looks at the newest release of the phone apps on GitHub (the same one the web's download
  * buttons point to) and says whether it is newer than this app.
@@ -28,6 +31,22 @@ object Updates {
         }
         return false
     }
+
+    /** The news of the app, in the phone's language. */
+    fun news(server: String, lang: String): List<AppNews> = runCatching {
+        val req = Request.Builder().url("$server/app/app-news.json").build()
+        client.newCall(req).execute().use { r ->
+            if (!r.isSuccessful) return emptyList()
+            val items = JSONObject(r.body.string()).optJSONArray("items") ?: return emptyList()
+            val pick = { o: org.json.JSONObject?, k: String -> o?.optString(k)?.ifBlank { null } }
+            List(minOf(items.length(), 10)) { i ->
+                val it = items.getJSONObject(i)
+                val title = it.optJSONObject("title")
+                val text = it.optJSONObject("text")
+                AppNews(it.optString("id"), it.optString("date"), pick(title, lang) ?: pick(title, "en") ?: "", pick(text, lang) ?: pick(text, "en") ?: "", it.optString("url").ifBlank { null }, it.optString("view").ifBlank { null })
+            }
+        }
+    }.getOrDefault(emptyList())
 
     fun check(current: String): AppUpdate? = runCatching {
         val req = Request.Builder().url(API).header("Accept", "application/vnd.github+json").build()

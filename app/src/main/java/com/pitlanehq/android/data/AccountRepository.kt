@@ -33,8 +33,14 @@ data class AccountState(
     val syncedFiles: Int = 0,
     val syncVersion: Long = 0,
     val syncUpdated: Long = 0,
-    val error: String? = null
+    val error: String? = null,
+    val needCode: Boolean = false,      // the password was right: the authenticator code comes next
+    val twoFactor: Boolean = false,     // two-step sign-in is on for this account
+    val recoveryLeft: Int = 0
 )
+
+/** What the server gives to set up two-step sign-in: the key and the otpauth link for the app. */
+data class TwoFactorSetup(val secret: String, val url: String)
 
 /** Errors the screens show in the user's language: the message is a key of I18n. */
 open class AppError(key: String) : Exception(key)
@@ -72,7 +78,9 @@ class AccountRepository(context: Context) {
         admin = prefs.getBoolean("admin", false),
         syncedFiles = prefs.getInt("syncedFiles", 0),
         syncVersion = prefs.getLong("syncVersion", 0),
-        syncUpdated = prefs.getLong("syncUpdated", 0)
+        syncUpdated = prefs.getLong("syncUpdated", 0),
+        twoFactor = prefs.getBoolean("twoFactor", false),
+        recoveryLeft = prefs.getInt("recoveryLeft", 0)
     )
 
     // ---------- device storage ----------
@@ -150,13 +158,32 @@ class AccountRepository(context: Context) {
         if (e.message == "server_down") Got(saved(safeName(path)) ?: throw e, stale = true) else throw e
     }
 
+    // a sign-in waiting for its authenticator code (5 minutes): the key stays here, never stored
+    private var pending: Triple<String, String, ByteArray>? = null // pending token, email, wrap key
+
     fun login(email0: String, password: String): AccountState {
         val email = email0.trim().lowercase()
         if (!Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$").matches(email)) throw AppError("bad_email")
         if (password.isEmpty()) throw AppError("enter_pw")
         val k = Crypto.derive(email, password)
         val j = JSONObject(call("POST", "/account/login", JSONObject().put("email", email).put("auth", k.auth).put("device", "Android"), auth = false))
-        val key = Crypto.open(k.wrap, j.getString("wrappedKey"), Crypto.ACCOUNT_AAD)
+        if (j.optBoolean("twoFactor") && j.has("pending")) {
+            pending = Triple(j.getString("pending"), email, k.wrap)
+            return AccountState(email = email, needCode = true)
+        }
+        return signedIn(j, email, k.wrap)
+    }
+
+    /** Second step: the 6-digit code of the authenticator app, or a recovery code. */
+    fun loginCode(code: String): AccountState {
+        val p = pending ?: throw AppError("sign_in_again")
+        val j = JSONObject(call("POST", "/account/login/2fa", JSONObject().put("pending", p.first).put("code", code.trim()), auth = false))
+        pending = null
+        return signedIn(j, p.second, p.third)
+    }
+
+    private fun signedIn(j: JSONObject, email: String, wrap: ByteArray): AccountState {
+        val key = Crypto.open(wrap, j.getString("wrappedKey"), Crypto.ACCOUNT_AAD)
         require(key.size == 32) { "The account key is damaged" }
         prefs.edit()
             .putString("token", protect(j.getString("token").toByteArray()))
@@ -165,9 +192,37 @@ class AccountRepository(context: Context) {
             .putString("display", j.optString("display", ""))
             .putBoolean("verified", j.optBoolean("verified", true))
             .putBoolean("admin", j.optBoolean("admin", false))
+            .putBoolean("twoFactor", j.optBoolean("twoFactor", false))
             .apply()
         return runCatching { sync() }.getOrElse { storedState() }
     }
+
+    // ---------- two-step sign-in (optional, recommended) ----------
+    fun setup2fa(password: String): TwoFactorSetup {
+        val k = Crypto.derive(email(), password)
+        val j = JSONObject(call("POST", "/account/2fa/setup", JSONObject().put("auth", k.auth)))
+        return TwoFactorSetup(j.getString("secret"), j.getString("url"))
+    }
+
+    /** Confirms the first code; gives the recovery codes (shown once). */
+    fun enable2fa(code: String): List<String> {
+        val j = JSONObject(call("POST", "/account/2fa/enable", JSONObject().put("code", code.trim())))
+        val a = j.optJSONArray("codes") ?: JSONArray()
+        prefs.edit().putBoolean("twoFactor", true).putInt("recoveryLeft", a.length()).apply()
+        return List(a.length()) { a.getString(it) }
+    }
+
+    fun disable2fa(password: String, code: String) {
+        val k = Crypto.derive(email(), password)
+        call("POST", "/account/2fa/disable", JSONObject().put("auth", k.auth).put("code", code.trim()))
+        prefs.edit().putBoolean("twoFactor", false).putInt("recoveryLeft", 0).apply()
+    }
+
+    private fun email() = prefs.getString("email", "") ?: ""
+
+    // the inbox: which items were dismissed (ids), kept on this phone
+    fun inboxSeen(): Set<String> = prefs.getStringSet("inboxSeen", emptySet()) ?: emptySet()
+    fun inboxMark(ids: Collection<String>) { prefs.edit().putStringSet("inboxSeen", inboxSeen() + ids).apply() }
 
     /** Pulls the encrypted settings bundle the PC keeps in the account and opens it here: your races come from it. */
     fun sync(): AccountState {
@@ -189,7 +244,8 @@ class AccountRepository(context: Context) {
             .apply()
         runCatching {
             val me = JSONObject(call("GET", "/account/me"))
-            prefs.edit().putString("display", me.optString("display", "")).putBoolean("verified", me.optBoolean("verified", true)).putBoolean("admin", me.optBoolean("admin", false)).apply()
+            prefs.edit().putString("display", me.optString("display", "")).putBoolean("verified", me.optBoolean("verified", true)).putBoolean("admin", me.optBoolean("admin", false))
+                .putBoolean("twoFactor", me.optBoolean("twoFactor", false)).putInt("recoveryLeft", me.optInt("recoveryLeft", 0)).apply()
         }
         return storedState()
     }

@@ -4,6 +4,16 @@ TrackIQ (formerly Pitlane HQ) is in **beta**. The phone apps share their version
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
+## 0.6.1 beta
+
+**New**
+- **Two-step sign-in** (optional, recommended): turn it on in Settings with an authenticator
+  app; signing in then asks for the 6-digit code (or a recovery code).
+- **Inbox**: a floating bell with what matters now: a new version with its notes, news of the
+  app, Patreon, feedback and the two-step sign-in recommendation. Dismiss what you have read.
+- **New version notice at start** with a **What's new** button that opens that version's
+  changelog, besides the banner.
+
 ## 0.6.0 beta
 
 **New**

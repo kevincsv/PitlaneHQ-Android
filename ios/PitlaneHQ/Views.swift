@@ -181,7 +181,18 @@ struct Banners: View {
             if account.demo { banner(t("demo_banner"), Theme.accent) }
             if let v = updates.version { Link(destination: updates.page) { banner(t("update_available", v), Theme.good) } }
         }
+        .alert(t("update_title", updates.version ?? ""), isPresented: Binding(get: { updates.version != nil && shown != updates.version }, set: { if !$0 { shown = updates.version ?? "" } })) {
+            Button(t("whats_new")) { UIApplication.shared.open(changelog(updates.version ?? "")) }
+            Button(t("download")) { shown = updates.version ?? ""; UIApplication.shared.open(updates.page) }
+            Button(t("later"), role: .cancel) { shown = updates.version ?? "" }
+        } message: {
+            Text(t("update_body", Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""))
+        }
     }
+
+    // the notice shows once per version, when the app starts
+    @State private var shown = ""
+    private func changelog(_ v: String) -> URL { URL(string: "https://github.com/kevincsv/PitlaneHQ-Android/blob/master/CHANGELOG.md#" + v.replacingOccurrences(of: ".", with: "") + "-beta")! }
 
     private func banner(_ s: String, _ c: Color) -> some View {
         Text(s).font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(Theme.ink)
@@ -321,19 +332,234 @@ struct LoginView: View {
             .padding(24)
         }
         .background(Theme.ink.ignoresSafeArea())
+        .sheet(isPresented: $account.needCode) { CodeSheet() }
+    }
+}
+
+/// Second step of the sign-in: the authenticator code (or a recovery code).
+struct CodeSheet: View {
+    @EnvironmentObject var account: Account
+    @State private var code = ""
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(t("two_factor_code")).font(.caption).foregroundColor(Theme.muted)
+                TextField("123 456", text: $code).textContentType(.oneTimeCode).keyboardType(.numbersAndPunctuation).autocorrectionDisabled()
+                    .font(.system(size: 24, weight: .semibold, design: .monospaced)).multilineTextAlignment(.center)
+                    .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
+                if let e = account.error { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
+                Button {
+                    Task { await account.loginCode(code) }
+                } label: {
+                    Text((account.busy ? t("signing_in") : t("sign_in")).uppercased()).font(.headline.weight(.black)).frame(maxWidth: .infinity).padding(12)
+                        .background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .disabled(account.busy || code.isEmpty)
+                Spacer()
+            }
+            .padding(20)
+            .background(Theme.ink.ignoresSafeArea())
+            .navigationTitle(t("two_factor"))
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(t("cancel")) { account.cancelCode() } } }
+        }
+        .presentationDetents([.medium])
+    }
+}
+
+/// Two-step sign-in with an authenticator app: optional, recommended. Setup: password → link/key → first code → recovery codes once.
+struct TwoFactorPanel: View {
+    @EnvironmentObject var account: Account
+    @State private var step = ""          // "", "pw", "scan", "codes", "off"
+    @State private var pw = ""
+    @State private var code = ""
+    @State private var setup: Account.TwoFactorSetup?
+    @State private var codes: [String] = []
+    @State private var err: String?
+    @State private var busy = false
+
+    var body: some View {
+        Panel {
+            HStack {
+                Text(t("two_factor")).font(.subheadline.bold())
+                Spacer()
+                Text((account.twoFactor ? t("two_factor_on") : t("recommended")).uppercased()).font(.system(size: 10, weight: .black, design: .monospaced)).foregroundColor(account.twoFactor ? Theme.good : Theme.accent)
+            }
+            Text(account.twoFactor ? t("two_factor_is_on", account.recoveryLeft) : t("two_factor_rec")).font(.caption).foregroundColor(Theme.muted)
+            if account.twoFactor {
+                Button(t("turn_off").uppercased()) { pw = ""; code = ""; err = nil; step = "off" }.font(.caption.bold()).foregroundColor(Theme.bad).padding(.top, 4)
+            } else {
+                Button { pw = ""; code = ""; err = nil; step = "pw" } label: {
+                    Text(t("turn_on").uppercased()).font(.caption.weight(.black)).padding(.horizontal, 14).padding(.vertical, 8).background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+                .padding(.top, 4)
+            }
+        }
+        .sheet(isPresented: Binding(get: { step != "" }, set: { if !$0 { step = "" } })) { sheet }
+    }
+
+    private func field(_ label: String, _ text: Binding<String>, secret: Bool) -> some View {
+        Group {
+            if secret { SecureField(label, text: text).textContentType(.password) } else { TextField(label, text: text).textContentType(.oneTimeCode).keyboardType(.numbersAndPunctuation).autocorrectionDisabled() }
+        }
+        .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private var sheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if step == "pw" {
+                        Text(t("two_factor_pw")).font(.caption).foregroundColor(Theme.muted)
+                        field(t("password"), $pw, secret: true)
+                        action(t("continue"), enabled: !pw.isEmpty) { setup = try await account.setup2fa(password: pw); step = "scan" }
+                    } else if step == "scan", let st = setup {
+                        Text(t("two_factor_scan")).font(.caption).foregroundColor(Theme.muted)
+                        Link(destination: st.url) {
+                            Text(t("open_in_app").uppercased()).font(.caption.weight(.black)).frame(maxWidth: .infinity).padding(12).background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        Text(t("key") + ": " + st.secret.enumerated().map { $0.offset > 0 && $0.offset % 4 == 0 ? " \($0.element)" : String($0.element) }.joined())
+                            .font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
+                        field(t("code"), $code, secret: false)
+                        action(t("turn_on"), enabled: code.count >= 6) { codes = try await account.enable2fa(code: code); step = "codes" }
+                    } else if step == "codes" {
+                        Text(t("two_factor_codes")).font(.caption).foregroundColor(Theme.muted)
+                        Text(codes.joined(separator: "\n")).font(.system(size: 15, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 8))
+                        HStack {
+                            Button(t("copy")) { UIPasteboard.general.string = codes.joined(separator: "\n") }.foregroundColor(Theme.muted)
+                            Spacer()
+                            Button(t("saved_them").uppercased()) { step = "" }.font(.caption.weight(.black)).padding(.horizontal, 14).padding(.vertical, 8).background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                    } else if step == "off" {
+                        Text(t("two_factor_off")).font(.caption).foregroundColor(Theme.muted)
+                        field(t("password"), $pw, secret: true)
+                        field(t("code"), $code, secret: false)
+                        action(t("turn_off"), enabled: !pw.isEmpty && !code.isEmpty, danger: true) { try await account.disable2fa(password: pw, code: code); step = "" }
+                    }
+                    if let e = err { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
+                }
+                .padding(20)
+            }
+            .background(Theme.ink.ignoresSafeArea())
+            .navigationTitle(t("two_factor"))
+            .toolbar { if step != "codes" { ToolbarItem(placement: .cancellationAction) { Button(t("cancel")) { step = "" } } } }
+        }
+        .interactiveDismissDisabled(step == "codes")
+    }
+
+    private func action(_ label: String, enabled: Bool, danger: Bool = false, _ run: @escaping () async throws -> Void) -> some View {
+        Button {
+            busy = true
+            err = nil
+            Task {
+                do { try await run() } catch { err = (error as? AppError)?.key ?? error.localizedDescription }
+                busy = false
+            }
+        } label: {
+            Text(label.uppercased()).font(.headline.weight(.black)).frame(maxWidth: .infinity).padding(12)
+                .background(danger ? Theme.bad : Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .disabled(busy || !enabled)
     }
 }
 
 // ---------- tabs ----------
 
 struct MainView: View {
+    @State private var tab = 0
     var body: some View {
-        TabView {
-            NavigationStack { HomeView().routes() }.tabItem { Label(t("home"), systemImage: "house") }
-            NavigationStack { AnalysisView().routes() }.tabItem { Label(t("analysis"), systemImage: "chart.xyaxis.line") }
-            NavigationStack { CommunityView().routes() }.tabItem { Label(t("community"), systemImage: "person.3") }
-            NavigationStack { LiveView() }.tabItem { Label(t("live"), systemImage: "antenna.radiowaves.left.and.right") }
-            NavigationStack { SettingsView() }.tabItem { Label(t("settings"), systemImage: "gearshape") }
+        TabView(selection: $tab) {
+            NavigationStack { HomeView().routes() }.tabItem { Label(t("home"), systemImage: "house") }.tag(0)
+            NavigationStack { AnalysisView().routes() }.tabItem { Label(t("analysis"), systemImage: "chart.xyaxis.line") }.tag(1)
+            NavigationStack { CommunityView().routes() }.tabItem { Label(t("community"), systemImage: "person.3") }.tag(2)
+            NavigationStack { LiveView() }.tabItem { Label(t("live"), systemImage: "antenna.radiowaves.left.and.right") }.tag(3)
+            NavigationStack { SettingsView() }.tabItem { Label(t("settings"), systemImage: "gearshape") }.tag(4)
+        }
+        .overlay(alignment: .bottomTrailing) { InboxButton(tab: $tab).padding(.trailing, 16).padding(.bottom, 64) }
+    }
+}
+
+/// One entry of the inbox.
+private struct InboxItem: Identifiable {
+    let id: String, icon: String, title: String, text: String
+    var keep = false, quiet = false
+    let acts: [(String, () -> Void)]
+}
+
+/// The inbox: a floating button with what matters now (new version, app news, account to-dos, support, feedback).
+struct InboxButton: View {
+    @Binding var tab: Int
+    @EnvironmentObject var account: Account
+    @EnvironmentObject var updates: Updates
+    @EnvironmentObject var inbox: Inbox
+    @State private var open = false
+
+    private var items: [InboxItem] {
+        var a: [InboxItem] = []
+        if let v = updates.version {
+            a.append(InboxItem(id: "upd:" + v, icon: "arrow.down.circle", title: t("update_title", v), text: t("update_body", Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""), acts: [
+                (t("download"), { UIApplication.shared.open(updates.page) }),
+                (t("whats_new"), { UIApplication.shared.open(URL(string: changelogURL + "#" + v.replacingOccurrences(of: ".", with: "") + "-beta")!) }),
+            ]))
+        }
+        if !account.twoFactor { a.append(InboxItem(id: "2fa", icon: "lock", title: t("two_factor_rec_short"), text: t("two_factor_rec_sub"), acts: [(t("turn_on"), { tab = 4 })])) }
+        for n in inbox.news {
+            var acts: [(String, () -> Void)] = []
+            if let u = n.url { acts.append((t("open"), { UIApplication.shared.open(u) })) }
+            if let v = n.view { acts.append((t("see_it"), { tab = v == "me" ? 4 : v == "community" ? 2 : 0 })) }
+            a.append(InboxItem(id: "news:" + n.id, icon: "newspaper", title: n.title, text: n.text + (n.date.isEmpty ? "" : " · " + n.date), acts: acts))
+        }
+        if let u = URL(string: patreonURL), !patreonURL.isEmpty { a.append(InboxItem(id: "support", icon: "heart", title: t("support"), text: t("support_sub"), quiet: true, acts: [("Patreon", { UIApplication.shared.open(u) })])) }
+        a.append(InboxItem(id: "feedback", icon: "bubble.left", title: t("feedback"), text: t("feedback_sub"), quiet: true, acts: [(t("send_feedback"), { UIApplication.shared.open(feedbackURL) })]))
+        return a.filter { $0.keep || !inbox.seen.contains($0.id) }
+    }
+
+    var body: some View {
+        let list = items
+        let fresh = list.filter { !$0.quiet && !inbox.seen.contains("seen:" + $0.id) }.count
+        Button { open = true } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: "bell").font(.system(size: 20)).foregroundColor(Theme.fg).frame(width: 48, height: 48)
+                    .background(Theme.surface).clipShape(Circle()).overlay(Circle().stroke(Theme.line)).shadow(radius: 8)
+                if fresh > 0 {
+                    Text("\(fresh)").font(.system(size: 11, weight: .black, design: .monospaced)).foregroundColor(Theme.ink).padding(.horizontal, 6).frame(minWidth: 20, minHeight: 20).background(Theme.accent).clipShape(Capsule()).offset(x: 4, y: -4)
+                }
+            }
+        }
+        .sheet(isPresented: $open, onDismiss: { inbox.mark(list.map { "seen:" + $0.id }) }) {
+            NavigationStack {
+                ScrollView {
+                    VStack(spacing: 8) {
+                        if list.isEmpty { Text(t("nothing_new")).font(.subheadline).foregroundColor(Theme.muted).padding(.vertical, 18) }
+                        ForEach(list) { it in
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: it.icon).foregroundColor(Theme.accent).frame(width: 24)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(it.title).font(.subheadline.bold()).foregroundColor(Theme.fg)
+                                    Text(it.text).font(.caption).foregroundColor(Theme.muted)
+                                    HStack(spacing: 6) {
+                                        ForEach(Array(it.acts.enumerated()), id: \.offset) { i, act in
+                                            Button { open = false; act.1() } label: {
+                                                Text(act.0.uppercased()).font(.system(size: 11, weight: .black)).padding(.horizontal, 12).padding(.vertical, 6)
+                                                    .background(i == 0 ? Theme.accent : Theme.surface2).foregroundColor(i == 0 ? Theme.ink : Theme.fg).clipShape(RoundedRectangle(cornerRadius: 6))
+                                            }
+                                        }
+                                    }
+                                    .padding(.top, 2)
+                                }
+                                Spacer(minLength: 0)
+                                if !it.keep { Button { inbox.mark([it.id]) } label: { Image(systemName: "xmark").font(.caption).foregroundColor(Theme.muted) } }
+                            }
+                            .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                    .padding(16)
+                }
+                .background(Theme.ink.ignoresSafeArea())
+                .navigationTitle(t("for_you"))
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button(t("clear")) { inbox.mark(list.filter { !$0.keep }.map { $0.id }) } } }
+            }
+            .presentationDetents([.medium, .large])
         }
     }
 }
@@ -1601,6 +1827,7 @@ struct SettingsView: View {
                 Text(account.email).font(.caption).foregroundColor(Theme.muted)
                 Text(account.verified ? t("verified") : t("not_verified")).font(.caption2).foregroundColor(account.verified ? Theme.good : Theme.accent)
             }
+            TwoFactorPanel()
             Link(destination: webApp) { ActionRow(title: t("web").uppercased(), sub: t("web_sub"), icon: "safari") }
             if let u = URL(string: patreonURL), !patreonURL.isEmpty {
                 Link(destination: u) { ActionRow(title: t("support").uppercased(), sub: t("support_sub"), icon: "heart") }

@@ -5,6 +5,8 @@ let server = URL(string: "https://pitlanehq.app")!
 let webApp = URL(string: "https://pitlanehq.app/app/?companion=1")!
 /// Support TrackIQ (Settings); empty: not shown.
 let patreonURL = "https://www.patreon.com/c/PitlaneHQ/membership"
+let feedbackURL = URL(string: "https://github.com/kevincsv/Pitwall-test/issues/new?labels=feedback")!
+let changelogURL = "https://github.com/kevincsv/PitlaneHQ-Android/blob/master/CHANGELOG.md"
 
 /// Errors the screens show in the user's language: `key` is a key of I18n (or a server message).
 struct AppError: LocalizedError {
@@ -67,6 +69,10 @@ final class Account: ObservableObject {
     }
     @Published var busy = false
     @Published var error: String?
+    @Published var needCode = false        // the password was right: the authenticator code comes next
+    @Published var twoFactor = UserDefaults.standard.bool(forKey: "twoFactor")
+    @Published var recoveryLeft = UserDefaults.standard.integer(forKey: "recoveryLeft")
+    private var pending: (token: String, email: String, wrap: Data)?
     @Published var syncedFiles = 0
     @Published var syncVersion = 0
     @Published var syncUpdated: Double = 0
@@ -117,7 +123,9 @@ final class Account: ObservableObject {
     private func clear() {
         Vault.set("token", nil)
         Vault.set("dataKey", nil)
-        for k in ["email", "display", "verified", "admin", "syncedFiles", "syncVersion", "syncUpdated"] { defaults.removeObject(forKey: k) }
+        for k in ["email", "display", "verified", "admin", "syncedFiles", "syncVersion", "syncUpdated", "twoFactor", "recoveryLeft"] { defaults.removeObject(forKey: k) }
+        twoFactor = false
+        recoveryLeft = 0
         try? FileManager.default.removeItem(at: dir)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         signedIn = false
@@ -186,25 +194,86 @@ final class Account: ObservableObject {
         do {
             let keys = try await Task.detached { try PLCrypto.derive(email: em, password: password) }.value
             let data = try await call("POST", "/account/login", body: ["email": em, "auth": keys.auth, "device": "iPhone"], auth: false)
-            guard let j = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let token = j["token"] as? String, let wrapped = j["wrappedKey"] as? String else { throw AppError.serverDown }
-            let key = try PLCrypto.open(key: keys.wrap, sealed: wrapped, aad: PLCrypto.accountAAD)
-            guard key.count == 32 else { throw AppError.serverDown }
-            Vault.set("token", Data(token.utf8))
-            Vault.set("dataKey", key)
-            email = em
-            display = str(j["display"])
-            verified = j["verified"] as? Bool ?? true
-            admin = j["admin"] as? Bool ?? false
-            defaults.set(admin, forKey: "admin")
-            defaults.set(em, forKey: "email")
-            defaults.set(display, forKey: "display")
-            defaults.set(verified, forKey: "verified")
-            signedIn = true
+            guard let j = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw AppError.serverDown }
+            if j["twoFactor"] as? Bool == true, let p = j["pending"] as? String {
+                pending = (p, em, keys.wrap)
+                needCode = true
+                return
+            }
+            try finishLogin(j, email: em, wrap: keys.wrap)
             await sync()
         } catch {
             self.error = (error as? AppError)?.key ?? error.localizedDescription
         }
+    }
+
+    /// Second step of the sign-in: the 6-digit code of the authenticator app, or a recovery code.
+    func loginCode(_ code: String) async {
+        guard let p = pending else { needCode = false; error = "sign_in_again"; return }
+        busy = true
+        error = nil
+        defer { busy = false }
+        do {
+            let data = try await call("POST", "/account/login/2fa", body: ["pending": p.token, "code": code.trimmingCharacters(in: .whitespaces)], auth: false)
+            guard let j = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw AppError.serverDown }
+            pending = nil
+            needCode = false
+            try finishLogin(j, email: p.email, wrap: p.wrap)
+            await sync()
+        } catch {
+            self.error = (error as? AppError)?.key ?? error.localizedDescription
+        }
+    }
+
+    func cancelCode() { pending = nil; needCode = false; error = nil }
+
+    private func finishLogin(_ j: [String: Any], email em: String, wrap: Data) throws {
+        guard let token = j["token"] as? String, let wrapped = j["wrappedKey"] as? String else { throw AppError.serverDown }
+        let key = try PLCrypto.open(key: wrap, sealed: wrapped, aad: PLCrypto.accountAAD)
+        guard key.count == 32 else { throw AppError.serverDown }
+        Vault.set("token", Data(token.utf8))
+        Vault.set("dataKey", key)
+        email = em
+        display = str(j["display"])
+        verified = j["verified"] as? Bool ?? true
+        admin = j["admin"] as? Bool ?? false
+        twoFactor = j["twoFactor"] as? Bool ?? false
+        defaults.set(admin, forKey: "admin")
+        defaults.set(em, forKey: "email")
+        defaults.set(display, forKey: "display")
+        defaults.set(verified, forKey: "verified")
+        defaults.set(twoFactor, forKey: "twoFactor")
+        signedIn = true
+    }
+
+    // ---------- two-step sign-in (optional, recommended) ----------
+    struct TwoFactorSetup { let secret: String; let url: URL }
+
+    func setup2fa(password: String) async throws -> TwoFactorSetup {
+        let keys = try await Task.detached { [email] in try PLCrypto.derive(email: email, password: password) }.value
+        let j = try JSONSerialization.jsonObject(with: await call("POST", "/account/2fa/setup", body: ["auth": keys.auth])) as? [String: Any] ?? [:]
+        guard let secret = j["secret"] as? String, let u = (j["url"] as? String).flatMap(URL.init) else { throw AppError.serverDown }
+        return TwoFactorSetup(secret: secret, url: u)
+    }
+
+    /// Confirms the first code; returns the recovery codes (shown once).
+    func enable2fa(code: String) async throws -> [String] {
+        let j = try JSONSerialization.jsonObject(with: await call("POST", "/account/2fa/enable", body: ["code": code.trimmingCharacters(in: .whitespaces)])) as? [String: Any] ?? [:]
+        let codes = j["codes"] as? [String] ?? []
+        twoFactor = true
+        recoveryLeft = codes.count
+        defaults.set(true, forKey: "twoFactor")
+        defaults.set(codes.count, forKey: "recoveryLeft")
+        return codes
+    }
+
+    func disable2fa(password: String, code: String) async throws {
+        let keys = try await Task.detached { [email] in try PLCrypto.derive(email: email, password: password) }.value
+        _ = try await call("POST", "/account/2fa/disable", body: ["auth": keys.auth, "code": code.trimmingCharacters(in: .whitespaces)])
+        twoFactor = false
+        recoveryLeft = 0
+        defaults.set(false, forKey: "twoFactor")
+        defaults.set(0, forKey: "recoveryLeft")
     }
 
     /// Pulls the encrypted settings bundle the PC keeps in the account and opens it here: your races come from it.
@@ -236,9 +305,13 @@ final class Account: ObservableObject {
                 display = str(me["display"])
                 verified = me["verified"] as? Bool ?? true
                 admin = me["admin"] as? Bool ?? false
+                twoFactor = me["twoFactor"] as? Bool ?? false
+                recoveryLeft = me["recoveryLeft"] as? Int ?? 0
                 defaults.set(admin, forKey: "admin")
                 defaults.set(display, forKey: "display")
                 defaults.set(verified, forKey: "verified")
+                defaults.set(twoFactor, forKey: "twoFactor")
+                defaults.set(recoveryLeft, forKey: "recoveryLeft")
             }
             loadRaces()
         } catch {

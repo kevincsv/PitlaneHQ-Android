@@ -30,6 +30,9 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     val demo = MutableStateFlow(repo.demo)
     val online = MutableStateFlow(true)
     val update = MutableStateFlow<AppUpdate?>(null)
+    val news = MutableStateFlow<List<com.pitlanehq.android.data.AppNews>>(emptyList())
+    val inboxSeen = MutableStateFlow(repo.inboxSeen())
+    fun inboxMark(ids: Collection<String>) { repo.inboxMark(ids); inboxSeen.value = repo.inboxSeen() }
 
     val races = MutableStateFlow(Loadable<List<Race>>())
     val sessions = MutableStateFlow(Loadable<List<CloudSession>>())
@@ -71,6 +74,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     /** A newer version on GitHub: shown as a banner on top. */
     fun checkUpdate() {
         viewModelScope.launch(Dispatchers.IO) { Updates.check(com.pitlanehq.android.BuildConfig.VERSION_NAME)?.let { update.value = it } }
+        viewModelScope.launch(Dispatchers.IO) { news.value = Updates.news(com.pitlanehq.android.data.SERVER, com.pitlanehq.android.ui.I18n.lang) }
     }
 
     // back online: load again what was shown from the phone's saved copy
@@ -111,6 +115,49 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
             runCatching { repo.login(email, password) }
                 .onSuccess { _account.value = it; demo.value = repo.demo; loadRaces() }
                 .onFailure { _account.value = AccountState(email = email, error = errKey(it)) }
+        }
+    }
+
+    /** Second step of the sign-in: the authenticator code. */
+    fun loginCode(code: String) {
+        val a = _account.value
+        _account.value = a.copy(busy = true, error = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repo.loginCode(code) }
+                .onSuccess { _account.value = it; demo.value = repo.demo; loadRaces() }
+                .onFailure { e -> _account.value = if (e.message == "sign_in_again") AccountState(email = a.email, error = "sign_in_again") else a.copy(busy = false, error = errKey(e)) }
+        }
+    }
+
+    fun cancelCode() { _account.value = AccountState(email = _account.value.email) }
+
+    // two-step sign-in: the screens wait on these (null = nothing pending)
+    val twoFactorSetup = MutableStateFlow<com.pitlanehq.android.data.TwoFactorSetup?>(null)
+    val recoveryCodes = MutableStateFlow<List<String>?>(null)
+    val twoFactorError = MutableStateFlow<String?>(null)
+
+    fun setup2fa(password: String) {
+        twoFactorError.value = null
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repo.setup2fa(password) }.onSuccess { twoFactorSetup.value = it }.onFailure { twoFactorError.value = errKey(it) }
+        }
+    }
+
+    fun enable2fa(code: String) {
+        twoFactorError.value = null
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repo.enable2fa(code) }
+                .onSuccess { twoFactorSetup.value = null; recoveryCodes.value = it; _account.value = repo.storedState().copy(busy = false) }
+                .onFailure { twoFactorError.value = errKey(it) }
+        }
+    }
+
+    fun disable2fa(password: String, code: String, done: () -> Unit) {
+        twoFactorError.value = null
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repo.disable2fa(password, code) }
+                .onSuccess { _account.value = repo.storedState().copy(busy = false); done() }
+                .onFailure { twoFactorError.value = errKey(it) }
         }
     }
 
