@@ -15,7 +15,7 @@ targets:
       properties:
         CFBundleDisplayName: TrackIQ
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
-        CFBundleVersion: "18"
+        CFBundleVersion: "19"
         UILaunchScreen: {}
         UIUserInterfaceStyle: Dark
         UISupportedInterfaceOrientations:
