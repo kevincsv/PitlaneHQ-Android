@@ -32,7 +32,15 @@ struct Trace {
     /// The incidents of the lap as [d, pts, d, pts…] (lap distance in m, incident points).
     var inc: [Double] = []
     var hasShape: Bool { x != nil && y != nil && x!.count == rows.count && x!.count > 10 }
-    var incidents: [(d: Double, pts: Int)] { (0..<(inc.count / 2)).map { (d: inc[2 * $0], pts: Int(inc[2 * $0 + 1])) } }
+    /// What each incident was: "off", "loss", "light" (light contact) or "contact" (older laps: by the points).
+    var incK: [String] = []
+    var incidents: [(d: Double, pts: Int, kind: String)] {
+        (0..<(inc.count / 2)).map { i in
+            let pts = Int(inc[2 * i + 1])
+            let k: String = i < incK.count ? incK[i] : (pts >= 4 ? "contact" : pts == 2 ? "loss" : "off")
+            return (d: inc[2 * i], pts: pts, kind: k)
+        }
+    }
 }
 
 struct PersonalBest: Identifiable, Hashable {

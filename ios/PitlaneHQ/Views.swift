@@ -849,7 +849,7 @@ struct TrackMapView: View {
             if showInc, let s = selected {
                 let d: Double = Double(s) * c.step
                 ForEach(Array(incidents.filter { abs($0.d - d) < 60 }.enumerated()), id: \.offset) { _, e in
-                    Text("⚠ " + incName(e.pts) + " \(e.pts)x").font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.bad)
+                    Text("⚠ " + incName(e.kind) + " \(e.pts)x").font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.bad)
                 }
             }
         }
@@ -870,10 +870,10 @@ struct TrackMapView: View {
         .simultaneousGesture(DragGesture(minimumDistance: 6).onChanged { v in pickAt(v.location, size) })
     }
 
-    private var incidents: [(d: Double, pts: Int)] { trace.incidents }
+    private var incidents: [(d: Double, pts: Int, kind: String)] { trace.incidents }
 
     /// An incident as the game names it, from its points: 1x off track, 2x loss of control (or a slight contact), 4x car contact.
-    private func incName(_ pts: Int) -> String { t(pts >= 4 ? "inc_contact" : pts == 2 ? "inc_loss" : "inc_off") }
+    private func incName(_ kind: String) -> String { t(kind == "contact" ? "inc_contact" : kind == "light" ? "inc_light" : kind == "loss" ? "inc_loss" : "inc_off") }
 
     private func cross(_ q: CGPoint) -> Path {
         var p = Path()
@@ -924,7 +924,7 @@ struct TrackMapView: View {
     private var incSummary: String {
         let pts: Int = incidents.reduce(0) { $0 + $1.pts }
         var by: [String: Int] = [:]
-        for e in incidents { by[incName(e.pts), default: 0] += 1 }
+        for e in incidents { by[incName(e.kind), default: 0] += 1 }
         let parts: [String] = by.keys.sorted().map { "\(by[$0]!) \($0.lowercased())" }
         return t("incidents_sum", incidents.count, pts) + ": " + parts.joined(separator: " · ")
     }

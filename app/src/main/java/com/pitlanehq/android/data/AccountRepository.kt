@@ -286,7 +286,8 @@ class AccountRepository(context: Context) {
         val x = j.optJSONArray("x")?.let { doubles(it) }
         val y = j.optJSONArray("y")?.let { doubles(it) }
         val xy = x != null && y != null && x.size == d.length() && y.size == d.length()
-        return Trace(j.optDouble("bin", 10.0), (0 until d.length()).map { i -> d.getJSONArray(i).let { r -> DoubleArray(6) { k -> r.optDouble(k, 0.0) } } }, if (xy) x else null, if (xy) y else null, j.optJSONArray("inc")?.let { doubles(it) } ?: emptyList())
+        return Trace(j.optDouble("bin", 10.0), (0 until d.length()).map { i -> d.getJSONArray(i).let { r -> DoubleArray(6) { k -> r.optDouble(k, 0.0) } } }, if (xy) x else null, if (xy) y else null, j.optJSONArray("inc")?.let { doubles(it) } ?: emptyList(),
+            j.optJSONArray("incK")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList())
     }
 
     fun lapTrace(lapId: String): Trace? {

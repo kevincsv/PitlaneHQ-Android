@@ -38,9 +38,15 @@ data class CloudSession(
 data class CloudLap(val id: String, val n: Int, val time: Double, val valid: Boolean, val sectors: List<Double>, val inc: Int = 0)
 
 /** A lap trace: one row every [bin] metres: speed m/s, throttle 0-1, brake 0-1, gear, steering rad, lap time s. */
-data class Trace(val bin: Double, val rows: List<DoubleArray>, val x: List<Double>? = null, val y: List<Double>? = null, val inc: List<Double> = emptyList()) {
-    /** The incidents of the lap: (distance m, points), from the trace's [d, pts, d, pts…]. */
-    val incidents: List<Pair<Double, Int>> get() = (0 until inc.size / 2).map { inc[2 * it] to inc[2 * it + 1].toInt() }
+/** One incident of a lap: where (m), its points and what it was ("off", "loss", "light" contact or "contact"). */
+data class Incident(val d: Double, val pts: Int, val kind: String)
+
+data class Trace(val bin: Double, val rows: List<DoubleArray>, val x: List<Double>? = null, val y: List<Double>? = null, val inc: List<Double> = emptyList(), val incK: List<String> = emptyList()) {
+    /** The incidents of the lap, from the trace's [d, pts, d, pts…] and their kinds (older laps: by the points). */
+    val incidents: List<Incident> get() = (0 until inc.size / 2).map { i ->
+        val pts = inc[2 * i + 1].toInt()
+        Incident(inc[2 * i], pts, incK.getOrNull(i) ?: when { pts >= 4 -> "contact"; pts == 2 -> "loss"; else -> "off" })
+    }
     /** The shape of the track: where the car was at every row (TrackIQ 0.5 and later record it). */
     val hasShape get() = x != null && y != null && x.size == rows.size && x.size > 10
     val speedKph get() = rows.map { it[0] * 3.6 }

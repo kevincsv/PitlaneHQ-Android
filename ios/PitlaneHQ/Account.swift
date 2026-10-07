@@ -329,6 +329,7 @@ final class Account: ObservableObject {
             tr.y = y.map(\.doubleValue)
         }
         if let inc = t["inc"] as? [NSNumber] { tr.inc = inc.map(\.doubleValue) }
+        if let k = t["incK"] as? [String] { tr.incK = k }
         return tr
     }
 

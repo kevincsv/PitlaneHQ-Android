@@ -701,7 +701,7 @@ private fun Chip(label: String, on: Boolean, onClick: () -> Unit) {
 }
 
 /** An incident as the game names it, from its points: 1x off track, 2x loss of control (or a slight contact), 4x car contact. */
-private fun incName(pts: Int) = t(when { pts >= 4 -> "inc_contact"; pts == 2 -> "inc_loss"; else -> "inc_off" })
+private fun incName(kind: String) = t(when (kind) { "contact" -> "inc_contact"; "light" -> "inc_light"; "loss" -> "inc_loss"; else -> "inc_off" })
 
 /**
  * The track, drawn from where the car was on this lap (TrackIQ records it), coloured where you gain
@@ -798,14 +798,14 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, onSel: (Int) -> Unit) {
             if (rings.isNotEmpty()) Chip("Coach", showCoach) { showCoach = !showCoach }
         }
         if (incs.isNotEmpty()) {
-            val pts = incs.sumOf { it.second }
-            val by = incs.groupBy { incName(it.second) }
+            val pts = incs.sumOf { it.pts }
+            val by = incs.groupBy { incName(it.kind) }
             Text(t("incidents_sum", incs.size, pts) + ": " + by.entries.joinToString(" · ") { "${it.value.size} ${it.key.lowercase()}" }, color = Bad, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
         }
 
         if (sel != null && showInc) {
             val d = sel * c.step
-            incs.filter { kotlin.math.abs(it.first - d) < 60 }.forEach { (_, pts) -> Text("⚠ " + incName(pts) + " ${pts}x", color = Bad, fontSize = 11.sp, fontFamily = FontFamily.Monospace) }
+            incs.filter { kotlin.math.abs(it.d - d) < 60 }.forEach { e -> Text("⚠ " + incName(e.kind) + " ${e.pts}x", color = Bad, fontSize = 11.sp, fontFamily = FontFamily.Monospace) }
         }
         val d = c.delta
         Text(
