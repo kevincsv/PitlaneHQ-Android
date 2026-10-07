@@ -399,7 +399,7 @@ class AccountRepository(context: Context) {
         val out = ArrayList<CommunityLap>()
         for (i in 0 until a.length()) {
             val l = a.getJSONObject(i)
-            val lap = CommunityLap(l.optString("id"), l.optString("alias", "Driver"), l.optDouble("time"), l.optLong("created"), l.optBoolean("hasTrace"), doubles(l.optJSONArray("sectors")))
+            val lap = CommunityLap(l.optString("id"), l.optString("alias", "Driver"), l.optDouble("time"), l.optLong("created"), l.optBoolean("hasTrace"), doubles(l.optJSONArray("sectors")), l.optBoolean("mine"))
             if (lap.alias != "Anonymous" && !seen.add(lap.alias)) continue
             out.add(lap)
         }
@@ -429,7 +429,7 @@ class AccountRepository(context: Context) {
         val g = cachedGet("/community/reports?game=iracing")
         val a = JSONObject(g.data).optJSONArray("reports") ?: JSONArray()
         return Got((0 until a.length()).map { i ->
-            a.getJSONObject(i).let { SharedReport(it.optString("id"), it.optString("alias"), it.optString("track"), it.optString("car"), it.optLong("created"), it.optInt("finish"), it.optInt("field"), it.optDouble("best").pos()) }
+            a.getJSONObject(i).let { SharedReport(it.optString("id"), it.optString("alias"), it.optString("track"), it.optString("car"), it.optLong("created"), it.optInt("finish"), it.optInt("field"), it.optDouble("best").pos(), it.optBoolean("mine")) }
         }, g.stale)
     }
 

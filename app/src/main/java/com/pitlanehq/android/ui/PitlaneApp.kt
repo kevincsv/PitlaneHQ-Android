@@ -1110,7 +1110,7 @@ private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
                             Column(Modifier.weight(1f)) {
                                 Text(x.track, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(x.alias + " · " + day(x.created), color = Muted, fontSize = 11.sp)
+                                Text((if (x.alias == "Anonymous") t("anonymous") else x.alias) + (if (x.mine) " · " + t("you_badge") else "") + " · " + day(x.created), color = if (x.mine) Accent else Muted, fontSize = 11.sp)
                             }
                             Column(horizontalAlignment = Alignment.End) {
                                 Text(if (x.finish > 0) "P${x.finish}/${x.field}" else "—", fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
@@ -1144,7 +1144,8 @@ private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
     val a by vm.account.collectAsState()
     val list = b.data ?: emptyList()
     val top = list.firstOrNull()?.time
-    val mine = list.indexOfFirst { a.display.isNotBlank() && it.alias.equals(a.display, true) }
+    // the server marks the signed-in driver's own lap (anonymous ones too); older servers: by the public name
+    val mine = list.indexOfFirst { it.mine }.let { i -> if (i >= 0) i else list.indexOfFirst { a.display.isNotBlank() && it.alias.equals(a.display, true) } }
     Screen(x.track, x.car, back = { nav.popBackStack() }) {
         state(b) { vm.loadBoard(x) }
         if (b.data != null) item {
@@ -1161,7 +1162,10 @@ private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("${i + 1}", color = if (i == 0) Purple else if (me) Accent else Muted, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, modifier = Modifier.width(32.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(lap.alias, fontWeight = FontWeight.Bold, color = if (me) Accent else Fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (lap.alias == "Anonymous") t("anonymous") else lap.alias, fontWeight = FontWeight.Bold, color = if (me) Accent else Fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                            if (lap.mine) Text(t("you_badge"), color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 6.dp))
+                        }
                         if (lap.sectors.isNotEmpty()) Text(lap.sectors.joinToString("  ") { "%.3f".format(it) }, color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                         if (!lap.hasTrace) Text(t("trace_not_shared"), color = Muted, fontSize = 10.sp)
                     }

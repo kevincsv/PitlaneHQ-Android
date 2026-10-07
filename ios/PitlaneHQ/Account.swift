@@ -482,7 +482,7 @@ final class Account: ObservableObject {
                 if seen.contains(alias) { continue }
                 seen.insert(alias)
             }
-            out.append(CommunityLap(id: str(l["id"]), alias: alias, time: t, created: num(l["created"]) ?? 0, hasTrace: (l["hasTrace"] as? Bool) ?? false, sectors: doubles(l["sectors"])))
+            out.append(CommunityLap(id: str(l["id"]), alias: alias, time: t, created: num(l["created"]) ?? 0, hasTrace: (l["hasTrace"] as? Bool) ?? false, sectors: doubles(l["sectors"]), mine: (l["mine"] as? Bool) ?? false))
         }
         return Got(data: out.sorted { $0.time < $1.time }, stale: g.stale)
     }
@@ -515,7 +515,7 @@ final class Account: ObservableObject {
         let g = try await cachedGet("/community/reports?game=iracing")
         let a = (g.data as? [String: Any])?["reports"] as? [[String: Any]] ?? []
         return Got(data: a.map { r in
-            SharedReport(id: str(r["id"]), alias: str(r["alias"]), track: str(r["track"]), car: str(r["car"]), created: num(r["created"]) ?? 0, finish: int(r["finish"]), field: int(r["field"]), best: pos(r["best"]))
+            SharedReport(id: str(r["id"]), alias: str(r["alias"]), track: str(r["track"]), car: str(r["car"]), created: num(r["created"]) ?? 0, finish: int(r["finish"]), field: int(r["field"]), best: pos(r["best"]), mine: (r["mine"] as? Bool) ?? false)
         }, stale: g.stale)
     }
 

@@ -105,6 +105,8 @@ private let strings: [String: (String, String)] = [
     "fastest_drivers": ("FASTEST DRIVERS", "PILOTOS MÁS RÁPIDOS"),
     "your_position": ("Your position: P{0} of {1} · {2}", "Tu posición: P{0} de {1} · {2}"),
     "not_on_board": ("You have no lap here yet", "Aún no tienes vuelta aquí"),
+    "you_badge": ("you", "tú"),
+    "anonymous": ("Anonymous", "Anónimo"),
     "drivers": ("{0} drivers", "{0} pilotos"),
     "downloads": ("{0} downloads", "{0} descargas"),
     "live_title": ("Live telemetry", "Telemetría en vivo"),

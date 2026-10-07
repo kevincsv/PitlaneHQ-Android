@@ -64,9 +64,10 @@ data class PersonalBest(
 /** A track and car the community has laps for (GET /community/combos). */
 data class Combo(val trackId: Long, val track: String, val carId: Long, val car: String, val laps: Int, val best: Double?)
 
-data class CommunityLap(val id: String, val alias: String, val time: Double, val created: Long, val hasTrace: Boolean, val sectors: List<Double>)
+/** `mine`: the signed-in driver's own lap, also when it was shared anonymously (only they see that). */
+data class CommunityLap(val id: String, val alias: String, val time: Double, val created: Long, val hasTrace: Boolean, val sectors: List<Double>, val mine: Boolean = false)
 
-data class SharedReport(val id: String, val alias: String, val track: String, val car: String, val created: Long, val finish: Int, val field: Int, val best: Double?)
+data class SharedReport(val id: String, val alias: String, val track: String, val car: String, val created: Long, val finish: Int, val field: Int, val best: Double?, val mine: Boolean = false)
 
 data class SharedSetup(val id: String, val alias: String, val name: String, val car: String, val track: String, val notes: String, val downloads: Int, val created: Long)
 

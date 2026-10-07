@@ -102,6 +102,8 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "fastest_drivers" to ("FASTEST DRIVERS" to "PILOTOS MÁS RÁPIDOS"),
     "your_position" to ("Your position: P{0} of {1} · {2}" to "Tu posición: P{0} de {1} · {2}"),
     "not_on_board" to ("You have no lap here yet" to "Aún no tienes vuelta aquí"),
+    "you_badge" to ("you" to "tú"),
+    "anonymous" to ("Anonymous" to "Anónimo"),
     "drivers" to ("{0} drivers" to "{0} pilotos"),
     "downloads" to ("{0} downloads" to "{0} descargas"),
     "live_title" to ("Live telemetry" to "Telemetría en vivo"),

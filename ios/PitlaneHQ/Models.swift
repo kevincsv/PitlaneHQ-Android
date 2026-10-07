@@ -72,6 +72,8 @@ struct CommunityLap: Identifiable, Hashable {
     let created: Double
     let hasTrace: Bool
     let sectors: [Double]
+    /// the signed-in driver's own lap, also when it was shared anonymously (only they see that)
+    var mine: Bool = false
 }
 
 struct SharedReport: Identifiable, Hashable {
@@ -83,6 +85,7 @@ struct SharedReport: Identifiable, Hashable {
     let finish: Int
     let field: Int
     let best: Double?
+    var mine: Bool = false
 }
 
 struct SharedSetup: Identifiable, Hashable {

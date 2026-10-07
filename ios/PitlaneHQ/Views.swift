@@ -1627,7 +1627,7 @@ struct CommunityView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(x.track).font(.headline.weight(.black)).lineLimit(1)
                                 Text(x.car).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
-                                Text(x.alias + " · " + day(x.created)).font(.caption2).foregroundColor(Theme.muted)
+                                Text((x.alias == "Anonymous" ? t("anonymous") : x.alias) + (x.mine ? " · " + t("you_badge") : "") + " · " + day(x.created)).font(.caption2).foregroundColor(x.mine ? Theme.accent : Theme.muted)
                             }
                             Spacer()
                             VStack(alignment: .trailing, spacing: 2) {
@@ -1667,7 +1667,8 @@ struct ComboView: View {
     var body: some View {
         let laps = board.data ?? []
         let top = laps.first?.time
-        let mine = laps.firstIndex { !account.display.isEmpty && $0.alias.caseInsensitiveCompare(account.display) == .orderedSame }
+        // the server marks the signed-in driver's own lap (anonymous ones too); older servers: by the public name
+        let mine = laps.firstIndex { $0.mine } ?? laps.firstIndex { !account.display.isEmpty && $0.alias.caseInsensitiveCompare(account.display) == .orderedSame }
         Screen(title: combo.track, sub: combo.car) {
             LoadState(loading: board.loading, error: board.error, stale: board.stale) { Task { await board.load { try await account.leaderboard(trackId: combo.trackId, carId: combo.carId) } } }
             if board.data != nil {
@@ -1684,7 +1685,10 @@ struct ComboView: View {
                     HStack {
                         Text("\(i + 1)").font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(i == 0 ? Theme.purple : me ? Theme.accent : Theme.muted).frame(width: 32, alignment: .leading)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(lap.alias).font(.subheadline.bold()).foregroundColor(me ? Theme.accent : Theme.fg).lineLimit(1)
+                            HStack(spacing: 6) {
+                                Text(lap.alias == "Anonymous" ? t("anonymous") : lap.alias).font(.subheadline.bold()).foregroundColor(me ? Theme.accent : Theme.fg).lineLimit(1)
+                                if lap.mine { Text(t("you_badge")).font(.system(size: 10, weight: .bold)).foregroundColor(Theme.accent) }
+                            }
                             if !lap.sectors.isEmpty { Text(lap.sectors.map { String(format: "%.3f", $0) }.joined(separator: "  ")).font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.muted) }
                             if !lap.hasTrace { Text(t("trace_not_shared")).font(.system(size: 10)).foregroundColor(Theme.muted) }
                         }
