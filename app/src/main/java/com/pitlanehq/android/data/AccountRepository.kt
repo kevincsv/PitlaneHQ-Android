@@ -406,6 +406,16 @@ class AccountRepository(context: Context) {
         return Got(out.sortedBy { it.time }, g.stale)
     }
 
+    // the admin profile: accounts, and shared items with who really uploaded them
+    fun adminList(kind: String): List<JSONObject> {
+        val j = JSONObject(call("GET", "/community/admin/$kind"))
+        val a = j.optJSONArray(if (kind == "users") "users" else "items") ?: return emptyList()
+        return (0 until a.length()).map { a.getJSONObject(it) }
+    }
+    fun adminDelete(kind: String, id: String) { call("DELETE", "/community/admin/$kind/" + idPath(id)) }
+    // a DRINKS driver name: taken by someone else on the platform? (your own names never clash)
+    fun nameFree(name: String): Boolean = runCatching { JSONObject(call("POST", "/community/name-check", JSONObject().put("name", name))).optBoolean("free", true) }.getOrDefault(true)
+
     fun communityTrace(id: String): Trace? {
         if (demo) return Demo.trace(id)
         return parseTrace(JSONObject(cachedGet("/community/laps/" + idPath(id)).data).optJSONObject("trace"))

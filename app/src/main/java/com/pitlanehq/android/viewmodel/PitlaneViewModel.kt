@@ -248,6 +248,25 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     fun startLive() { if (_account.value.signedIn) live.start() }
     fun stopLive() = live.stop()
     fun setDrinks(on: Boolean, guest: String, guestAuto: Boolean) = live.setDrinks(on, guest, guestAuto)
+    // a new DRINKS name is checked first: names used by other people on Pitlane HQ are refused
+    val drinksTaken = MutableStateFlow<String?>(null)
+    fun setDrinksGuest(name: String, known: List<String>) {
+        drinksTaken.value = null
+        if (name.isBlank() || known.any { it.equals(name, true) }) { setDrinks(true, name, false); return }
+        viewModelScope.launch(Dispatchers.IO) { if (repo.nameFree(name)) setDrinks(true, name, false) else drinksTaken.value = name }
+    }
+    // admin profile
+    data class AdminState(val kind: String, val items: List<org.json.JSONObject>? = null, val error: String? = null)
+    val admin = MutableStateFlow(AdminState("uploads"))
+    fun loadAdmin(kind: String) {
+        admin.value = AdminState(kind)
+        viewModelScope.launch(Dispatchers.IO) {
+            admin.value = runCatching { AdminState(kind, repo.adminList(kind)) }.getOrElse { AdminState(kind, error = it.message ?: "server_down") }
+        }
+    }
+    fun adminDelete(kind: String, id: String) {
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminDelete(kind, id) }; loadAdmin("uploads") }
+    }
 
     override fun onCleared() {
         live.stop()

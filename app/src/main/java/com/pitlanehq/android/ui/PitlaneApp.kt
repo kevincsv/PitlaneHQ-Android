@@ -202,6 +202,7 @@ private fun MainApp(vm: PitlaneViewModel) {
                 composable("live") { Live(vm) }
                 composable("settings") { Settings(vm, nav) }
                 composable("drinks") { DrinksScreen(vm, nav) }
+                composable("admin") { AdminScreen(vm, nav) }
             }
         }
     }
@@ -314,7 +315,7 @@ private fun BottomBar(nav: NavHostController) {
         Dest("settings", t("settings"), Icons.Default.Settings)
     )
     val current = nav.currentBackStackEntryAsState().value?.destination?.route
-    val tab = when (current) { "races", "race" -> "home"; "session", "lap" -> "analysis"; "combo" -> "community"; "drinks" -> "settings"; else -> current }
+    val tab = when (current) { "races", "race" -> "home"; "session", "lap" -> "analysis"; "combo" -> "community"; "drinks", "admin" -> "settings"; else -> current }
     NavigationBar(containerColor = Surface, tonalElevation = 0.dp, modifier = Modifier.height(64.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())) {
         dests.forEach { d ->
             NavigationBarItem(
@@ -1230,11 +1231,52 @@ private fun Live(vm: PitlaneViewModel) {
 }
 
 // ---------- DRINKS mode (admins) ----------
+// the admin profile: every shared lap and race analysis with the name it shows and who really
+// uploaded it (anonymous items and DRINKS drivers too), and the accounts
+@Composable
+private fun AdminScreen(vm: PitlaneViewModel, nav: NavHostController) {
+    val st by vm.admin.collectAsState()
+    LaunchedEffect(Unit) { vm.loadAdmin("uploads") }
+    Screen(t("admin_profile"), t("admin_profile_sub"), back = { nav.popBackStack() }) {
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("uploads" to t("admin_shared"), "users" to t("admin_accounts")).forEach { (k, l) ->
+                    FilterChip(st.kind == k, { vm.loadAdmin(k) }, label = { Text(l) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Accent, selectedLabelColor = Ink))
+                }
+            }
+        }
+        val list = st.items
+        when {
+            st.error != null -> item { Empty(t(st.error!!)) }
+            list == null -> item { Empty(t("loading")) }
+            list.isEmpty() -> item { Empty(t("admin_nothing")) }
+            st.kind == "users" -> items(list.size) { i ->
+                val u = list[i]
+                Panel {
+                    Text(u.optString("display", "–") + if (u.optBoolean("admin")) " · Admin" else "", fontWeight = FontWeight.Bold)
+                    Text(t("admin_user_line", u.optInt("sessions"), u.optInt("laps"), u.optInt("guests")), color = Muted, fontSize = 12.sp)
+                }
+            }
+            else -> items(list.size) { i ->
+                val x = list[i]
+                Panel {
+                    Text(x.optString("track") + " · " + x.optString("car"), fontWeight = FontWeight.Bold)
+                    Text((if (x.optString("kind") == "laps") t("lap") else t("race")) + " · " + lapTime(x.optDouble("time").takeIf { !it.isNaN() }), color = Muted, fontSize = 12.sp)
+                    Text(t("admin_shown_as", x.optString("shownAs")) + if (x.optInt("anon") == 1) " 🔒" else "", fontSize = 12.sp)
+                    Text(t("admin_real", x.optString("realUploader")), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    TextButton({ vm.adminDelete(x.optString("kind"), x.optString("id")) }) { Text(t("delete"), color = Bad) }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun DrinksScreen(vm: PitlaneViewModel, nav: NavHostController) {
     val s by vm.liveState.collectAsState()
     val demo by vm.demo.collectAsState()
     var name by rememberSaveable { mutableStateOf("") }
+    val taken by vm.drinksTaken.collectAsState()
     DisposableEffect(Unit) {
         vm.startLive()
         onDispose { vm.stopLive() }
@@ -1266,9 +1308,10 @@ private fun DrinksScreen(vm: PitlaneViewModel, nav: NavHostController) {
                                 Switch(d.guestAuto, { vm.setDrinks(true, d.guest, it) })
                             }
                             if (!d.guestAuto) {
+                                taken?.let { Text(t("name_taken_drinks", it), color = Bad, fontSize = 12.sp) }
                                 OutlinedTextField(name, { name = it.take(32) }, label = { Text(t("drinks_name")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
-                                    Button({ vm.setDrinks(true, name.trim(), false); name = "" }, enabled = name.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) { Text(t("drinks_set")) }
+                                    Button({ vm.setDrinksGuest(name.trim(), d.guests); name = "" }, enabled = name.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) { Text(t("drinks_set")) }
                                     OutlinedButton({ vm.setDrinks(true, "", false) }) { Text(t("drinks_me")) }
                                 }
                             }
@@ -1339,6 +1382,7 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
             }
         }
         if (a.admin) item { Section(t("admin_tools")) }
+        if (a.admin) item { Action(t("admin_profile").uppercase(), t("admin_profile_sub"), Icons.Default.AdminPanelSettings) { nav.navigate("admin") } }
         if (a.admin) item { Action(t("drinks").uppercase(), t("drinks_sub"), Icons.Default.LocalBar) { nav.navigate("drinks") } }
         if (a.admin) item {
             Panel {

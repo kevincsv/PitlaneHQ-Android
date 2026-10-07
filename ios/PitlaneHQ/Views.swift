@@ -1779,10 +1779,68 @@ struct LiveView: View {
 
 // ---------- DRINKS mode (admins) ----------
 
+// the admin profile: every shared lap and race analysis with the name it shows and who really
+// uploaded it (anonymous items and DRINKS drivers too), and the accounts
+struct AdminView: View {
+    @EnvironmentObject var account: Account
+    @State private var kind = "uploads"
+    @State private var rows: [[String: Any]]?
+    @State private var error: String?
+
+    var body: some View {
+        Screen(title: t("admin_profile"), sub: t("admin_profile_sub")) {
+            HStack(spacing: 8) {
+                ForEach([("uploads", t("admin_shared")), ("users", t("admin_accounts"))], id: \.0) { p in
+                    let k = p.0
+                    Button { kind = k; Task { await load() } } label: {
+                        Text(p.1).font(.subheadline).padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(kind == k ? Theme.accent : Theme.surface2).foregroundColor(kind == k ? Theme.ink : Theme.fg).clipShape(Capsule())
+                    }
+                }
+            }
+            if let e = error {
+                EmptyNote(text: t(e))
+            } else if let rows = rows {
+                if rows.isEmpty { EmptyNote(text: t("admin_nothing")) }
+                ForEach(rows.indices, id: \.self) { i in row(rows[i]) }
+            } else {
+                EmptyNote(text: t("loading"))
+            }
+        }
+        .task { await load() }
+    }
+
+    @ViewBuilder private func row(_ x: [String: Any]) -> some View {
+        let str = { (k: String) in x[k] as? String ?? "" }
+        let int = { (k: String) in x[k] as? Int ?? 0 }
+        Panel {
+            if kind == "users" {
+                Text(str("display") + ((x["admin"] as? Bool ?? false) ? " · Admin" : "")).font(.subheadline.bold()).foregroundColor(Theme.fg)
+                Text(t("admin_user_line", "\(int("sessions"))", "\(int("laps"))", "\(int("guests"))")).font(.caption).foregroundColor(Theme.muted)
+            } else {
+                Text(str("track") + " · " + str("car")).font(.subheadline.bold()).foregroundColor(Theme.fg)
+                Text((str("kind") == "laps" ? t("lap") : t("race")) + " · " + lapTime(x["time"] as? Double)).font(.caption).foregroundColor(Theme.muted)
+                Text(t("admin_shown_as", str("shownAs")) + (int("anon") == 1 ? " 🔒" : "")).font(.caption).foregroundColor(Theme.fg)
+                Text(t("admin_real", str("realUploader"))).font(.caption.bold()).foregroundColor(Theme.fg)
+                Button(t("delete")) {
+                    Task { try? await account.adminDelete(str("kind"), str("id")); await load() }
+                }.foregroundColor(Theme.bad).font(.caption.bold())
+            }
+        }
+    }
+
+    private func load() async {
+        rows = nil
+        error = nil
+        do { rows = try await account.adminList(kind) } catch { self.error = (error as? AppError)?.key ?? "server_down" }
+    }
+}
+
 struct DrinksView: View {
     @EnvironmentObject var account: Account
     @StateObject private var live = Live()
     @State private var name = ""
+    @State private var taken: String?
 
     var body: some View {
         Screen(title: t("drinks"), sub: t("drinks_sub")) {
@@ -1814,11 +1872,19 @@ struct DrinksView: View {
             Panel {
                 Toggle(t("drinks_auto"), isOn: Binding(get: { d.guestAuto }, set: { live.setDrinks(on: true, guest: d.guest, guestAuto: $0) })).font(.subheadline)
                 if !d.guestAuto {
+                    if let n = taken { Text(t("name_taken_drinks", n)).font(.caption).foregroundColor(Theme.bad) }
                     TextField(t("drinks_name"), text: $name).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
                     HStack(spacing: 8) {
                         Button(t("drinks_set")) {
-                            live.setDrinks(on: true, guest: String(name.trimmingCharacters(in: .whitespaces).prefix(32)), guestAuto: false)
+                            let g = String(name.trimmingCharacters(in: .whitespaces).prefix(32))
                             name = ""
+                            taken = nil
+                            // a new name is checked first: names used by other people on Pitlane HQ are refused
+                            if d.guests.contains(where: { $0.caseInsensitiveCompare(g) == .orderedSame }) {
+                                live.setDrinks(on: true, guest: g, guestAuto: false)
+                            } else {
+                                Task { if await account.nameFree(g) { live.setDrinks(on: true, guest: g, guestAuto: false) } else { taken = g } }
+                            }
                         }
                         .buttonStyle(.borderedProminent).foregroundColor(Theme.ink)
                         .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -1901,6 +1967,8 @@ struct SettingsView: View {
             }
             if account.admin {
                 SectionLabel(text: t("admin_tools"))
+                NavigationLink { AdminView() } label: { ActionRow(title: t("admin_profile").uppercased(), sub: t("admin_profile_sub"), icon: "person.badge.key") }
+                    .buttonStyle(.plain)
                 NavigationLink { DrinksView() } label: { ActionRow(title: t("drinks").uppercased(), sub: t("drinks_sub"), icon: "wineglass") }
                     .buttonStyle(.plain)
                 Panel {

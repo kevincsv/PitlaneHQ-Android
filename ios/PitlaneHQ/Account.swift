@@ -487,6 +487,19 @@ final class Account: ObservableObject {
         return Got(data: out.sorted { $0.time < $1.time }, stale: g.stale)
     }
 
+    // the admin profile: accounts, and shared items with who really uploaded them
+    func adminList(_ kind: String) async throws -> [[String: Any]] {
+        let j = try JSONSerialization.jsonObject(with: await call("GET", "/community/admin/" + kind)) as? [String: Any]
+        return j?[kind == "users" ? "users" : "items"] as? [[String: Any]] ?? []
+    }
+    func adminDelete(_ kind: String, _ id: String) async throws { _ = try await call("DELETE", "/community/admin/\(kind)/" + idPath(id)) }
+    // a DRINKS driver name: taken by someone else on the platform? (your own names never clash)
+    func nameFree(_ name: String) async -> Bool {
+        guard let d = try? await call("POST", "/community/name-check", body: ["name": name]),
+              let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return true }
+        return j["free"] as? Bool ?? true
+    }
+
     func communityTrace(_ id: String) async throws -> Trace? {
         if demo { return Demo.trace(id) }
         return parseTrace((try await cachedGet("/community/laps/" + idPath(id)).data as? [String: Any])?["trace"])

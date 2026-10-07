@@ -4,6 +4,15 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
+## 0.7.0 beta
+
+**Added**
+- **Admin profile** in Settings (admins only): the accounts, and every shared lap and race
+  analysis with the name it shows and who really uploaded it, with a delete button.
+- **DRINKS mode names are checked** against the rest of Pitlane HQ: a name another driver uses
+  shows a message. Your own DRINKS names never clash with each other or with you.
+- **Unique nicknames** on the platform, with a clear message when one is taken.
+
 ## 0.6.2 beta
 
 **Changed**
