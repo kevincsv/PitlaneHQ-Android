@@ -782,41 +782,75 @@ struct TrackMapView: View {
         return max(0, min(m - 1, Int((f * Double(m - 1)).rounded())))
     }
 
+    private struct Seg: Identifiable {
+        let id: Int
+        let from: Int
+        let to: Int
+        let color: Color
+    }
+
+    private var stroke: StrokeStyle { StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round) }
+
+    /// 48 stretches of the lap, coloured where lap A gains or loses time against the reference.
+    private var segments: [Seg] {
+        guard let delta = c.delta, m > 2, n > 2 else { return [] }
+        let segs = 48
+        var vals: [Double] = []
+        for j in 0..<segs {
+            let a: Int = j * (m - 1) / segs
+            let b: Int = (j + 1) * (m - 1) / segs
+            vals.append(delta[b] - delta[a])
+        }
+        var mx: Double = 0.01
+        for v in vals { mx = max(mx, abs(v)) }
+        var out: [Seg] = []
+        for j in 0..<segs {
+            let v: Double = vals[j]
+            if abs(v) < 0.003 { continue }
+            let alpha: Double = 0.3 + 0.7 * min(1, abs(v) / mx)
+            let base: Color = v > 0 ? Theme.bad : Theme.good
+            out.append(Seg(id: j, from: j * (n - 1) / segs, to: (j + 1) * (n - 1) / segs, color: base.opacity(alpha)))
+        }
+        return out
+    }
+
+    private var selectedRow: Int? {
+        guard let s = selected else { return nil }
+        let i: Int = Int(((Double(s) * c.step) / trace.bin).rounded())
+        return max(0, min(n - 1, i))
+    }
+
     var body: some View {
         Panel {
             SectionLabel(text: t("track_map").uppercased())
             GeometryReader { g in
-                let size = g.size
-                ZStack {
-                    path(0, n - 1, size, close: true).stroke(Theme.line, style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round))
-                    if let delta = c.delta, m > 2 {
-                        let segs = 48
-                        let vals: [Double] = (0..<segs).map { j in delta[(j + 1) * (m - 1) / segs] - delta[j * (m - 1) / segs] }
-                        let mx: Double = max(0.01, vals.map { abs($0) }.max() ?? 0.01)
-                        ForEach(0..<segs, id: \.self) { j in
-                            let v: Double = vals[j]
-                            if abs(v) >= 0.003 {
-                                path(j * (n - 1) / segs, (j + 1) * (n - 1) / segs, size)
-                                    .stroke((v > 0 ? Theme.bad : Theme.good).opacity(0.3 + 0.7 * min(1, abs(v) / mx)), style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round))
-                            }
-                        }
-                    }
-                    ForEach(1..<3, id: \.self) { k in
-                        Circle().fill(Theme.muted).frame(width: 10, height: 10).position(point(k * (n - 1) / 3, size))
-                    }
-                    Circle().fill(Theme.fg).frame(width: 10, height: 10).position(point(0, size))
-                    if let s = selected {
-                        let i = max(0, min(n - 1, Int(((Double(s) * c.step) / trace.bin).rounded())))
-                        Circle().fill(Theme.fg).frame(width: 18, height: 18).position(point(i, size))
-                        Circle().fill(Theme.accent).frame(width: 12, height: 12).position(point(i, size))
-                    }
-                }
-                .contentShape(Rectangle())
-                .onTapGesture { loc in pickAt(loc, size) }
-                .simultaneousGesture(DragGesture(minimumDistance: 6).onChanged { v in pickAt(v.location, size) })
+                map(g.size)
             }
             .frame(height: 230)
             Text(readout).font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.muted)
+        }
+    }
+
+    private func map(_ size: CGSize) -> some View {
+        ZStack {
+            path(0, n - 1, size, close: true).stroke(Theme.line, style: stroke)
+            ForEach(segments) { s in
+                path(s.from, s.to, size).stroke(s.color, style: stroke)
+            }
+            dots(size)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { loc in pickAt(loc, size) }
+        .simultaneousGesture(DragGesture(minimumDistance: 6).onChanged { v in pickAt(v.location, size) })
+    }
+
+    @ViewBuilder private func dots(_ size: CGSize) -> some View {
+        Circle().fill(Theme.muted).frame(width: 10, height: 10).position(point((n - 1) / 3, size))
+        Circle().fill(Theme.muted).frame(width: 10, height: 10).position(point(2 * (n - 1) / 3, size))
+        Circle().fill(Theme.fg).frame(width: 10, height: 10).position(point(0, size))
+        if let i = selectedRow {
+            Circle().fill(Theme.fg).frame(width: 18, height: 18).position(point(i, size))
+            Circle().fill(Theme.accent).frame(width: 12, height: 12).position(point(i, size))
         }
     }
 
