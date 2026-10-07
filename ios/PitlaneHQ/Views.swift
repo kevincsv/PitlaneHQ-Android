@@ -473,7 +473,7 @@ struct MainView: View {
             NavigationStack { AnalysisView().routes() }.tabItem { Label(t("analysis"), systemImage: "chart.xyaxis.line") }.tag(1)
             NavigationStack { CommunityView().routes() }.tabItem { Label(t("community"), systemImage: "person.3") }.tag(2)
             NavigationStack { LiveView() }.tabItem { Label(t("live"), systemImage: "antenna.radiowaves.left.and.right") }.tag(3)
-            NavigationStack { SettingsView() }.tabItem { Label(t("settings"), systemImage: "gearshape") }.tag(4)
+            NavigationStack { SettingsView() }.tabItem { Label(t("account_tab"), systemImage: "person") }.tag(4)
         }
         .onReceive(inbox.$goTab.compactMap { $0 }) { t in tab = t; inbox.goTab = nil }
     }
@@ -807,7 +807,7 @@ struct AnalysisView: View {
     }
 
     var body: some View {
-        Screen(title: t("my_laps"), sub: t("uploaded_by_pc")) {
+        Screen(title: t("analysis"), sub: t("uploaded_by_pc")) {
             WebNote(text: t("coach_web"))
             Tabs(labels: [t("sessions"), t("bests")], selected: $tab)
             if tab == 0 {
@@ -1920,7 +1920,7 @@ struct SettingsView: View {
     private var version: String { (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") + " beta" }
 
     var body: some View {
-        Screen(title: t("settings")) {
+        Screen(title: t("account_tab")) {
             SectionLabel(text: t("account"))
             Panel {
                 Text(account.display.isEmpty ? t("driver") : account.display).font(.title3.weight(.black))

@@ -312,7 +312,7 @@ private fun BottomBar(nav: NavHostController) {
         Dest("analysis", t("analysis"), Icons.Default.QueryStats),
         Dest("community", t("community"), Icons.Default.Groups),
         Dest("live", t("live"), Icons.Default.Sensors),
-        Dest("settings", t("settings"), Icons.Default.Settings)
+        Dest("settings", t("account_tab"), Icons.Default.Person)
     )
     val current = nav.currentBackStackEntryAsState().value?.destination?.route
     val tab = when (current) { "races", "race" -> "home"; "session", "lap" -> "analysis"; "combo" -> "community"; "drinks", "admin" -> "settings"; else -> current }
@@ -581,7 +581,7 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
     val b by vm.bests.collectAsState()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(tab) { if (tab == 0 && s.data == null && !s.loading) vm.loadSessions(); if (tab == 1 && b.data == null && !b.loading) vm.loadBests() }
-    Screen(t("my_laps"), t("uploaded_by_pc")) {
+    Screen(t("analysis"), t("uploaded_by_pc")) {
         item { WebNote(t("coach_web")) }
         item { Tabs(listOf(t("sessions"), t("bests")), tab) { tab = it } }
         if (tab == 0) {
@@ -1342,7 +1342,7 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
     val demo by vm.demo.collectAsState()
     val uri = LocalUriHandler.current
     LaunchedEffect(Unit) { if (d.data == null && !d.loading) vm.loadDevices() }
-    Screen(t("settings")) {
+    Screen(t("account_tab")) {
         item { Section(t("account")) }
         item {
             Panel {

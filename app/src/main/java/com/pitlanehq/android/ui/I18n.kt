@@ -21,6 +21,7 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "analysis" to ("Analysis" to "Análisis"),
     "community" to ("Community" to "Comunidad"),
     "live" to ("Live" to "En vivo"),
+    "account_tab" to ("Account" to "Cuenta"),
     "settings" to ("Settings" to "Ajustes"),
     "companion" to ("COMPANION" to "COMPAÑERO"),
     "sign_in" to ("Sign in" to "Iniciar sesión"),
