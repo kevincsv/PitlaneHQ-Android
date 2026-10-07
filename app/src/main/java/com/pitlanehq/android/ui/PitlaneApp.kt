@@ -28,6 +28,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.draw.alpha
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.draw.clip
@@ -251,6 +254,7 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
     Screen(a.display.ifBlank { t("driver") }, t("racing_companion")) {
         state(r) { vm.loadRaces() }
         item { Licences() }
+        item { DaysDriven(vm, nav, races) }
         item { Section(t("race_summary")) }
         item {
             val recent = races.take(10)
@@ -292,6 +296,66 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
                 }
             }
         }
+    }
+}
+
+/**
+ * The days you drove, like the web and the PC: the last 26 weeks in squares, brighter the more races and sessions that day.
+ * A day opens what you drove: the race summaries and the sessions.
+ */
+@Composable
+private fun DaysDriven(vm: PitlaneViewModel, nav: NavHostController, races: List<Race>) {
+    val sl by vm.sessions.collectAsState()
+    LaunchedEffect(Unit) { if (sl.data == null && !sl.loading) vm.loadSessions() }
+    val sessions = sl.data ?: emptyList()
+    val zone = java.time.ZoneId.systemDefault()
+    fun day(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
+    val byRace = races.groupBy { day(it.whenMs) }
+    val bySes = sessions.groupBy { day(it.started) }
+    val today = java.time.LocalDate.now(zone)
+    val weeks = 26
+    val start = today.minusDays(((today.dayOfWeek.value - 1) + (weeks - 1) * 7).toLong())
+    val count = { d: java.time.LocalDate -> (byRace[d]?.size ?: 0) + (bySes[d]?.size ?: 0) }
+    val max = ((0 until weeks * 7).maxOfOrNull { count(start.plusDays(it.toLong())) } ?: 1).coerceAtLeast(1)
+    val driven = (0 until weeks * 7).count { val d = start.plusDays(it.toLong()); !d.isAfter(today) && count(d) > 0 }
+    var open by remember { mutableStateOf<java.time.LocalDate?>(null) }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Section(t("days_driven")); Spacer(Modifier.weight(1f)); Text(t("days_in_6m", driven), color = Muted, fontSize = 11.sp)
+    }
+    Panel {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            for (w in 0 until weeks) Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                for (d in 0 until 7) {
+                    val date = start.plusDays((w * 7 + d).toLong())
+                    val n = count(date)
+                    val a = if (n == 0) 0f else listOf(.35f, .6f, .8f, 1f)[(kotlin.math.ceil(n.toDouble() / max * 4).toInt() - 1).coerceIn(0, 3)]
+                    Box(
+                        Modifier.size(11.dp).clip(RoundedCornerShape(3.dp))
+                            .background(if (date.isAfter(today)) Color.Transparent else if (n == 0) Surface2 else Accent.copy(alpha = a))
+                            .then(if (n > 0) Modifier.clickable { open = date } else Modifier)
+                    )
+                }
+            }
+        }
+    }
+    open?.let { d ->
+        AlertDialog(
+            onDismissRequest = { open = null },
+            confirmButton = { TextButton({ open = null }) { Text(t("close"), color = Accent) } },
+            title = { Text(d.format(java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM")), fontWeight = FontWeight.Black) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    byRace[d]?.forEach { x ->
+                        Text("${x.track} · P${x.finish}/${x.field} · ${x.inc}x", fontWeight = FontWeight.Bold,
+                            modifier = Modifier.fillMaxWidth().clickable { open = null; vm.race = x; nav.navigate("race") }.padding(vertical = 6.dp))
+                    }
+                    bySes[d]?.forEach { x ->
+                        Text("${kindText(x.kind)} · ${x.track} · ${x.car} · ${lapTime(x.best)}", color = Fg,
+                            modifier = Modifier.fillMaxWidth().clickable { open = null; vm.session = x; vm.loadLaps(x.id); nav.navigate("session") }.padding(vertical = 6.dp))
+                    }
+                }
+            }
+        )
     }
 }
 
@@ -359,9 +423,10 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
                     x.laps.forEach { l ->
                         Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                             Text("L${l.n}", color = Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(44.dp))
-                            Text(lapTime(l.time), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = if (l.time == best) Purple else Fg, modifier = Modifier.weight(1f))
-                            Text("P${l.pos}", color = Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(44.dp))
-                            Text(if (l.cut) "✂" else if (l.pit) t("pit") else if (l.inc > 0) "${l.inc}x" else "", color = if (l.pit && !l.cut) Blue else Bad, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(40.dp))
+                            val strike = if (l.cut) TextDecoration.LineThrough else TextDecoration.None
+                            Text(lapTime(l.time), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = if (l.cut) Muted else if (l.time == best) Purple else Fg, textDecoration = strike, modifier = Modifier.weight(1f).alpha(if (l.cut) .6f else 1f))
+                            Text("P${l.pos}", color = Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, textDecoration = strike, modifier = Modifier.width(44.dp).alpha(if (l.cut) .6f else 1f))
+                            Text(listOfNotNull(if (l.cut) t("invalid").lowercase() else null, if (l.pit) t("pit") else null, if (l.inc > 0) "${l.inc}x" else null).joinToString(" · "), color = if (l.pit && !l.cut) Blue else Bad, fontFamily = FontFamily.Monospace, fontSize = 11.sp, modifier = Modifier.widthIn(min = 40.dp))
                         }
                     }
                 }
@@ -458,7 +523,8 @@ private fun SessionDetail(vm: PitlaneViewModel, nav: NavHostController) {
                     Text("L${lap.n}", color = Muted, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
                     Text(
                         lapTime(lap.time), fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f),
-                        color = when { !lap.valid -> Bad; lap.time == best -> Purple; else -> Fg }
+                        color = when { !lap.valid -> Muted; lap.time == best -> Purple; else -> Fg },
+                        textDecoration = if (!lap.valid) TextDecoration.LineThrough else TextDecoration.None
                     )
                     if (best != null && lap.valid && lap.time > best) Text("+%.3f".format(lap.time - best), color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                     if (lap.inc > 0) Text("  ${lap.inc}x", color = Bad, fontSize = 11.sp, fontFamily = FontFamily.Monospace)

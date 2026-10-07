@@ -4,6 +4,16 @@ TrackIQ (formerly Pitlane HQ) is in **beta**. The phone apps share their version
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
+## 0.6.0 beta
+
+**New**
+- **Days you drove** on Home: the last 26 weeks in squares, brighter the more races and sessions
+  that day, like the PC and the web. Tap a day to see its race summaries and sessions.
+
+**Changed**
+- Not valid laps are grey and crossed out in the lap lists ("invalid" in words, no ✂), like the
+  PC and the web.
+
 ## 0.5.9 beta
 
 Same version as TrackIQ.exe and the web, which now open on Home like the phone apps and run a

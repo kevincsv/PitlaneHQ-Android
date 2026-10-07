@@ -377,6 +377,7 @@ struct HomeView: View {
         let avgInc = recent.isEmpty ? "—" : String(format: "%.1f", Double(incSum) / Double(recent.count))
         Screen(title: account.display.isEmpty ? t("driver") : account.display, sub: t("racing_companion")) {
             Licences()
+            DaysDriven(races: races)
             SectionLabel(text: t("race_summary"))
             MetricGrid(items: [
                 MetricData(label: t("current_ir"), value: last.map { $0.ir > 0 ? "\($0.ir + $0.irChange)" : "—" } ?? "—"),
@@ -411,6 +412,78 @@ struct HomeView: View {
         .refreshable { await account.sync() }
     }
 }
+
+/// The days you drove, like the web and the PC: the last 26 weeks in squares, brighter the more races and sessions that day.
+/// A day opens what you drove: the race summaries and the sessions.
+struct DaysDriven: View {
+    let races: [Race]
+    @EnvironmentObject var account: Account
+    @State private var sessions: [CloudSession] = []
+    @State private var open: Date?
+    private let weeks = 26
+    private var cal: Calendar { var c = Calendar.current; c.firstWeekday = 2; return c }
+
+    private func dayKey(_ ms: Double) -> Date { cal.startOfDay(for: Date(timeIntervalSince1970: ms / 1000)) }
+    private var byRace: [Date: [Race]] { Dictionary(grouping: races) { dayKey($0.when) } }
+    private var bySes: [Date: [CloudSession]] { Dictionary(grouping: sessions) { dayKey($0.started) } }
+    private var today: Date { cal.startOfDay(for: Date()) }
+    private var start: Date {
+        let wd = (cal.component(.weekday, from: today) + 5) % 7 // days since Monday
+        return cal.date(byAdding: .day, value: -(wd + (weeks - 1) * 7), to: today)!
+    }
+    private func count(_ d: Date) -> Int { (byRace[d]?.count ?? 0) + (bySes[d]?.count ?? 0) }
+
+    var body: some View {
+        let s = start, r = byRace, se = bySes
+        let all: [Date] = (0..<(weeks * 7)).map { cal.date(byAdding: .day, value: $0, to: s)! }
+        let mx: Int = max(1, all.map { (r[$0]?.count ?? 0) + (se[$0]?.count ?? 0) }.max() ?? 1)
+        let driven: Int = all.filter { $0 <= today && ((r[$0]?.count ?? 0) + (se[$0]?.count ?? 0)) > 0 }.count
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                SectionLabel(text: t("days_driven"))
+                Spacer()
+                Text(t("days_in_6m", driven)).font(.caption2).foregroundColor(Theme.muted)
+            }
+            Panel {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 2) {
+                        ForEach(0..<weeks, id: \.self) { w in
+                            VStack(spacing: 2) {
+                                ForEach(0..<7, id: \.self) { d in cell(all[w * 7 + d], mx) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .task { if sessions.isEmpty, let g = try? await account.sessions() { sessions = g.data } }
+        .sheet(item: Binding(get: { open.map { DayRef(day: $0) } }, set: { open = $0?.day })) { ref in
+            NavigationStack {
+                List {
+                    ForEach(byRace[ref.day] ?? []) { x in
+                        NavigationLink(value: Route.race(x)) { Text("\(x.track) · P\(x.finish)/\(x.field) · \(x.inc)x").bold() }
+                    }
+                    ForEach(bySes[ref.day] ?? []) { x in
+                        NavigationLink(value: Route.session(x)) { Text("\(kindText(x.kind)) · \(x.track) · \(x.car) · \(lapTime(x.best))") }
+                    }
+                }
+                .navigationTitle(ref.day.formatted(.dateTime.weekday(.wide).day().month(.wide)))
+                .routes()
+                .toolbar { Button(t("close")) { open = nil } }
+            }
+        }
+    }
+
+    @ViewBuilder private func cell(_ d: Date, _ mx: Int) -> some View {
+        let n = count(d)
+        let a: Double = n == 0 ? 0 : [0.35, 0.6, 0.8, 1.0][max(0, min(3, Int((Double(n) / Double(mx) * 4).rounded(.up)) - 1))]
+        let fill: Color = d > today ? .clear : n == 0 ? Theme.surface2 : Theme.accent.opacity(a)
+        RoundedRectangle(cornerRadius: 3).fill(fill).frame(width: 11, height: 11)
+            .onTapGesture { if n > 0 { open = d } }
+    }
+}
+
+private struct DayRef: Identifiable { let day: Date; var id: Double { day.timeIntervalSince1970 } }
 
 struct RacesView: View {
     @EnvironmentObject var account: Account
@@ -452,10 +525,11 @@ struct RaceView: View {
                     ForEach(x.laps, id: \.n) { l in
                         HStack {
                             Text("L\(l.n)").foregroundColor(Theme.muted).frame(width: 44, alignment: .leading)
-                            Text(lapTime(l.time)).foregroundColor(l.time == best ? Theme.purple : Theme.fg)
+                            Text(lapTime(l.time)).foregroundColor(l.cut ? Theme.muted : l.time == best ? Theme.purple : Theme.fg).strikethrough(l.cut).opacity(l.cut ? 0.6 : 1)
                             Spacer()
-                            Text("P\(l.pos)").foregroundColor(Theme.muted).frame(width: 44, alignment: .leading)
-                            Text(l.cut ? "✂" : l.pit ? t("pit") : l.inc > 0 ? "\(l.inc)x" : "").foregroundColor(l.pit && !l.cut ? Theme.blue : Theme.bad).frame(width: 40, alignment: .leading)
+                            Text("P\(l.pos)").foregroundColor(Theme.muted).strikethrough(l.cut).frame(width: 44, alignment: .leading)
+                            Text([l.cut ? t("invalid").lowercased() : nil, l.pit ? t("pit") : nil, l.inc > 0 ? "\(l.inc)x" : nil].compactMap { $0 }.joined(separator: " · "))
+                                .font(.system(size: 11, design: .monospaced)).foregroundColor(l.pit && !l.cut ? Theme.blue : Theme.bad).frame(minWidth: 40, alignment: .leading)
                         }
                         .font(.system(size: 12, design: .monospaced))
                     }
@@ -580,7 +654,7 @@ struct SessionView: View {
                         HStack {
                             Text("L\(lap.n)").font(.system(.subheadline, design: .monospaced)).foregroundColor(Theme.muted).frame(width: 44, alignment: .leading)
                             Text(lapTime(lap.time)).font(.system(.subheadline, design: .monospaced).bold())
-                                .foregroundColor(!lap.valid ? Theme.bad : lap.time == best ? Theme.purple : Theme.fg)
+                                .foregroundColor(!lap.valid ? Theme.muted : lap.time == best ? Theme.purple : Theme.fg).strikethrough(!lap.valid)
                             Spacer()
                             if let best, lap.valid, lap.time > best { Text(String(format: "+%.3f", lap.time - best)).font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.muted) }
                             if lap.inc > 0 { Text("\(lap.inc)x").font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.bad) }
