@@ -19,6 +19,7 @@ struct CloudLap: Identifiable, Hashable {
     let time: Double
     let valid: Bool
     let sectors: [Double]
+    var inc: Int = 0 // incident points on the lap (they do not make it invalid)
 }
 
 /// One row every `bin` metres: speed m/s, throttle 0-1, brake 0-1, gear, steering rad, lap time s.
@@ -28,7 +29,10 @@ struct Trace {
     /// The shape of the track: where the car was at every row (TrackIQ 0.5 and later record it).
     var x: [Double]? = nil
     var y: [Double]? = nil
+    /// The incidents of the lap as [d, pts, d, pts…] (lap distance in m, incident points).
+    var inc: [Double] = []
     var hasShape: Bool { x != nil && y != nil && x!.count == rows.count && x!.count > 10 }
+    var incidents: [(d: Double, pts: Int)] { (0..<(inc.count / 2)).map { (d: inc[2 * $0], pts: Int(inc[2 * $0 + 1])) } }
 }
 
 struct PersonalBest: Identifiable, Hashable {

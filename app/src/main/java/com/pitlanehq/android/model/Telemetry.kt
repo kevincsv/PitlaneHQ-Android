@@ -35,10 +35,12 @@ data class CloudSession(
     val best: Double?
 )
 
-data class CloudLap(val id: String, val n: Int, val time: Double, val valid: Boolean, val sectors: List<Double>)
+data class CloudLap(val id: String, val n: Int, val time: Double, val valid: Boolean, val sectors: List<Double>, val inc: Int = 0)
 
 /** A lap trace: one row every [bin] metres: speed m/s, throttle 0-1, brake 0-1, gear, steering rad, lap time s. */
-data class Trace(val bin: Double, val rows: List<DoubleArray>, val x: List<Double>? = null, val y: List<Double>? = null) {
+data class Trace(val bin: Double, val rows: List<DoubleArray>, val x: List<Double>? = null, val y: List<Double>? = null, val inc: List<Double> = emptyList()) {
+    /** The incidents of the lap: (distance m, points), from the trace's [d, pts, d, pts…]. */
+    val incidents: List<Pair<Double, Int>> get() = (0 until inc.size / 2).map { inc[2 * it] to inc[2 * it + 1].toInt() }
     /** The shape of the track: where the car was at every row (TrackIQ 0.5 and later record it). */
     val hasShape get() = x != null && y != null && x.size == rows.size && x.size > 10
     val speedKph get() = rows.map { it[0] * 3.6 }

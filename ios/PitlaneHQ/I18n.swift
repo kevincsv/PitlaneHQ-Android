@@ -200,6 +200,8 @@ private let strings: [String: (String, String)] = [
     "support_sub": ("TrackIQ is free: if it helps you, support it on Patreon", "TrackIQ es gratis: si te ayuda, apóyalo en Patreon"),
     "by_phase": ("WHERE THE TIME GOES, BY PHASE", "DÓNDE SE PIERDE EL TIEMPO, POR FASE"),
     "track_map": ("Track map", "Mapa del circuito"),
+    "incidents_n": ("{0} incident(s) on this lap (⚠ on the map). Incidents do not make a lap invalid.", "{0} incidente(s) en esta vuelta (⚠ en el mapa). Los incidentes no invalidan la vuelta."),
+    "inc_at": ("incident here · {0}x", "incidente aquí · {0}x"),
     "map_hint": ("Green: you gain time on the reference · red: you lose it. Touch the map to read that point.", "Verde: ganas tiempo a la referencia · rojo: lo pierdes. Toca el mapa para leer ese punto."),
     "map_hint_a": ("The track, drawn from this lap. Touch it to read that point.", "El circuito, dibujado desde esta vuelta. Tócalo para leer ese punto."),
     "phase_brake": ("Braking", "Frenada"),

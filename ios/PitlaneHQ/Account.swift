@@ -317,7 +317,7 @@ final class Account: ObservableObject {
         let g = try await cachedGet("/api/sessions/" + idPath(sessionId))
         let a = (g.data as? [String: Any])?["laps"] as? [[String: Any]] ?? []
         return Got(data: a.map { l in
-            CloudLap(id: str(l["id"]), n: int(l["n"]), time: num(l["time"]) ?? 0, valid: ((l["valid"] as? NSNumber)?.intValue ?? 1) == 1, sectors: doubles(l["sectors"]))
+            CloudLap(id: str(l["id"]), n: int(l["n"]), time: num(l["time"]) ?? 0, valid: ((l["valid"] as? NSNumber)?.intValue ?? 1) == 1, sectors: doubles(l["sectors"]), inc: int(l["inc"]))
         }, stale: g.stale)
     }
 
@@ -328,6 +328,7 @@ final class Account: ObservableObject {
             tr.x = x.map(\.doubleValue)
             tr.y = y.map(\.doubleValue)
         }
+        if let inc = t["inc"] as? [NSNumber] { tr.inc = inc.map(\.doubleValue) }
         return tr
     }
 

@@ -274,7 +274,7 @@ class AccountRepository(context: Context) {
         val a = JSONObject(g.data).optJSONArray("laps") ?: JSONArray()
         return Got((0 until a.length()).map { i ->
             val l = a.getJSONObject(i)
-            CloudLap(l.optString("id"), l.optInt("n"), l.optDouble("time"), l.optInt("valid", 1) == 1, doubles(l.optJSONArray("sectors")))
+            CloudLap(l.optString("id"), l.optInt("n"), l.optDouble("time"), l.optInt("valid", 1) == 1, doubles(l.optJSONArray("sectors")), l.optInt("inc", 0))
         }, g.stale)
     }
 
@@ -286,7 +286,7 @@ class AccountRepository(context: Context) {
         val x = j.optJSONArray("x")?.let { doubles(it) }
         val y = j.optJSONArray("y")?.let { doubles(it) }
         val xy = x != null && y != null && x.size == d.length() && y.size == d.length()
-        return Trace(j.optDouble("bin", 10.0), (0 until d.length()).map { i -> d.getJSONArray(i).let { r -> DoubleArray(6) { k -> r.optDouble(k, 0.0) } } }, if (xy) x else null, if (xy) y else null)
+        return Trace(j.optDouble("bin", 10.0), (0 until d.length()).map { i -> d.getJSONArray(i).let { r -> DoubleArray(6) { k -> r.optDouble(k, 0.0) } } }, if (xy) x else null, if (xy) y else null, j.optJSONArray("inc")?.let { doubles(it) } ?: emptyList())
     }
 
     fun lapTrace(lapId: String): Trace? {

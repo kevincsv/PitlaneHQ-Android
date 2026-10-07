@@ -4,6 +4,13 @@ TrackIQ (formerly Pitlane HQ) is in **beta**. The phone apps share their version
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
+## 0.5.1 beta
+
+**New**
+- Incidents on your laps: the lap list shows ⚠ with the points of each lap, and the track map in the
+  lap analysis marks where they happened (a switch hides them). Touch the map near one to read it.
+  Incidents never make a lap invalid; only leaving the track does.
+
 ## 0.5.0 beta
 
 **New**

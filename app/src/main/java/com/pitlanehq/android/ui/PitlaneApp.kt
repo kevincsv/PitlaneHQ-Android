@@ -455,6 +455,7 @@ private fun SessionDetail(vm: PitlaneViewModel, nav: NavHostController) {
                         color = when { !lap.valid -> Bad; lap.time == best -> Purple; else -> Fg }
                     )
                     if (best != null && lap.valid && lap.time > best) Text("+%.3f".format(lap.time - best), color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    if (lap.inc > 0) Text("  ⚠${lap.inc}", color = Bad, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                     if (!lap.valid) Text(t("invalid"), color = Bad, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                     Icon(Icons.Default.ChevronRight, null, tint = Muted)
                 }
@@ -693,6 +694,8 @@ private fun ChartBody(
 private fun TrackMap(c: Compared, tr: Trace, sel: Int?, onSel: (Int) -> Unit) {
     val xs = tr.x ?: return
     val ys = tr.y ?: return
+    val incs = tr.incidents
+    var showInc by rememberSaveable { mutableStateOf(true) }
     val n = xs.size
     val m = c.speedA.size
     val len = (n - 1) * tr.bin
@@ -743,8 +746,22 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, onSel: (Int) -> Unit) {
             val cnt = 3
             for (k in 1 until cnt) { val q = pt((k * (n - 1) / cnt)); drawCircle(Muted, 5f, q) }
             drawCircle(Fg, 5f, pt(0))
+            // the incidents of the lap (⚠), where they happened
+            if (showInc) incs.forEach { (d, _) ->
+                val q = pt((d / tr.bin).roundToInt().coerceIn(0, n - 1))
+                drawLine(Bad, Offset(q.x - 6f, q.y - 6f), Offset(q.x + 6f, q.y + 6f), 3.5f, StrokeCap.Round)
+                drawLine(Bad, Offset(q.x + 6f, q.y - 6f), Offset(q.x - 6f, q.y + 6f), 3.5f, StrokeCap.Round)
+            }
             // the point under the finger
             if (sel != null) { val i = ((sel * c.step) / tr.bin).roundToInt().coerceIn(0, n - 1); val q = pt(i); drawCircle(Fg, 9f, q); drawCircle(Accent, 6f, q) }
+        }
+        if (incs.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(t("incidents_n", incs.size), color = Bad, fontSize = 11.sp, modifier = Modifier.weight(1f))
+            Switch(checked = showInc, onCheckedChange = { showInc = it })
+        }
+        if (sel != null && showInc) {
+            val d = sel * c.step
+            incs.filter { kotlin.math.abs(it.first - d) < 60 }.forEach { (_, pts) -> Text("⚠ " + t("inc_at", pts), color = Bad, fontSize = 11.sp, fontFamily = FontFamily.Monospace) }
         }
         val d = c.delta
         Text(

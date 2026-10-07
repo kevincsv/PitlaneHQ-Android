@@ -197,6 +197,8 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "support_sub" to ("TrackIQ is free: if it helps you, support it on Patreon" to "TrackIQ es gratis: si te ayuda, apóyalo en Patreon"),
     "by_phase" to ("WHERE THE TIME GOES, BY PHASE" to "DÓNDE SE PIERDE EL TIEMPO, POR FASE"),
     "track_map" to ("Track map" to "Mapa del circuito"),
+    "incidents_n" to ("{0} incident(s) on this lap (⚠ on the map). Incidents do not make a lap invalid." to "{0} incidente(s) en esta vuelta (⚠ en el mapa). Los incidentes no invalidan la vuelta."),
+    "inc_at" to ("incident here · {0}x" to "incidente aquí · {0}x"),
     "map_hint" to ("Green: you gain time on the reference · red: you lose it. Touch the map to read that point." to "Verde: ganas tiempo a la referencia · rojo: lo pierdes. Toca el mapa para leer ese punto."),
     "map_hint_a" to ("The track, drawn from this lap. Touch it to read that point." to "El circuito, dibujado desde esta vuelta. Tócalo para leer ese punto."),
     "phase_brake" to ("Braking" to "Frenada"),

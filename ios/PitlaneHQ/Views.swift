@@ -583,6 +583,7 @@ struct SessionView: View {
                                 .foregroundColor(!lap.valid ? Theme.bad : lap.time == best ? Theme.purple : Theme.fg)
                             Spacer()
                             if let best, lap.valid, lap.time > best { Text(String(format: "+%.3f", lap.time - best)).font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.muted) }
+                            if lap.inc > 0 { Text("⚠\(lap.inc)").font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.bad) }
                             if !lap.valid { Text(t("invalid")).font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.bad) }
                             Image(systemName: "chevron.right").foregroundColor(Theme.muted)
                         }
@@ -732,6 +733,7 @@ struct TrackMapView: View {
     let c: Compared
     let trace: Trace
     @Binding var pick: Double?
+    @State private var showInc = true
     private let xs: [Double], ys: [Double]
     private let minX: Double, maxX: Double, minY: Double, maxY: Double
 
@@ -828,6 +830,16 @@ struct TrackMapView: View {
             }
             .frame(height: 230)
             Text(readout).font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.muted)
+            if !incidents.isEmpty {
+                Toggle(isOn: $showInc) { Text(t("incidents_n", incidents.count)).font(.caption).foregroundColor(Theme.bad) }
+                    .tint(Theme.accent)
+            }
+            if showInc, let s = selected {
+                let d: Double = Double(s) * c.step
+                ForEach(Array(incidents.filter { abs($0.d - d) < 60 }.enumerated()), id: \.offset) { _, e in
+                    Text("⚠ " + t("inc_at", e.pts)).font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.bad)
+                }
+            }
         }
     }
 
@@ -837,11 +849,30 @@ struct TrackMapView: View {
             ForEach(segments) { s in
                 path(s.from, s.to, size).stroke(s.color, style: stroke)
             }
+            incMarks(size)
             dots(size)
         }
         .contentShape(Rectangle())
         .onTapGesture { loc in pickAt(loc, size) }
         .simultaneousGesture(DragGesture(minimumDistance: 6).onChanged { v in pickAt(v.location, size) })
+    }
+
+    private var incidents: [(d: Double, pts: Int)] { trace.incidents }
+
+    private func cross(_ q: CGPoint) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: q.x - 6, y: q.y - 6)); p.addLine(to: CGPoint(x: q.x + 6, y: q.y + 6))
+        p.move(to: CGPoint(x: q.x + 6, y: q.y - 6)); p.addLine(to: CGPoint(x: q.x - 6, y: q.y + 6))
+        return p
+    }
+
+    @ViewBuilder private func incMarks(_ size: CGSize) -> some View {
+        if showInc {
+            ForEach(Array(incidents.enumerated()), id: \.offset) { _, e in
+                let i: Int = max(0, min(n - 1, Int((e.d / trace.bin).rounded())))
+                cross(point(i, size)).stroke(Theme.bad, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
+            }
+        }
     }
 
     @ViewBuilder private func dots(_ size: CGSize) -> some View {
