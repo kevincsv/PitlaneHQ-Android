@@ -4,6 +4,13 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
+## 0.8.6 beta
+
+**Changed**
+- Same version as the PC and the web (the top 3 of each race go to the leaderboard anonymously
+  from the PC, the Garage 61 import works with the real Garage 61 and shares your best laps).
+  Nothing changes in the phone apps.
+
 ## 0.8.5 beta
 
 **Fixed**
