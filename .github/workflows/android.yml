@@ -79,7 +79,7 @@ jobs:
           gh release upload "$tag" out/* --clobber
           gh release edit "$tag" --latest --prerelease=false || true
       - name: Publish on pitlanehq.app (R2)
-        if: env.CLOUDFLARE_API_TOKEN != ''
+        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
