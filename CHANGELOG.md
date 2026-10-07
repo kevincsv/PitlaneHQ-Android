@@ -4,6 +4,11 @@ TrackIQ (formerly Pitlane HQ) is in **beta**. The phone apps share their version
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
+## 0.5.9 beta
+
+Same version as TrackIQ.exe and the web, which now open on Home like the phone apps and run a
+live demo race. No changes in the phone apps.
+
 ## 0.5.8 beta
 
 **Changed**

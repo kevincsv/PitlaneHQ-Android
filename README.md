@@ -1,4 +1,4 @@
-# TrackIQ for Android and iOS 0.5.8
+# TrackIQ for Android and iOS 0.5.9
 
 The phone apps of TrackIQ (formerly Pitlane HQ). They connect to the same TrackIQ server and the same account as
 the PC app (TrackIQ.exe) and the web app (`/app`), which live in their own repository.
