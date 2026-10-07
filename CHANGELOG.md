@@ -4,6 +4,15 @@ TrackIQ (formerly Pitlane HQ) is in **beta**. The phone apps share their version
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
+## 0.5.7 beta
+
+**Fixed**
+- Races kept on the phone lost their incident events and the "not valid" mark of their laps; the
+  race's incident total is now worked out before (the largest of the report's total, the laps'
+  and the events'), and the laps keep the mark.
+- Names saved with the wrong encoding by an older PC ("AutÃ³dromo", "LÃ©o") read right.
+- The lap list and the map readout use words instead of the ⚠ symbol ("1x", "Car contact 4x").
+
 ## 0.5.6 beta
 
 **Changed**

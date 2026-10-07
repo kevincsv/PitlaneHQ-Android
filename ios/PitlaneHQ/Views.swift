@@ -583,7 +583,7 @@ struct SessionView: View {
                                 .foregroundColor(!lap.valid ? Theme.bad : lap.time == best ? Theme.purple : Theme.fg)
                             Spacer()
                             if let best, lap.valid, lap.time > best { Text(String(format: "+%.3f", lap.time - best)).font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.muted) }
-                            if lap.inc > 0 { Text("⚠\(lap.inc)").font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.bad) }
+                            if lap.inc > 0 { Text("\(lap.inc)x").font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.bad) }
                             if !lap.valid { Text(t("invalid")).font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.bad) }
                             Image(systemName: "chevron.right").foregroundColor(Theme.muted)
                         }
@@ -849,7 +849,7 @@ struct TrackMapView: View {
             if showInc, let s = selected {
                 let d: Double = Double(s) * c.step
                 ForEach(Array(incidents.filter { abs($0.d - d) < 60 }.enumerated()), id: \.offset) { _, e in
-                    Text("⚠ " + incName(e.kind) + " \(e.pts)x").font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.bad)
+                    Text(incName(e.kind) + " \(e.pts)x").font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.bad)
                 }
             }
         }

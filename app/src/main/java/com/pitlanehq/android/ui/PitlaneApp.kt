@@ -461,7 +461,7 @@ private fun SessionDetail(vm: PitlaneViewModel, nav: NavHostController) {
                         color = when { !lap.valid -> Bad; lap.time == best -> Purple; else -> Fg }
                     )
                     if (best != null && lap.valid && lap.time > best) Text("+%.3f".format(lap.time - best), color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                    if (lap.inc > 0) Text("  ⚠${lap.inc}", color = Bad, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    if (lap.inc > 0) Text("  ${lap.inc}x", color = Bad, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                     if (!lap.valid) Text(t("invalid"), color = Bad, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                     Icon(Icons.Default.ChevronRight, null, tint = Muted)
                 }
@@ -805,7 +805,7 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, onSel: (Int) -> Unit) {
 
         if (sel != null && showInc) {
             val d = sel * c.step
-            incs.filter { kotlin.math.abs(it.d - d) < 60 }.forEach { e -> Text("⚠ " + incName(e.kind) + " ${e.pts}x", color = Bad, fontSize = 11.sp, fontFamily = FontFamily.Monospace) }
+            incs.filter { kotlin.math.abs(it.d - d) < 60 }.forEach { e -> Text(incName(e.kind) + " ${e.pts}x", color = Bad, fontSize = 11.sp, fontFamily = FontFamily.Monospace) }
         }
         val d = c.delta
         Text(

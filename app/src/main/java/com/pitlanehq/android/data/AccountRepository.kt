@@ -201,11 +201,16 @@ class AccountRepository(context: Context) {
             .sortedByDescending { it.optLong("when") }
             .take(60)
             .map { r ->
-                r.remove("brakes"); r.remove("incidents")
                 val laps = r.optJSONArray("laps") ?: JSONArray()
+                // the race's incident total, like the web: the largest of the report's total, the laps' and the events'
+                val ev = r.optJSONArray("incidents")
+                val fromLaps = (0 until laps.length()).sumOf { laps.optJSONObject(it)?.optInt("i") ?: 0 }
+                val fromEv = ev?.let { e -> (0 until e.length()).sumOf { e.optJSONObject(it)?.let { x -> x.optInt("pts", x.optInt("p")) } ?: 0 } } ?: 0
+                r.put("inc", maxOf(r.optInt("inc"), fromLaps, fromEv))
+                r.remove("brakes"); r.remove("incidents")
                 val slim = JSONArray()
                 for (i in 0 until laps.length()) laps.optJSONObject(i)?.let { l ->
-                    slim.put(JSONObject().put("n", l.optInt("n")).put("t", l.optDouble("t")).put("p", l.optInt("p")).put("i", l.optInt("i")).put("pit", l.optBoolean("pit")))
+                    slim.put(JSONObject().put("n", l.optInt("n")).put("t", l.optDouble("t")).put("p", l.optInt("p")).put("i", l.optInt("i")).put("pit", l.optBoolean("pit")).put("cut", l.optBoolean("cut")))
                 }
                 r.put("laps", slim)
             }
@@ -220,21 +225,29 @@ class AccountRepository(context: Context) {
             val laps = r.optJSONArray("laps") ?: JSONArray()
             val res = r.optJSONArray("results") ?: JSONArray()
             Race(
-                id = r.optString("id"), whenMs = r.optLong("when"), track = r.optString("track"), car = r.optString("car"),
+                id = r.optString("id"), whenMs = r.optLong("when"), track = fixTxt(r.optString("track")), car = fixTxt(r.optString("car")),
                 official = r.optBoolean("official"), start = r.optInt("start"), finish = r.optInt("finish"), field = r.optInt("field"),
-                inc = r.optInt("inc"), best = r.optDouble("best").pos(), fieldBest = r.optDouble("fieldBest").pos(),
+                inc = maxOf(r.optInt("inc"), (0 until laps.length()).sumOf { laps.getJSONObject(it).optInt("i") }), best = r.optDouble("best").pos(), fieldBest = r.optDouble("fieldBest").pos(),
                 avg = r.optDouble("avg").pos(), consistency = r.optDouble("consistency").pos(), pits = r.optInt("pits"),
                 fuelUsed = r.optDouble("fuelUsed").pos(), ir = r.optInt("ir"), irChange = r.optInt("irChange"), sof = r.optInt("sof"),
                 dnf = r.optBoolean("dnf"),
                 laps = (0 until laps.length()).map { k -> laps.getJSONObject(k).let { RaceLap(it.optInt("n"), it.optDouble("t"), it.optInt("p"), it.optInt("i"), it.optBoolean("pit"), it.optBoolean("cut")) } },
                 results = (0 until res.length()).map { k ->
-                    res.getJSONObject(k).let { RaceResult(it.optInt("cpos").takeIf { p -> p > 0 } ?: it.optInt("pos"), it.optString("name"), it.optInt("ir"), it.optDouble("best").pos(), it.optInt("inc"), it.optInt("laps")) }
+                    res.getJSONObject(k).let { RaceResult(it.optInt("cpos").takeIf { p -> p > 0 } ?: it.optInt("pos"), fixTxt(it.optString("name")), it.optInt("ir"), it.optDouble("best").pos(), it.optInt("inc"), it.optInt("laps")) }
                 }.sortedBy { it.pos }
             )
         }
     }
 
     private fun Double.pos() = takeIf { !it.isNaN() && it > 0 }
+
+    /** Text saved with the wrong encoding by an older PC ("AutÃ³dromo"): only the damaged pieces are repaired. */
+    private val mojibake = Regex("[\u00C2-\u00DF][\u0080-\u00BF]|[\u00E0-\u00EF][\u0080-\u00BF]{2}")
+    private fun fixTxt(s: String): String = mojibake.replace(s) { m ->
+        val b = ByteArray(m.value.length) { m.value[it].code.toByte() }
+        val d = String(b, Charsets.UTF_8)
+        if (d.contains('\uFFFD')) m.value else d
+    }
 
     fun logout() {
         runCatching { call("POST", "/account/logout") }

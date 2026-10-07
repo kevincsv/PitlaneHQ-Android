@@ -247,16 +247,49 @@ final class Account: ObservableObject {
     }
 
     // only what the phone shows, newest first: races.json also has braking points and more
+    /// Text saved with the wrong encoding by an older PC ("AutÃ³dromo"): only the damaged pieces are repaired.
+    private func fixTxt(_ s: String) -> String {
+        guard s.unicodeScalars.contains(where: { $0.value >= 0xC2 && $0.value <= 0xEF }) else { return s }
+        var out = ""
+        var buf: [UInt8] = []
+        func flush() {
+            if !buf.isEmpty {
+                if let d = String(bytes: buf, encoding: .utf8) { out += d } else { out += String(String.UnicodeScalarView(buf.map { Unicode.Scalar($0) })) }
+                buf = []
+            }
+        }
+        let scalars = Array(s.unicodeScalars)
+        var i = 0
+        while i < scalars.count {
+            let v = scalars[i].value
+            let need = v >= 0xC2 && v <= 0xDF ? 1 : v >= 0xE0 && v <= 0xEF ? 2 : 0
+            if need > 0 && i + need < scalars.count && (1...need).allSatisfy({ scalars[i + $0].value >= 0x80 && scalars[i + $0].value <= 0xBF }) {
+                buf = (0...need).map { UInt8(scalars[i + $0].value) }
+                flush()
+                i += need + 1
+            } else {
+                out.unicodeScalars.append(scalars[i])
+                i += 1
+            }
+        }
+        return out
+    }
+
     private func trimRaces(_ a: [[String: Any]]) -> [[String: Any]] {
         a.filter { str($0["game"]).isEmpty || str($0["game"]) == "iracing" }
             .sorted { (num($0["when"]) ?? 0) > (num($1["when"]) ?? 0) }
             .prefix(60)
             .map { r0 -> [String: Any] in
                 var r = r0
+                // the race's incident total, like the web: the largest of the report's total, the laps' and the events'
+                let laps0 = r["laps"] as? [[String: Any]] ?? []
+                let fromLaps: Int = laps0.reduce(0) { $0 + int($1["i"]) }
+                let fromEv: Int = (r["incidents"] as? [[String: Any]] ?? []).reduce(0) { $0 + max(int($1["pts"]), int($1["p"])) }
+                r["inc"] = max(int(r["inc"]), fromLaps, fromEv)
                 r["brakes"] = nil
                 r["incidents"] = nil
-                r["laps"] = (r["laps"] as? [[String: Any]] ?? []).map { l -> [String: Any] in
-                    ["n": l["n"] ?? 0, "t": l["t"] ?? 0, "p": l["p"] ?? 0, "i": l["i"] ?? 0, "pit": l["pit"] ?? false]
+                r["laps"] = laps0.map { l -> [String: Any] in
+                    ["n": l["n"] ?? 0, "t": l["t"] ?? 0, "p": l["p"] ?? 0, "i": l["i"] ?? 0, "pit": l["pit"] ?? false, "cut": l["cut"] ?? false]
                 }
                 return r
             }
@@ -267,13 +300,14 @@ final class Account: ObservableObject {
         guard let d = saved("races"), let a = try? JSONSerialization.jsonObject(with: d) as? [[String: Any]] else { races = []; return }
         races = a.map { r in
             Race(
-                id: str(r["id"]), when: num(r["when"]) ?? 0, track: str(r["track"]), car: str(r["car"]), official: r["official"] as? Bool ?? false,
-                start: int(r["start"]), finish: int(r["finish"]), field: int(r["field"]), inc: int(r["inc"]), best: pos(r["best"]),
+                id: str(r["id"]), when: num(r["when"]) ?? 0, track: fixTxt(str(r["track"])), car: fixTxt(str(r["car"])), official: r["official"] as? Bool ?? false,
+                start: int(r["start"]), finish: int(r["finish"]), field: int(r["field"]),
+                inc: max(int(r["inc"]), (r["laps"] as? [[String: Any]] ?? []).reduce(0) { $0 + int($1["i"]) }), best: pos(r["best"]),
                 fieldBest: pos(r["fieldBest"]), avg: pos(r["avg"]), consistency: pos(r["consistency"]), pits: int(r["pits"]), fuelUsed: pos(r["fuelUsed"]),
                 ir: int(r["ir"]), irChange: int(r["irChange"]), sof: int(r["sof"]), dnf: r["dnf"] as? Bool ?? false,
                 laps: (r["laps"] as? [[String: Any]] ?? []).map { RaceLap(n: int($0["n"]), time: num($0["t"]) ?? 0, pos: int($0["p"]), inc: int($0["i"]), pit: $0["pit"] as? Bool ?? false, cut: $0["cut"] as? Bool ?? false) },
                 results: (r["results"] as? [[String: Any]] ?? []).map {
-                    RaceResult(pos: int($0["cpos"]) > 0 ? int($0["cpos"]) : int($0["pos"]), name: str($0["name"]), ir: int($0["ir"]), best: pos($0["best"]), inc: int($0["inc"]), laps: int($0["laps"]))
+                    RaceResult(pos: int($0["cpos"]) > 0 ? int($0["cpos"]) : int($0["pos"]), name: fixTxt(str($0["name"])), ir: int($0["ir"]), best: pos($0["best"]), inc: int($0["inc"]), laps: int($0["laps"]))
                 }.sorted { $0.pos < $1.pos }
             )
         }
