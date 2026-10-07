@@ -629,13 +629,14 @@ private fun SessionDetail(vm: PitlaneViewModel, nav: NavHostController) {
     val nSec = laps.maxOfOrNull { it.sectors.size } ?: 0
     // fastest time of each sector over the valid laps, shown in purple like in the sim
     val bestSec = (0 until nSec).map { i -> valid.mapNotNull { it.sectors.getOrNull(i) }.filter { it > 0 }.minOrNull() }
-    val ideal = if (nSec > 0 && bestSec.all { it != null }) bestSec.sumOf { it!! } else null
+    // the average of the valid laps: a real figure, not a lap made of the best sectors
+    val avg = if (valid.isNotEmpty()) valid.map { it.time }.average() else null
     Screen(x.track, x.car, back = { nav.popBackStack() }) {
         state(l) { vm.loadLaps(x.id) }
         item {
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Metric(t("best"), lapTime(best), Modifier.weight(1f).fillMaxHeight(), Purple)
-                Metric(t("best_sectors"), lapTime(ideal), Modifier.weight(1f).fillMaxHeight())
+                Metric(t("average"), lapTime(avg), Modifier.weight(1f).fillMaxHeight())
             }
         }
         item { Row { Section(t("laps").uppercase()); Spacer(Modifier.weight(1f)); Text(t("tap_lap"), color = Muted, fontSize = 11.sp) } }

@@ -872,12 +872,13 @@ struct SessionView: View {
         let nSec = all.map(\.sectors.count).max() ?? 0
         // fastest time of each sector over the valid laps, in purple like in the sim
         let bestSec: [Double?] = (0..<nSec).map { i in valid.compactMap { i < $0.sectors.count && $0.sectors[i] > 0 ? $0.sectors[i] : nil }.min() }
-        let ideal: Double? = nSec > 0 && bestSec.allSatisfy({ $0 != nil }) ? bestSec.compactMap { $0 }.reduce(0, +) : nil
+        // the average of the valid laps: a real figure, not a lap made of the best sectors
+        let avg: Double? = valid.isEmpty ? nil : valid.map(\.time).reduce(0, +) / Double(valid.count)
         return Screen(title: session.track, sub: session.car) {
             LoadState(loading: laps.loading, error: laps.error, stale: laps.stale) { Task { await laps.load { try await account.laps(session.id) } } }
             HStack(spacing: 8) {
                 Metric(label: t("best"), value: lapTime(best), color: Theme.purple)
-                Metric(label: t("best_sectors"), value: lapTime(ideal))
+                Metric(label: t("average"), value: lapTime(avg))
             }
             .fixedSize(horizontal: false, vertical: true)
             HStack {
