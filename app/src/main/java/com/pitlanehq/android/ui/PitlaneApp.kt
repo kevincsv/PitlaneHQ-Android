@@ -805,7 +805,7 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, onSel: (Int) -> Unit) {
 
         if (sel != null && showInc) {
             val d = sel * c.step
-            incs.filter { kotlin.math.abs(it.d - d) < 60 }.forEach { e -> Text(incName(e.kind) + " ${e.pts}x", color = Bad, fontSize = 11.sp, fontFamily = FontFamily.Monospace) }
+            incs.filter { kotlin.math.abs(it.d - d) < 60 }.forEach { e -> Text(incName(e.kind) + " (${e.pts}x)", color = Bad, fontSize = 11.sp, fontFamily = FontFamily.Monospace) }
         }
         val d = c.delta
         Text(

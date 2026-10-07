@@ -849,7 +849,7 @@ struct TrackMapView: View {
             if showInc, let s = selected {
                 let d: Double = Double(s) * c.step
                 ForEach(Array(incidents.filter { abs($0.d - d) < 60 }.enumerated()), id: \.offset) { _, e in
-                    Text(incName(e.kind) + " \(e.pts)x").font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.bad)
+                    Text(incName(e.kind) + " (\(e.pts)x)").font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.bad)
                 }
             }
         }
