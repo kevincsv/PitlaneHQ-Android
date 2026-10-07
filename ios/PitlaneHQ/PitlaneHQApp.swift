@@ -84,6 +84,7 @@ enum Theme {
     static let surface2 = Color(red: 0x1E / 255, green: 0x26 / 255, blue: 0x31 / 255)
     static let line = Color(red: 0x2B / 255, green: 0x35 / 255, blue: 0x42 / 255)
     static let fg = Color(red: 0xE7 / 255, green: 0xEB / 255, blue: 0xF1 / 255)
+    static let bg = Color(red: 0x11 / 255, green: 0x15 / 255, blue: 0x1B / 255)
     static let muted = Color(red: 0x8A / 255, green: 0x97 / 255, blue: 0xA9 / 255)
     static let accent = Color(red: 1, green: 0xB0 / 255, blue: 0x2E / 255)
     static let good = Color(red: 0x38 / 255, green: 0xC9 / 255, blue: 0x7C / 255)

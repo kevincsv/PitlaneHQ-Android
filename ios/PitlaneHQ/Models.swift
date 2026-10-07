@@ -339,6 +339,22 @@ func corners(_ c: Compared) -> [Corner] {
 }
 
 /// The three stretches of about 250 m where the lap loses the most time against the reference.
+/// Where a lap starts braking (brake over 12 % after being below), in metres, from a series on the `step` grid.
+func brakePoints(_ brk: [Double]?, _ step: Double) -> [Double] {
+    guard let brk, brk.count >= 3 else { return [] }
+    var out: [Double] = []
+    var i = 1
+    while i < brk.count {
+        if brk[i] > 0.12 && brk[i - 1] <= 0.12 {
+            out.append(Double(i) * step)
+            var k = i
+            while k < brk.count && k < i + 60 && brk[k] > 0.05 { k += 1 }
+            i = k + 1
+        } else { i += 1 }
+    }
+    return out
+}
+
 func losses(_ c: Compared, segM: Double = 250) -> [Loss] {
     guard let tB = c.tB, let speedB = c.speedB, c.tA.count > 1 else { return [] }
     let per = max(1, Int(segM / c.step))

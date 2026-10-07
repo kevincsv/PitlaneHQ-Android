@@ -28,6 +28,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.unit.IntSize
@@ -58,6 +63,7 @@ import kotlin.math.roundToInt
 
 private val Ink = Color(0xFF11151B)
 private val Surface = Color(0xFF19202A)
+private val Bg = Color(0xFF11151B)
 private val Surface2 = Color(0xFF1E2631)
 private val Line = Color(0xFF2B3542)
 private val Fg = Color(0xFFE7EBF1)
@@ -685,6 +691,15 @@ private fun ChartBody(
     }
 }
 
+/** A small on/off chip, like the web's toggles over the map. */
+@Composable
+private fun Chip(label: String, on: Boolean, onClick: () -> Unit) {
+    Text(
+        label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (on) Bg else Muted,
+        modifier = Modifier.clip(RoundedCornerShape(999.dp)).background(if (on) Accent else Surface2).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 5.dp)
+    )
+}
+
 /** An incident as the game names it, from its points: 1x off track, 2x loss of control (or a slight contact), 4x car contact. */
 private fun incName(pts: Int) = t(when { pts >= 4 -> "inc_contact"; pts == 2 -> "inc_loss"; else -> "inc_off" })
 
@@ -699,6 +714,13 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, onSel: (Int) -> Unit) {
     val ys = tr.y ?: return
     val incs = tr.incidents
     var showInc by rememberSaveable { mutableStateOf(true) }
+    var showBrk by rememberSaveable { mutableStateOf(true) }
+    var showCoach by rememberSaveable { mutableStateOf(true) }
+    val brkA = remember(c) { brakePoints(c.brkA, c.step) }
+    val brkB = remember(c) { brakePoints(c.brkB, c.step) }
+    val rings = remember(c) { if (c.delta != null) corners(c).filter { it.lost > .05 } else emptyList() }
+    val labelPx = with(LocalDensity.current) { 9.sp.toPx() }
+    val incPaint = remember(labelPx) { android.graphics.Paint().apply { color = android.graphics.Color.rgb(0xFF, 0x63, 0x63); textSize = labelPx; isFakeBoldText = true; isAntiAlias = true } }
     val n = xs.size
     val m = c.speedA.size
     val len = (n - 1) * tr.bin
@@ -749,19 +771,38 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, onSel: (Int) -> Unit) {
             val cnt = 3
             for (k in 1 until cnt) { val q = pt((k * (n - 1) / cnt)); drawCircle(Muted, 5f, q) }
             drawCircle(Fg, 5f, pt(0))
-            // the incidents of the lap (⚠), where they happened
-            if (showInc) incs.forEach { (d, _) ->
+            // the coach: the corners where you lose time against the reference
+            if (showCoach) rings.forEach { k ->
+                val q = pt((k.atM / tr.bin).roundToInt().coerceIn(0, n - 1))
+                drawCircle(Purple.copy(alpha = .18f), 14f, q); drawCircle(Purple, 14f, q, style = Stroke(width = 2.5f))
+            }
+            // where each lap brakes: you (accent), the reference (blue)
+            if (showBrk) {
+                brkB.forEach { d -> val q = pt((d / tr.bin).roundToInt().coerceIn(0, n - 1)); drawCircle(Bg, 7f, q); drawCircle(Blue, 5f, q) }
+                brkA.forEach { d -> val q = pt((d / tr.bin).roundToInt().coerceIn(0, n - 1)); drawCircle(Bg, 8f, q); drawCircle(Accent, 6f, q) }
+            }
+            // the incidents of the lap (✕ and its points, like the game), where they happened
+            if (showInc) incs.forEach { (d, pts) ->
                 val q = pt((d / tr.bin).roundToInt().coerceIn(0, n - 1))
                 drawLine(Bad, Offset(q.x - 6f, q.y - 6f), Offset(q.x + 6f, q.y + 6f), 3.5f, StrokeCap.Round)
                 drawLine(Bad, Offset(q.x + 6f, q.y - 6f), Offset(q.x - 6f, q.y + 6f), 3.5f, StrokeCap.Round)
+                drawContext.canvas.nativeCanvas.drawText("${pts}x", q.x + 8f, q.y - 7f, incPaint)
             }
             // the point under the finger
             if (sel != null) { val i = ((sel * c.step) / tr.bin).roundToInt().coerceIn(0, n - 1); val q = pt(i); drawCircle(Fg, 9f, q); drawCircle(Accent, 6f, q) }
         }
-        if (incs.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(t("incidents_n", incs.size), color = Bad, fontSize = 11.sp, modifier = Modifier.weight(1f))
-            Switch(checked = showInc, onCheckedChange = { showInc = it })
+        // the same switches as the web and the race summary: braking, incidents, coach
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Chip(t("map_braking"), showBrk) { showBrk = !showBrk }
+            if (incs.isNotEmpty()) Chip("✕ " + t("map_incidents"), showInc) { showInc = !showInc }
+            if (rings.isNotEmpty()) Chip("Coach", showCoach) { showCoach = !showCoach }
         }
+        if (incs.isNotEmpty()) {
+            val pts = incs.sumOf { it.second }
+            val by = incs.groupBy { incName(it.second) }
+            Text(t("incidents_sum", incs.size, pts) + ": " + by.entries.joinToString(" · ") { "${it.value.size} ${it.key.lowercase()}" }, color = Bad, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+        }
+
         if (sel != null && showInc) {
             val d = sel * c.step
             incs.filter { kotlin.math.abs(it.first - d) < 60 }.forEach { (_, pts) -> Text("⚠ " + incName(pts) + " ${pts}x", color = Bad, fontSize = 11.sp, fontFamily = FontFamily.Monospace) }

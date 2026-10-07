@@ -144,6 +144,22 @@ fun corners(c: Compared): List<Corner> {
 }
 
 /** The three stretches of about 250 m where the lap loses the most time against the reference. */
+/** Where a lap starts braking (brake over 12 % after being below), in metres, from a series on the [step] grid. */
+fun brakePoints(brk: List<Double>?, step: Double): List<Double> {
+    if (brk == null || brk.size < 3) return emptyList()
+    val out = ArrayList<Double>()
+    var i = 1
+    while (i < brk.size) {
+        if (brk[i] > .12 && brk[i - 1] <= .12) {
+            out.add(i * step)
+            var k = i
+            while (k < brk.size && k < i + 60 && brk[k] > .05) k++
+            i = k + 1
+        } else i++
+    }
+    return out
+}
+
 fun losses(c: Compared, segM: Double = 250.0): List<Loss> {
     val tB = c.tB ?: return emptyList()
     val per = max(1, (segM / c.step).toInt())

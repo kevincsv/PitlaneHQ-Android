@@ -734,7 +734,11 @@ struct TrackMapView: View {
     let trace: Trace
     @Binding var pick: Double?
     @State private var showInc = true
+    @State private var showBrk = true
+    @State private var showCoach = true
     private let xs: [Double], ys: [Double]
+    private let brkA: [Double], brkB: [Double]
+    private let rings: [Corner]
     private let minX: Double, maxX: Double, minY: Double, maxY: Double
 
     init(c: Compared, trace: Trace, pick: Binding<Double?>) {
@@ -743,6 +747,9 @@ struct TrackMapView: View {
         self._pick = pick
         xs = trace.x ?? []
         ys = trace.y ?? []
+        brkA = brakePoints(c.brkA, c.step)
+        brkB = brakePoints(c.brkB, c.step)
+        rings = c.delta != nil ? corners(c).filter { $0.lost > 0.05 } : []
         minX = xs.min() ?? 0; maxX = xs.max() ?? 1; minY = ys.min() ?? 0; maxY = ys.max() ?? 1
     }
 
@@ -830,10 +837,15 @@ struct TrackMapView: View {
             }
             .frame(height: 230)
             Text(readout).font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.muted)
-            if !incidents.isEmpty {
-                Toggle(isOn: $showInc) { Text(t("incidents_n", incidents.count)).font(.caption).foregroundColor(Theme.bad) }
-                    .tint(Theme.accent)
+            // the same switches as the web and the race summary: braking, incidents, coach
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    chip(t("map_braking"), $showBrk)
+                    if !incidents.isEmpty { chip("✕ " + t("map_incidents"), $showInc) }
+                    if !rings.isEmpty { chip("Coach", $showCoach) }
+                }
             }
+            if !incidents.isEmpty { Text(incSummary).font(.caption).foregroundColor(Theme.bad) }
             if showInc, let s = selected {
                 let d: Double = Double(s) * c.step
                 ForEach(Array(incidents.filter { abs($0.d - d) < 60 }.enumerated()), id: \.offset) { _, e in
@@ -849,6 +861,7 @@ struct TrackMapView: View {
             ForEach(segments) { s in
                 path(s.from, s.to, size).stroke(s.color, style: stroke)
             }
+            brakeMarks(size)
             incMarks(size)
             dots(size)
         }
@@ -869,13 +882,51 @@ struct TrackMapView: View {
         return p
     }
 
+    private func row(_ d: Double) -> Int { max(0, min(n - 1, Int((d / trace.bin).rounded()))) }
+
     @ViewBuilder private func incMarks(_ size: CGSize) -> some View {
         if showInc {
             ForEach(Array(incidents.enumerated()), id: \.offset) { _, e in
-                let i: Int = max(0, min(n - 1, Int((e.d / trace.bin).rounded())))
-                cross(point(i, size)).stroke(Theme.bad, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
+                let q = point(row(e.d), size)
+                cross(q).stroke(Theme.bad, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
+                Text("\(e.pts)x").font(.system(size: 9, weight: .black, design: .monospaced)).foregroundColor(Theme.bad).position(x: q.x + 14, y: q.y - 10)
             }
         }
+    }
+
+    /// Where each lap brakes (you in the accent colour, the reference in blue) and the coach's corners.
+    @ViewBuilder private func brakeMarks(_ size: CGSize) -> some View {
+        if showCoach {
+            ForEach(Array(rings.enumerated()), id: \.offset) { _, k in
+                let q = point(row(Double(k.atM)), size)
+                Circle().fill(Theme.purple.opacity(0.18)).frame(width: 28, height: 28).position(q)
+                Circle().stroke(Theme.purple, lineWidth: 2.5).frame(width: 28, height: 28).position(q)
+            }
+        }
+        if showBrk {
+            ForEach(Array(brkB.enumerated()), id: \.offset) { _, d in
+                Circle().fill(Theme.blue).frame(width: 10, height: 10).overlay(Circle().stroke(Theme.bg, lineWidth: 2)).position(point(row(d), size))
+            }
+            ForEach(Array(brkA.enumerated()), id: \.offset) { _, d in
+                Circle().fill(Theme.accent).frame(width: 12, height: 12).overlay(Circle().stroke(Theme.bg, lineWidth: 2)).position(point(row(d), size))
+            }
+        }
+    }
+
+    private func chip(_ label: String, _ on: Binding<Bool>) -> some View {
+        Button { on.wrappedValue.toggle() } label: {
+            Text(label).font(.system(size: 11, weight: .bold)).foregroundColor(on.wrappedValue ? Theme.bg : Theme.muted)
+                .padding(.horizontal, 10).padding(.vertical, 5).background(on.wrappedValue ? Theme.accent : Theme.surface2).clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var incSummary: String {
+        let pts: Int = incidents.reduce(0) { $0 + $1.pts }
+        var by: [String: Int] = [:]
+        for e in incidents { by[incName(e.pts), default: 0] += 1 }
+        let parts: [String] = by.keys.sorted().map { "\(by[$0]!) \($0.lowercased())" }
+        return t("incidents_sum", incidents.count, pts) + ": " + parts.joined(separator: " · ")
     }
 
     @ViewBuilder private func dots(_ size: CGSize) -> some View {

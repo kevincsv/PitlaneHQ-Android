@@ -4,6 +4,18 @@ TrackIQ (formerly Pitlane HQ) is in **beta**. The phone apps share their version
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
+## 0.5.4 beta
+
+**New**
+- The track map in the lap analysis shows the same as the web, the PC and the race summary: where
+  you brake (orange) and where the reference brakes (blue), the incidents with their points
+  (1x, 2x, 4x) as the game gives them, the coach's corners (where you lose time), and switches
+  for Braking, Incidents and Coach. One line sums up the incidents of the lap.
+
+## 0.5.3 beta
+
+Same version as TrackIQ.exe and the web (fixes on the web app). No changes in the phone apps.
+
 ## 0.5.2 beta
 
 **Changed**
