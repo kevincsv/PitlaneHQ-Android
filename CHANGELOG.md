@@ -13,7 +13,7 @@ web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; 
 - **Licence summary**: the iRating and licence of each category on its own, in its own colour.
 - **Driver notes**: tap a driver in a race summary to mark them as dangerous, careful, clean or a friend, with a
   note only you see; the same notes as on the PC and the web.
-- "+1L" / "−1L" in the race summary; race rivals show their first name and initial.
+- "+1L" / "−1L" in the race summary; race rivals show their whole name, as the game shows it.
 - The bottom bar is Home, Analysis, Telemetry, Community and Account.
 - Fixes and improvements.
 
