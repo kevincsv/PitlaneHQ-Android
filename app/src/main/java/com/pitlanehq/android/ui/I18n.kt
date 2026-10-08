@@ -20,7 +20,7 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "home" to ("Home" to "Inicio"),
     "analysis" to ("Analysis" to "Análisis"),
     "community" to ("Community" to "Comunidad"),
-    "live" to ("Live" to "En vivo"),
+    "live" to ("Telemetry" to "Telemetría"),
     "account_tab" to ("Account" to "Cuenta"),
     "settings" to ("Settings" to "Ajustes"),
     "companion" to ("COMPANION" to "COMPAÑERO"),

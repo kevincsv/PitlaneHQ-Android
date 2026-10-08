@@ -23,7 +23,7 @@ private let strings: [String: (String, String)] = [
     "home": ("Home", "Inicio"),
     "analysis": ("Analysis", "Análisis"),
     "community": ("Community", "Comunidad"),
-    "live": ("Live", "En vivo"),
+    "live": ("Telemetry", "Telemetría"),
     "account_tab": ("Account", "Cuenta"),
     "settings": ("Settings", "Ajustes"),
     "companion": ("COMPANION", "COMPAÑERO"),
