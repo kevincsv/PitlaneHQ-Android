@@ -6,7 +6,8 @@ when the beta ends. Every version is listed here, newest first, and gets a relea
 
 ## 0.8.42 beta
 
-- Same version as the PC and the web (the game found at once; the overlays open and close at once).
+- Same version as the PC and the web (the game found at once; the overlays open and close at once; +1L / −1L in
+  the relative; a Formula race's real iRating even with a Sports Car race after it).
 
 ## 0.8.41 beta
 
