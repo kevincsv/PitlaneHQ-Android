@@ -126,12 +126,24 @@ struct Licences: View {
                 MetricGrid(items: [
                     MetricData(label: t("lic_class"), value: cls, color: col),
                     MetricData(label: t("safety"), value: sr, color: col),
-                    MetricData(label: "iRating", value: r.map { "\($0.ir)" } ?? "—", color: col, sub: r.map { day($0.at) }),
+                    MetricData(label: "iRating", value: r.map { "\($0.ir)" } ?? "—", color: r == nil ? Theme.muted : discColor(cats[cat].1), sub: r.map { day($0.at) }),
                 ], columns: 3)
                 .padding(.vertical, 6)
-                Text(t("lic_note")).font(.caption).foregroundColor(Theme.muted)
+                Text(t("lic_note")).font(.caption2).foregroundColor(Theme.muted)
             }
         }
+    }
+}
+
+/// Each discipline's colour, the same as the web's Community cards.
+func discColor(_ k: String) -> Color {
+    switch k {
+    case "oval": return Color(red: 1, green: 0.69, blue: 0.18)
+    case "sports_car": return Color(red: 0.35, green: 0.66, blue: 1)
+    case "formula_car": return Color(red: 0.73, green: 0.55, blue: 1)
+    case "dirt_oval": return Color(red: 0.79, green: 0.60, blue: 0.36)
+    case "dirt_road": return Color(red: 0.56, green: 0.75, blue: 0.42)
+    default: return Theme.fg
     }
 }
 

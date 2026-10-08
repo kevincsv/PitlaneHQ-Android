@@ -1045,6 +1045,8 @@ private val DISCS = listOf("oval", "sports_car", "formula_car", "dirt_oval", "di
 private fun kindOf(k: String): String { val x = k.lowercase(); return if ("race" in x) "race" else if ("qual" in x) "qual" else if ("test" in x) "test" else if ("prac" in x || "warm" in x || "offline" in x) "prac" else "" }
 private val LICS = listOf("R", "D", "C", "B", "A", "P")
 private fun discName(k: String?) = if (k in DISCS) t("disc_$k") else ""
+/** Each discipline's colour, the same as the web's Community cards. */
+private fun discColor(k: String) = when (k) { "oval" -> Color(0xFFFFB02E); "sports_car" -> Color(0xFF5AA9FF); "formula_car" -> Color(0xFFB98CFF); "dirt_oval" -> Color(0xFFC99A5B); "dirt_road" -> Color(0xFF8FBF6A); else -> Fg }
 private fun licColor(k: String) = when (k) { "R" -> Color(0xFFFF6363); "D" -> Color(0xFFFF8F45); "C" -> Color(0xFFF2C94C); "B" -> Color(0xFF38C97C); "A" -> Color(0xFF5C9DFF); else -> Color(0xFFC9D1DC) }
 
 /** The license class as a small coloured square (R, D, C, B, A, Pro). */
@@ -2158,9 +2160,9 @@ private fun Licences(vm: PitlaneViewModel) {
             val lic = r?.second?.trim()?.uppercase() ?: ""
             val cls = lic.takeIf { it.isNotEmpty() }?.let { if (it.startsWith("WC") || it.startsWith("PRO")) "P" else it.take(1) } ?: "—"
             val sr = lic.split(Regex("\\s+")).getOrNull(1) ?: "—"
-            Grid(listOf(MetricData(t("lic_class"), cls, if (r == null) Muted else Fg), MetricData(t("safety"), sr, if (r == null) Muted else Fg), MetricData("iRating", r?.first?.toString() ?: "—", if (r == null) Muted else Fg, r?.let { day(it.third) })), columns = 3)
-            Spacer(Modifier.height(8.dp))
-            Text(t("lic_note"), color = Muted, fontSize = 12.sp)
+            Grid(listOf(MetricData(t("lic_class"), cls, if (r == null) Muted else Fg), MetricData(t("safety"), sr, if (r == null) Muted else Fg), MetricData("iRating", r?.first?.toString() ?: "—", if (r == null) Muted else discColor(cats[cat].second), r?.let { day(it.third) })), columns = 3)
+            Spacer(Modifier.height(6.dp))
+            Text(t("lic_note"), color = Muted, fontSize = 11.sp)
         }
     }
 }
