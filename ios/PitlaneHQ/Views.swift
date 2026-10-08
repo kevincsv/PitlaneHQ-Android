@@ -1341,7 +1341,7 @@ struct TrackMapView: View {
 
 
     /// The arrow beside the start/finish line: its base, its tip and the side away from the map's centre.
-    private func dirGeom(_ size: CGSize) -> (b: CGPoint, t: CGPoint, ux: Double, uy: Double, nx: Double, ny: Double)? {
+    private func dirGeom(_ size: CGSize) -> (b: CGPoint, t: CGPoint, ux: CGFloat, uy: CGFloat, nx: CGFloat, ny: CGFloat)? {
         guard n > 20 else { return nil }
         let p0 = point(0, size), p1 = point(max(2, n / 60), size)
         let dx = p1.x - p0.x, dy = p1.y - p0.y, m = max(1e-6, (dx * dx + dy * dy).squareRoot())
