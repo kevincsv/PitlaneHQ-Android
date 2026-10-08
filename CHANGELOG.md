@@ -4,6 +4,12 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
+## 0.8.41 beta
+
+- DRINKS: rename a driver on the list (their shared laps take the new name) or take them off it.
+- Same version as the PC and the web (Pitlane HQ Desktop with native screens; the real iRating of a race only from
+  a session of the same category).
+
 ## 0.8.40 beta
 
 - Same version as the PC and the web (every overlay native on the PC; overlay presets and DRINKS renames there). No
