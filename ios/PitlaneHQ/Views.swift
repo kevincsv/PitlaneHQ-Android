@@ -806,11 +806,23 @@ struct AnalysisView: View {
     @State private var tab = 0
     @State private var fCat = ""
     @State private var fCombo = ""
+    @State private var fKind = ""
+    @State private var fDay = ""
 
     private func load() async {
         if tab == 0 { await sessions.load { try await account.sessions() } } else { await bests.load { try await account.bests() } }
     }
     private func comboName(_ x: CloudSession) -> String { x.car + " · " + x.track + (x.trackConfig.isEmpty ? "" : " · " + x.trackConfig) }
+    /// the day of a session, as the calendar keys it ("y-m-d")
+    private func dayKey(_ x: CloudSession) -> String {
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: Date(timeIntervalSince1970: x.started / 1000))
+        return "\(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0)"
+    }
+    /// every filter but one (what that one can still choose)
+    private func match(_ x: CloudSession, skip: String = "") -> Bool {
+        (skip == "cat" || fCat.isEmpty || x.cat == fCat) && (skip == "combo" || fCombo.isEmpty || comboName(x) == fCombo) &&
+            (skip == "kind" || fKind.isEmpty || kindOf(x.kind) == fKind) && (skip == "day" || fDay.isEmpty || dayKey(x) == fDay)
+    }
 
     var body: some View {
         Screen(title: t("analysis"), sub: t("uploaded_by_pc")) {
@@ -818,17 +830,37 @@ struct AnalysisView: View {
             Tabs(labels: [t("sessions"), t("bests")], selected: $tab)
             if tab == 0 {
                 LoadState(loading: sessions.loading, error: sessions.error, stale: sessions.stale) { Task { await load() } }
-                // many cars, tracks and licenses make a long list: first the license (the discipline), then the car and track
+                // many cars, tracks and sessions make a long list: the discipline, the kind of session, the car and track,
+                // a day you drove (the calendar), like the web's "Choose a session"
                 let all = sessions.data ?? []
                 let cats = DISCS.filter { k in all.contains { $0.cat == k } }
-                let inCat = all.filter { fCat.isEmpty || $0.cat == fCat }
-                let combos = inCat.map { comboName($0) }.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+                let forCat = all.filter { match($0, skip: "cat") }, forKind = all.filter { match($0, skip: "kind") }
+                let forCombo = all.filter { match($0, skip: "combo") }, forDay = all.filter { match($0, skip: "day") }
+                let combos = forCombo.map { comboName($0) }.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }.sorted()
                 if !cats.isEmpty && all.count > 1 {
-                    Pills(items: [("", t("lic_all_full") + " (\(all.count))")] + cats.map { k in (k, discName(k) + " (\(all.filter { $0.cat == k }.count))") }, selected: $fCat)
-                        .onChange(of: fCat) { _ in fCombo = "" }
+                    Pills(items: [("", t("lic_all_full") + " (\(forCat.count))")] + cats.map { k in (k, discName(k) + " (\(forCat.filter { $0.cat == k }.count))") }, selected: $fCat)
                 }
-                if combos.count > 1 { Pills(items: [("", t("every_car_track"))] + combos.map { ($0, $0) }, selected: $fCombo) }
-                let list = inCat.filter { fCombo.isEmpty || comboName($0) == fCombo }
+                if all.count > 1 {
+                    Pills(items: [("", t("kind_all") + " (\(forKind.count))")] + ["race", "qual", "prac", "test"].compactMap { (k: String) -> (String, String)? in
+                        let n = forKind.filter { kindOf($0.kind) == k }.count
+                        return n > 0 || fKind == k ? (k, t("filt_" + k) + " (\(n))") : nil
+                    }, selected: $fKind)
+                }
+                if combos.count > 1 || !fCombo.isEmpty { Pills(items: [("", t("every_car_track"))] + combos.map { ($0, $0) }, selected: $fCombo) }
+                if all.count > 1 {
+                    Panel {
+                        HStack {
+                            Text(t("days_drove")).font(.subheadline.bold())
+                            Spacer()
+                            if fDay.isEmpty { Text(t("press_day")).font(.caption).foregroundColor(Theme.muted) } else { Button(t("every_day")) { fDay = "" }.font(.caption.bold()).foregroundColor(Theme.accent) }
+                        }
+                        DayGrid(days: forDay.reduce(into: [String: Int]()) { $0[dayKey($1), default: 0] += 1 }, selected: fDay) { k in fDay = fDay == k ? "" : k }
+                    }
+                }
+                let list = all.filter { match($0) }
+                if all.count > 1 && !(fCat + fCombo + fKind + fDay).isEmpty {
+                    Button(t("clear_filters") + " · \(list.count)/\(all.count)") { fCat = ""; fCombo = ""; fKind = ""; fDay = "" }.font(.caption.bold()).foregroundColor(Theme.accent)
+                }
                 if sessions.data != nil && list.isEmpty { EmptyNote(text: t("no_sessions")) }
                 ForEach(list) { x in
                     NavigationLink(value: Route.session(x)) {
@@ -1594,6 +1626,11 @@ struct Chart: View {
 
 // the disciplines iRacing splits its licenses into, and the license classes, like on the web
 let DISCS = ["oval", "sports_car", "formula_car", "dirt_oval", "dirt_road"]
+/// The kind of a session for the filter: race, qual(ifying), prac(tice) or test (drive).
+func kindOf(_ k: String) -> String {
+    let x = k.lowercased()
+    return x.contains("race") ? "race" : x.contains("qual") ? "qual" : x.contains("test") ? "test" : (x.contains("prac") || x.contains("warm") || x.contains("offline")) ? "prac" : ""
+}
 let LICS = ["R", "D", "C", "B", "A", "P"]
 func discName(_ k: String?) -> String { k.map { DISCS.contains($0) ? t("disc_" + $0) : "" } ?? "" }
 private func licColor(_ k: String) -> Color {
@@ -1892,6 +1929,9 @@ struct ComboView: View {
 /// The last 26 weeks in squares, brighter the more sessions that day (keys "y-m-d" like the web).
 struct DayGrid: View {
     let days: [String: Int]
+    /// Analysis: the day chosen, and what pressing a day with sessions does
+    var selected = ""
+    var onDay: ((String) -> Void)? = nil
     var body: some View {
         let cal = Calendar.current, today = cal.startOfDay(for: Date())
         let wd = (cal.component(.weekday, from: today) + 5) % 7 // Monday = 0
@@ -1904,9 +1944,13 @@ struct DayGrid: View {
                         ForEach(0..<7, id: \.self) { d in
                             let day = cal.date(byAdding: .day, value: w * 7 + d, to: start) ?? start
                             let c = cal.dateComponents([.year, .month, .day], from: day)
-                            let n = day > today ? -1 : days["\(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0)"] ?? 0
+                            let k = "\(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0)"
+                            let n = day > today ? -1 : days[k] ?? 0
                             let lv = n > 0 ? min(4, max(1, Int((Double(n) / Double(mx) * 4).rounded(.up)))) : 0
-                            RoundedRectangle(cornerRadius: 2).fill(n < 0 ? Color.clear : lv == 0 ? Theme.surface2 : Theme.accent.opacity(0.25 + Double(lv) * 0.18)).frame(width: 10, height: 10)
+                            let side: CGFloat = onDay == nil ? 10 : 14
+                            RoundedRectangle(cornerRadius: 2).fill(n < 0 ? Color.clear : lv == 0 ? Theme.surface2 : Theme.accent.opacity(0.25 + Double(lv) * 0.18)).frame(width: side, height: side)
+                                .overlay(RoundedRectangle(cornerRadius: 2).stroke(k == selected ? Theme.fg : Color.clear, lineWidth: 2))
+                                .onTapGesture { if n > 0 { onDay?(k) } }
                         }
                     }
                 }
@@ -2033,10 +2077,22 @@ struct LiveView: View {
             Panel {
                 Text(t("your_pc_anywhere")).font(.headline.weight(.black))
                 switch live.mode {
+                case .own where live.pcOnline && live.ask == "wait":
+                    // your PC asks you there: Accept / Decline
+                    TimelineView(.periodic(from: .now, by: 5)) { tl in
+                        let late = tl.date.timeIntervalSince(live.askAt) >= 60
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(late ? t("pc_no_answer") : t("accept_on_pc")).font(.subheadline).foregroundColor(Theme.muted).padding(.vertical, 4)
+                            HStack(spacing: 14) {
+                                if late { Button(t("try_again")) { live.askAgain() }.buttonStyle(.borderedProminent).tint(Theme.accent) }
+                                Button(t("cancel")) { live.watch(.idle) }.foregroundColor(Theme.bad).font(.subheadline.bold())
+                            }
+                        }
+                    }
                 case .own:
                     Text(live.pcOnline ? t("watching_pc") : t("waiting_pc")).font(.subheadline).foregroundColor(live.pcOnline ? Theme.good : Theme.muted).padding(.vertical, 4)
                     Button(t("disconnect")) { live.watch(.idle) }.foregroundColor(Theme.bad).font(.subheadline.bold())
-                    if live.pcOnline {
+                    if live.pcOnline && live.ask == "ok" {
                         Divider().padding(.vertical, 6)
                         Text(t("your_code")).font(.subheadline.bold())
                         if !live.myCode.isEmpty {
@@ -2057,6 +2113,7 @@ struct LiveView: View {
                 case .idle:
                     Text(live.pcOnline ? t("pc_is_online") : t("open_pc")).font(.subheadline).foregroundColor(live.pcOnline ? Theme.good : Theme.muted).padding(.vertical, 4)
                     Button(t("connect")) { live.watch(.own) }.buttonStyle(.borderedProminent).tint(Theme.accent).disabled(!live.pcOnline)
+                    if Date().timeIntervalSince(live.declinedAt) < 60 { Text(t("declined_on_pc")).font(.caption).foregroundColor(Theme.bad).padding(.top, 4) }
                 }
             }
             // the PC app, right under it: it is what sends the telemetry
@@ -2078,7 +2135,7 @@ struct LiveView: View {
                     }.buttonStyle(.borderedProminent).tint(Theme.accent).padding(.top, 4)
                 }
             }
-            if live.mode != .idle {
+            if live.mode == .code || (live.mode == .own && live.ask == "ok") {
             StatusPill(text: status.0, color: status.1)
             if let m = live.message { Text(t(m)).font(.caption).foregroundColor(Theme.bad) }
             HStack(spacing: 8) {
@@ -2106,7 +2163,6 @@ struct LiveView: View {
                 bar(t("brake"), live.num("Brake"), Theme.bad)
             }
             }
-            Text(t("e2e")).font(.caption2).foregroundColor(Theme.muted)
         }
         .onAppear { start() }
         .onDisappear { live.stop() }
@@ -2134,9 +2190,17 @@ struct LiveView: View {
 
 // the admin profile: every shared lap and race analysis with the name it shows and who really
 // uploaded it (anonymous items and DRINKS drivers too), and the accounts
+/// An account whose "in Pitlane HQ since" is being changed.
+struct SinceEdit: Identifiable {
+    let id: String
+    var date: Date
+    let custom: Bool
+}
+
 struct AdminView: View {
     @EnvironmentObject var account: Account
-    @State private var kind = "uploads"
+    @State private var kind = "status"
+    @State private var since: SinceEdit?
     @State private var rows: [[String: Any]]?
     @State private var error: String?
     @State private var confirmDelete: (String, String)?
@@ -2144,7 +2208,7 @@ struct AdminView: View {
     var body: some View {
         Screen(title: t("admin_profile"), sub: t("admin_profile_sub")) {
             HStack(spacing: 8) {
-                ForEach([("uploads", t("admin_shared")), ("users", t("admin_accounts")), ("status", t("admin_server"))], id: \.0) { p in
+                ForEach([("status", t("admin_server")), ("users", t("admin_accounts")), ("uploads", t("admin_shared"))], id: \.0) { p in
                     let k = p.0
                     Button { kind = k; Task { await load() } } label: {
                         Text(p.1).font(.subheadline).padding(.horizontal, 12).padding(.vertical, 6)
@@ -2162,6 +2226,28 @@ struct AdminView: View {
             }
         }
         .task { await load() }
+        .sheet(item: $since) { e in
+            NavigationStack {
+                Form {
+                    DatePicker(t("admin_set_since"), selection: Binding(get: { since?.date ?? e.date }, set: { since?.date = $0 }), in: ...Date(), displayedComponents: .date).datePickerStyle(.graphical)
+                    if e.custom { Button(t("admin_account_date")) { let id = e.id; since = nil; Task { try? await account.adminSince(id, nil); await load() } } }
+                }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button(t("cancel")) { since = nil } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(t("save")) {
+                            let id = e.id, d = since?.date ?? e.date
+                            let c = Calendar.current.dateComponents([.year, .month, .day], from: d)
+                            var u = DateComponents(); u.year = c.year; u.month = c.month; u.day = c.day; u.hour = 12
+                            var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+                            let ms = (cal.date(from: u) ?? d).timeIntervalSince1970 * 1000
+                            since = nil
+                            Task { try? await account.adminSince(id, ms); await load() }
+                        }
+                    }
+                }
+            }
+        }
         .alert(t("admin_delete_ask", confirmDelete?.1 ?? ""), isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } })) {
             Button(t("delete"), role: .destructive) {
                 let id = confirmDelete?.0 ?? ""
@@ -2184,11 +2270,33 @@ struct AdminView: View {
                 if let e = m["lastError"] as? [String: Any] {
                     Text(t("admin_mail_err") + ": " + ["message", "reply", "status", "body"].compactMap { e[$0].map { "\($0)" } }.filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.bad)
                 }
-                Text(t("admin_counts", n("accounts"), n("verified"), n("sessions"), n("shared"))).font(.caption).foregroundColor(Theme.fg)
-                Text(t("admin_model", n("learnt"), n("models"))).font(.caption).foregroundColor(Theme.muted)
+                let g = x["config"] as? [String: Any] ?? [:]
+                let pat = g["patreon"] as? Bool ?? false
+                Group {
+                    Text(t("admin_counts", n("accounts"), n("verified"), n("sessions"), n("shared"))).font(.caption).foregroundColor(Theme.fg)
+                    Text(t("admin_activity", n("new7"), n("drivers7"), n("sessions1"), n("sessions7"))).font(.caption).foregroundColor(Theme.muted)
+                    Text(t("admin_community", n("boards"), n("leagues"), (g["leaguesOpen"] as? Bool ?? false) ? t("admin_open") : t("admin_only"))).font(.caption).foregroundColor(Theme.muted)
+                    Text(t("admin_sup", n("supporters"), n("supportersPatreon"), n("patrons"))).font(.caption).foregroundColor(Theme.muted)
+                    Text(t("admin_model", n("learnt"), n("models")) + " · " + t("admin_dirty", n("modelsDirty"))).font(.caption).foregroundColor(Theme.muted)
+                    Text(pat ? t("admin_patreon_ok") : t("admin_patreon_off")).font(.caption).foregroundColor(pat ? Theme.good : Theme.bad)
+                }
+                // the tools: the coach models learn again, the blocked sign-ins open again
+                Group {
+                    Divider().padding(.vertical, 4)
+                    Text(t("admin_tools_t")).font(.subheadline.bold())
+                    Button(t("admin_rebuild")) { Task { try? await account.adminTool("models"); await load() } }.foregroundColor(Theme.accent).font(.caption.bold())
+                    Button(t("admin_unlock", n("authFails"))) { Task { try? await account.adminTool("unlock"); await load() } }.foregroundColor(Theme.accent).font(.caption.bold())
+                }
             } else if kind == "users" {
+                let ms0 = (x["memberSince"] as? NSNumber)?.doubleValue ?? 0, ms = ms0 > 0 ? ms0 : ((x["created"] as? NSNumber)?.doubleValue ?? 0)
                 Text(str("display") + ((x["admin"] as? Bool ?? false) ? " · Admin" : "")).font(.subheadline.bold()).foregroundColor(Theme.fg)
+                Text(str("id")).font(.caption2.monospaced()).foregroundColor(Theme.muted).textSelection(.enabled)
+                Text(t("admin_since", day(ms)) + (ms0 > 0 ? " ✎" : "")).font(.caption).foregroundColor(Theme.muted)
                 Text(t("admin_user_line", "\(int("sessions"))", "\(int("laps"))", "\(int("guests"))")).font(.caption).foregroundColor(Theme.muted)
+                HStack(spacing: 14) {
+                    NavigationLink(value: Route.profile("acct:" + str("id"))) { Text(t("profile")) }.foregroundColor(Theme.accent).font(.caption.bold())
+                    Button(t("admin_set_since")) { since = SinceEdit(id: str("id"), date: Date(timeIntervalSince1970: ms / 1000), custom: ms0 > 0) }.foregroundColor(Theme.accent).font(.caption.bold())
+                }
                 let sup = int("supporter") == 1
                 Button((sup ? "♥ " + t("supporter_remove") : t("supporter_give")) + (sup && int("supporterHidden") == 1 ? " · " + t("supporter_hidden_by") : "")) {
                     Task { try? await account.adminSupporter(str("id"), !sup); await load() }
@@ -2348,6 +2456,13 @@ struct SettingsView: View {
                         }
                         .padding(.vertical, 4)
                     }
+                }
+            }
+            // admins: the app as everyone sees it, to test it (everything for admins and in development hides)
+            if account.realAdmin {
+                Panel {
+                    Toggle(t("as_user"), isOn: $account.asUser).font(.subheadline.bold())
+                    Text(t("as_user_sub")).font(.caption).foregroundColor(Theme.muted)
                 }
             }
             if account.admin {

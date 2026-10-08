@@ -205,6 +205,14 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Admins: see the app as a normal user (to test it), or go back to the admin view. */
+    fun setAsUser(on: Boolean) {
+        if (!_account.value.realAdmin) return
+        repo.asUser = on
+        _account.value = repo.storedState()
+        demo.value = repo.demo
+    }
+
     fun setDemo(on: Boolean) {
         if (on && !_account.value.admin) return
         repo.demo = on
@@ -286,6 +294,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     fun stopLive() = live.stop()
     fun liveWatch(m: LiveMode, code: String = "") = live.watch(m, code)
     fun liveShare(on: Boolean, new: Boolean = false) = live.share(on, new)
+    fun liveAskAgain() = live.askAgain()
     fun setDrinks(on: Boolean, guest: String, guestAuto: Boolean) = live.setDrinks(on, guest, guestAuto)
     // a new DRINKS name is checked first: names used by other people on Pitlane HQ are refused
     val drinksTaken = MutableStateFlow<String?>(null)
@@ -302,6 +311,12 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             admin.value = runCatching { AdminState(kind, repo.adminList(kind)) }.getOrElse { AdminState(kind, error = it.message ?: "server_down") }
         }
+    }
+    fun adminSince(id: String, since: Long?) {
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminSince(id, since) }; loadAdmin("users") }
+    }
+    fun adminTool(tool: String) {
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminTool(tool) }; loadAdmin("status") }
     }
     fun adminDeleteUser(id: String) {
         viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminDeleteUser(id) }; loadAdmin("users") }

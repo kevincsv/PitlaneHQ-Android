@@ -28,7 +28,8 @@ data class AccountState(
     val email: String = "",
     val display: String = "",
     val verified: Boolean = true,
-    val admin: Boolean = false,
+    val admin: Boolean = false,         // what the screens use: false while an admin looks as a normal user
+    val realAdmin: Boolean = false,     // an admin of the server, whatever the view
     val busy: Boolean = false,
     val syncedFiles: Int = 0,
     val syncVersion: Long = 0,
@@ -66,8 +67,12 @@ class AccountRepository(context: Context) {
 
     // demo data is only for the admins of the server (ADMINS), for testing
     var demo: Boolean
-        get() = app.getBoolean("demo", false) && prefs.getBoolean("admin", false)
+        get() = app.getBoolean("demo", false) && prefs.getBoolean("admin", false) && !asUser
         set(v) = app.edit().putBoolean("demo", v).apply()
+    // an admin can see the app as everyone else does (to test it), on this phone
+    var asUser: Boolean
+        get() = app.getBoolean("asUser", false)
+        set(v) = app.edit().putBoolean("asUser", v).apply()
     var language: String
         get() = app.getString("lang", "system") ?: "system"
         set(v) = app.edit().putString("lang", v).apply()
@@ -77,7 +82,8 @@ class AccountRepository(context: Context) {
         email = prefs.getString("email", "") ?: "",
         display = prefs.getString("display", "") ?: "",
         verified = prefs.getBoolean("verified", true),
-        admin = prefs.getBoolean("admin", false),
+        admin = prefs.getBoolean("admin", false) && !asUser,
+        realAdmin = prefs.getBoolean("admin", false),
         syncedFiles = prefs.getInt("syncedFiles", 0),
         syncVersion = prefs.getLong("syncVersion", 0),
         syncUpdated = prefs.getLong("syncUpdated", 0),
@@ -118,6 +124,10 @@ class AccountRepository(context: Context) {
     private fun unprotect(v: String) = unprotectBytes(Base64.decode(v, Base64.NO_WRAP))
 
     /** Live: you pressed Connect for your own PC (it stays connected until Disconnect). */
+    /** This phone for your PC's question (Accept / Decline): an id that stays. */
+    val devId: String
+        get() = prefs.getString("devId", null)?.takeIf { it.length == 16 } ?: java.util.UUID.randomUUID().toString().replace("-", "").take(16).also { prefs.edit().putString("devId", it).apply() }
+
     var liveOwn: Boolean
         get() = prefs.getBoolean("liveOwn", false)
         set(v) { prefs.edit().putBoolean("liveOwn", v).apply() }
@@ -425,7 +435,7 @@ class AccountRepository(context: Context) {
         if (demo) return Demo.profile(lapId)
         val signed = runCatching { token() }.isSuccess
         val tz = -java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60000
-        val j = JSONObject(call("GET", "/community/profile?" + (if (lapId == null) "me=1" else "lap=" + URLEncoder.encode(lapId, "UTF-8")) + "&tz=$tz", null, signed))
+        val j = JSONObject(call("GET", "/community/profile?" + (if (lapId == null) "me=1" else if (lapId.startsWith("acct:")) "id=" + URLEncoder.encode(lapId.removePrefix("acct:"), "UTF-8") else "lap=" + URLEncoder.encode(lapId, "UTF-8")) + "&tz=$tz", null, signed))
         val dj = j.optJSONObject("days") ?: JSONObject()
         val l = j.optJSONObject("lics") ?: JSONObject()
         val rs = j.optJSONArray("races") ?: JSONArray()
@@ -461,6 +471,10 @@ class AccountRepository(context: Context) {
 
     /** The owner of Pitlane HQ gives or takes away the supporter badge. */
     fun adminSupporter(id: String, on: Boolean) { call("POST", "/community/admin/supporter", JSONObject().put("id", id).put("on", on)) }
+    /** "In Pitlane HQ since" by hand (null: the day the account was created). */
+    fun adminSince(id: String, since: Long?) { call("POST", "/community/admin/since", JSONObject().put("id", id).put("since", since ?: JSONObject.NULL)) }
+    /** The admin tools: "models" (rebuild the coach models) or "unlock" (unblock the sign-ins). */
+    fun adminTool(tool: String) { call("POST", "/community/admin/$tool", JSONObject()) }
 
     /** Your profile's recent races: a summary of your own result in each (the race history itself stays encrypted). */
     fun publishProfileRaces() {

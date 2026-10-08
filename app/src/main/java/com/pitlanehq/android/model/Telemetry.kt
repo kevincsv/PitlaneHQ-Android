@@ -10,7 +10,11 @@ data class LiveState(
     val message: String? = null,
     val mode: LiveMode = LiveMode.IDLE,   // what this screen watches
     val code: String = "",                // the code of the driver you watch (CODE)
-    val myCode: String = ""               // your share code, as your PC says (OWN)
+    val myCode: String = "",              // your share code, as your PC says (OWN)
+    // Connect asks your PC first: "" (not asked), "wait" (your PC shows Accept / Decline) or "ok"
+    val ask: String = "",
+    val askAt: Long = 0L,
+    val declinedAt: Long = 0L             // when your PC declined this phone
 ) {
     fun num(name: String): Double? = (values[name] as? Number)?.toDouble()
 }

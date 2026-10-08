@@ -86,8 +86,11 @@ class PitWallRepository(private val account: AccountRepository) {
                 if (ok) {
                     // keepalive: answered by the server without waking the room
                     val ping = launch { while (true) { delay(30_000); socket?.send("ping") } }
+                    // hello again every 20 s while you watch your PC, so it knows you still do
+                    val hi = launch { while (true) { delay(20_000); val ws = socket; if (ws != null && mode == LiveMode.OWN) runCatching { hello(ws, account.dataKey(), false) } } }
                     closed.await()
                     ping.cancel()
+                    hi.cancel()
                     if (_state.value.message == null) wait = 2_000L
                 }
                 if (_state.value.message == "signed_out") break
@@ -118,7 +121,7 @@ class PitWallRepository(private val account: AccountRepository) {
         socket = client.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 _state.update { it.copy(link = LinkState.OPEN, message = null) }
-                want(webSocket, key)
+                if (m == LiveMode.OWN) hello(webSocket, key, true) else want(webSocket, key)
                 // the PC sends the list of variables once: if it got lost, ask again
                 scope.launch {
                     delay(3_000)
@@ -159,7 +162,23 @@ class PitWallRepository(private val account: AccountRepository) {
         return ws.send("e:" + Crypto.seal(key, Crypto.gzip(msg.toString().toByteArray()), Crypto.LIVE_AAD))
     }
 
+    /** Connect asks your PC: it shows Accept / Decline there and sends nothing before you accept. */
+    private fun hello(ws: WebSocket, key: ByteArray, fresh: Boolean) {
+        if (mode != LiveMode.OWN) return
+        if (fresh) _state.update { it.copy(ask = "wait", askAt = System.currentTimeMillis()) }
+        val name = listOf(android.os.Build.MANUFACTURER.replaceFirstChar { it.uppercase() }, android.os.Build.MODEL).distinct().joinToString(" ").trim()
+        val msg = JSONArray().put("hello").put(JSONObject().put("id", account.devId).put("name", "Android · " + name.take(40)))
+        ws.send("e:" + Crypto.seal(key, Crypto.gzip(msg.toString().toByteArray()), Crypto.LIVE_AAD))
+    }
+
+    /** Your PC did not answer: ask it again. */
+    fun askAgain() {
+        val ws = socket ?: return
+        runCatching { hello(ws, account.dataKey(), true) }
+    }
+
     private fun want(ws: WebSocket, key: ByteArray) {
+        if (mode == LiveMode.OWN && _state.value.ask != "ok") return
         val msg = JSONArray().put("want").put(JSONObject().put("vars", JSONArray(LIVE_VARS)).put("all", false))
         ws.send("e:" + Crypto.seal(key, Crypto.gzip(msg.toString().toByteArray()), Crypto.LIVE_AAD))
     }
@@ -171,14 +190,29 @@ class PitWallRepository(private val account: AccountRepository) {
             if (o.optString("ctl") == "pc") {
                 val on = o.optBoolean("on")
                 if (mode == LiveMode.IDLE) { _state.update { it.copy(pcOnline = on) }; return }
-                _state.update { if (on) it.copy(pcOnline = true) else it.copy(pcOnline = false, simConnected = false, values = emptyMap()) }
-                if (on) want(ws, key) // a PC that just started needs to be told what to send
+                _state.update { if (on) it.copy(pcOnline = true) else it.copy(pcOnline = false, simConnected = false, values = emptyMap(), ask = "") }
+                if (on) { if (mode == LiveMode.OWN) hello(ws, key, true) else want(ws, key) } // a PC that just started is asked again
             }
             return
         }
         if (!text.startsWith("e:")) return
         val a = JSONArray(String(Crypto.gunzip(Crypto.open(key, text.substring(2), Crypto.LIVE_AAD))))
-        when (a.getString(0)) {
+        val ev = a.getString(0)
+        // your PC's answer, to this phone (your devices share the room)
+        if (ev == "ok" || ev == "no") {
+            if (mode != LiveMode.OWN || a.optJSONObject(1)?.optString("id") != account.devId) return
+            if (ev == "no") {
+                watch(LiveMode.IDLE)
+                _state.update { it.copy(declinedAt = System.currentTimeMillis()) }
+            } else if (_state.value.ask != "ok") {
+                _state.update { it.copy(ask = "ok") }
+                fields = emptyList()
+                want(ws, key)
+            }
+            return
+        }
+        if (mode == LiveMode.OWN && _state.value.ask != "ok") return // what your PC sends another device you accepted
+        when (ev) {
             "share" -> _state.update { it.copy(myCode = a.optJSONObject(1)?.optString("code").orEmpty()) }
             "status" -> {
                 val s = a.getJSONObject(1)

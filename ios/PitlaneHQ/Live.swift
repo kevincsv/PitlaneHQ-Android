@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 /// The variables the phone asks the PC for.
 let liveVars = [
@@ -25,7 +26,18 @@ final class Live: ObservableObject {
     @Published var mode: Mode = UserDefaults.standard.bool(forKey: "liveOwn") ? .own : .idle
     @Published var code = ""
     @Published var myCode = ""
+    /// Connect asks your PC first: "" (not asked), "wait" (your PC shows Accept / Decline) or "ok"
+    @Published var ask = ""
+    @Published var askAt = Date.distantPast
+    @Published var declinedAt = Date.distantPast
     private var codeKey: Data?
+    /// this phone for your PC's question: an id that stays
+    private let devId: String = {
+        if let v = UserDefaults.standard.string(forKey: "devId"), v.count == 16 { return v }
+        let v = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(16))
+        UserDefaults.standard.set(v, forKey: "devId")
+        return v
+    }()
     private var account: (String?, Data?, Bool) = (nil, nil, false)
 
     private var task: URLSessionWebSocketTask?
@@ -43,6 +55,7 @@ final class Live: ObservableObject {
         code = m == .code ? c : ""
         codeKey = m == .code ? PLCrypto.codeKey(c) : nil
         myCode = ""
+        ask = ""
         UserDefaults.standard.set(m == .own, forKey: "liveOwn")
         if running { start(token: account.0, key: account.1, demo: account.2) }
     }
@@ -113,8 +126,16 @@ final class Live: ObservableObject {
         fields = []
         link = .connecting
         ws.resume()
-        want(ws, key)
+        if mode == .own { hello(ws, key, fresh: true) } else { want(ws, key) }
         var opened = false
+        // hello again every 20 s while you watch your PC, so it knows you still do
+        let hi = Task { [weak self, weak ws] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 20_000_000_000)
+                guard let self, let ws, self.task === ws, self.mode == .own else { continue }
+                self.hello(ws, key, fresh: false)
+            }
+        }
         // keepalive: answered by the server without waking the room
         let ping = Task { [weak ws] in
             while !Task.isCancelled {
@@ -131,6 +152,7 @@ final class Live: ObservableObject {
         defer {
             ping.cancel()
             again.cancel()
+            hi.cancel()
         }
         while !Task.isCancelled {
             do {
@@ -163,7 +185,27 @@ final class Live: ObservableObject {
         ws.send(.string("e:" + sealed)) { _ in }
     }
 
+    /// Connect asks your PC: it shows Accept / Decline there and sends nothing before you accept.
+    private func hello(_ ws: URLSessionWebSocketTask, _ key: Data, fresh: Bool) {
+        guard mode == .own else { return }
+        if fresh {
+            ask = "wait"
+            askAt = Date()
+        }
+        let name = "iOS · " + UIDeviceName.current
+        guard let raw = try? JSONSerialization.data(withJSONObject: ["hello", ["id": devId, "name": name]] as [Any]),
+              let z = try? PLCrypto.gzip(raw), let sealed = try? PLCrypto.seal(key: key, plain: z, aad: PLCrypto.liveAAD) else { return }
+        ws.send(.string("e:" + sealed)) { _ in }
+    }
+
+    /// Your PC did not answer: ask it again.
+    func askAgain() {
+        guard let ws = task, let key else { return }
+        hello(ws, key, fresh: true)
+    }
+
     private func want(_ ws: URLSessionWebSocketTask, _ key: Data) {
+        if mode == .own && ask != "ok" { return }
         guard let raw = try? JSONSerialization.data(withJSONObject: ["want", ["vars": liveVars, "all": false]] as [Any]),
               let z = try? PLCrypto.gzip(raw), let sealed = try? PLCrypto.seal(key: key, plain: z, aad: PLCrypto.liveAAD) else { return }
         ws.send(.string("e:" + sealed)) { _ in }
@@ -177,10 +219,11 @@ final class Live: ObservableObject {
             pcOnline = on
             if mode == .idle { return }
             if on {
-                want(ws, key) // a PC that just started needs to be told what to send
+                if mode == .own { hello(ws, key, fresh: true) } else { want(ws, key) } // a PC that just started is asked again
             } else {
                 simConnected = false
                 values = [:]
+                ask = ""
             }
             return
         }
@@ -188,6 +231,20 @@ final class Live: ObservableObject {
               let z = try? PLCrypto.open(key: key, sealed: String(text.dropFirst(2)), aad: PLCrypto.liveAAD),
               let raw = try? PLCrypto.gunzip(z),
               let a = try? JSONSerialization.jsonObject(with: raw) as? [Any], a.count == 2, let ev = a[0] as? String else { return }
+        // your PC's answer, to this phone (your devices share the room)
+        if ev == "ok" || ev == "no" {
+            guard mode == .own, (a[1] as? [String: Any])?["id"] as? String == devId else { return }
+            if ev == "no" {
+                watch(.idle)
+                declinedAt = Date()
+            } else if ask != "ok" {
+                ask = "ok"
+                fields = []
+                want(ws, key)
+            }
+            return
+        }
+        if mode == .own && ask != "ok" { return } // what your PC sends another device you accepted
         switch ev {
         case "share":
             myCode = (a[1] as? [String: Any])?["code"] as? String ?? ""
@@ -214,4 +271,9 @@ final class Live: ObservableObject {
             break
         }
     }
+}
+
+/// The phone's model for your PC's question ("iPhone", "iPad").
+enum UIDeviceName {
+    @MainActor static var current: String { UIDevice.current.model }
 }

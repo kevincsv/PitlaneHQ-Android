@@ -66,9 +66,15 @@ final class Account: ObservableObject {
     @Published var display = ""
     @Published var verified = true
     /// one of the server's admins (ADMINS): only they can turn on demo data
-    @Published var admin = false {
+    @Published var realAdmin = false {
         didSet { if !admin && demo { demo = false } }
     }
+    /// an admin can see the app as everyone else does (to test it), on this phone
+    @Published var asUser = UserDefaults.standard.bool(forKey: "asUser") {
+        didSet { UserDefaults.standard.set(asUser, forKey: "asUser"); if !admin && demo { demo = false } }
+    }
+    /// what the screens use: false while an admin looks as a normal user
+    var admin: Bool { realAdmin && !asUser }
     @Published var busy = false
     @Published var error: String?
     @Published var needCode = false        // the password was right: the authenticator code comes next
@@ -100,7 +106,7 @@ final class Account: ObservableObject {
         email = defaults.string(forKey: "email") ?? ""
         display = defaults.string(forKey: "display") ?? ""
         verified = defaults.object(forKey: "verified") as? Bool ?? true
-        admin = defaults.bool(forKey: "admin")
+        realAdmin = defaults.bool(forKey: "admin")
         if !admin && demo { demo = false }
         syncedFiles = defaults.integer(forKey: "syncedFiles")
         syncVersion = defaults.integer(forKey: "syncVersion")
@@ -138,7 +144,7 @@ final class Account: ObservableObject {
         syncedFiles = 0
         syncVersion = 0
         syncUpdated = 0
-        admin = false
+        realAdmin = false
         races = []
     }
 
@@ -241,9 +247,9 @@ final class Account: ObservableObject {
         email = em
         display = str(j["display"])
         verified = j["verified"] as? Bool ?? true
-        admin = j["admin"] as? Bool ?? false
+        realAdmin = j["admin"] as? Bool ?? false
         twoFactor = j["twoFactor"] as? Bool ?? false
-        defaults.set(admin, forKey: "admin")
+        defaults.set(realAdmin, forKey: "admin")
         defaults.set(em, forKey: "email")
         defaults.set(display, forKey: "display")
         defaults.set(verified, forKey: "verified")
@@ -311,14 +317,14 @@ final class Account: ObservableObject {
             if let me = try? JSONSerialization.jsonObject(with: await call("GET", "/account/me")) as? [String: Any] {
                 display = str(me["display"])
                 verified = me["verified"] as? Bool ?? true
-                admin = me["admin"] as? Bool ?? false
+                realAdmin = me["admin"] as? Bool ?? false
                 twoFactor = me["twoFactor"] as? Bool ?? false
                 recoveryLeft = me["recoveryLeft"] as? Int ?? 0
                 supporter = me["supporter"] as? Bool ?? false
                 supporterHidden = me["supporterHidden"] as? Bool ?? false
                 defaults.set(supporter, forKey: "supporter")
                 defaults.set(supporterHidden, forKey: "supporterHidden")
-                defaults.set(admin, forKey: "admin")
+                defaults.set(realAdmin, forKey: "admin")
                 defaults.set(display, forKey: "display")
                 defaults.set(verified, forKey: "verified")
                 defaults.set(twoFactor, forKey: "twoFactor")
@@ -519,13 +525,18 @@ final class Account: ObservableObject {
     func adminDeleteUser(_ id: String) async throws { _ = try await call("DELETE", "/community/admin/users/" + idPath(id)) }
     /// The owner of Pitlane HQ gives or takes away the supporter badge.
     func adminSupporter(_ id: String, _ on: Bool) async throws { _ = try await call("POST", "/community/admin/supporter", body: ["id": id, "on": on]) }
+    /// "In Pitlane HQ since" by hand (nil: the day the account was created)
+    func adminSince(_ id: String, _ since: Double?) async throws { _ = try await call("POST", "/community/admin/since", body: ["id": id, "since": since.map { $0 as Any } ?? NSNull()]) }
+    /// the admin tools: "models" (rebuild the coach models) or "unlock" (unblock the sign-ins)
+    func adminTool(_ tool: String) async throws { _ = try await call("POST", "/community/admin/" + tool, body: [:]) }
     /// A supporter hides (or shows again) their own badge.
     func setBadgeHidden(_ hidden: Bool) async throws { _ = try await call("POST", "/community/profile/badge", body: ["hidden": hidden]) }
 
     /// A driver's profile, from one of their laps on a leaderboard, or yours (lapId nil).
     func profile(_ lapId: String?) async throws -> DriverProfile {
         if demo { return Demo.profile(lapId) }
-        let q = (lapId.map { "lap=" + ($0.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? $0) } ?? "me=1") + "&tz=\(-TimeZone.current.secondsFromGMT() / 60)"
+        // "acct:<id>": an account's profile, from the admin profile
+        let q = (lapId.map { $0.hasPrefix("acct:") ? "id=" + String($0.dropFirst(5)) : "lap=" + ($0.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? $0) } ?? "me=1") + "&tz=\(-TimeZone.current.secondsFromGMT() / 60)"
         let j = (try JSONSerialization.jsonObject(with: await call("GET", "/community/profile?" + q, auth: token != nil)) as? [String: Any]) ?? [:]
         let races = (j["races"] as? [[String: Any]] ?? []).map { r in
             ProfileRace(when: num(r["when"]) ?? 0, track: fixTxt(str(r["track"])), car: fixTxt(str(r["car"])), cat: r["cat"] as? String, lic: r["lic"] as? String, official: r["official"] as? Bool ?? false,
