@@ -12,6 +12,8 @@ when the beta ends. Every version is listed here, newest first, and gets a relea
 
 
 
+## 0.8.8 beta
+
 **Changed**
 - Same version as the PC and the web (coach presentation fixes). In the apps, the session screen
   shows the average of the valid laps instead of a lap made of the best sectors (one model, from
