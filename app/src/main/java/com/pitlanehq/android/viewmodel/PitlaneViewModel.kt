@@ -307,6 +307,18 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
                     refSec = top.sectors
                 }
             }
+            // a rival's lap has no path (it comes from its place on track): the line is then measured against your
+            // own best lap of the session, the fastest line known here
+            val r0 = ref
+            if (r0 != null && (r0.x == null || r0.y == null)) {
+                val best = all.filter { it.valid && it.time > 0 && it.id != lap.id }.minByOrNull { it.time }
+                val bt = best?.let { runCatching { repo.lapTrace(it.id) }.getOrNull() }
+                val bx = bt?.x; val by = bt?.y
+                if (bx != null && by != null && kotlin.math.abs(bx.size - r0.rows.size) <= 6) {
+                    fun fit(v: List<Double>) = List(r0.rows.size) { v[minOf(it, v.size - 1)] }
+                    ref = r0.copy(x = fit(bx), y = fit(by))
+                }
+            }
             // the official turn numbers of this track, when an admin has placed them on its map (else the corners are counted)
             val turns = c?.let { runCatching { repo.turns(it.trackId) }.getOrNull() } ?: emptyList()
             val pit = c?.let { runCatching { repo.pitLane(it.trackId) }.getOrNull() }

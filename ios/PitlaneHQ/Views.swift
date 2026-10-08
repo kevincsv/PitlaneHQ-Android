@@ -1210,6 +1210,15 @@ struct LapView: View {
                     refTime = top.time
                     refSectors = top.sectors
                 }
+                // a rival's lap has no path (it comes from its place on track): the line is then measured against
+                // your own best lap of the session, the fastest line known here
+                if var r = ref, r.x == nil || r.y == nil,
+                   let best = all.filter({ $0.valid && $0.time > 0 && $0.id != lap.id }).min(by: { $0.time < $1.time }),
+                   let bt = try? await account.lapTrace(best.id), let bx = bt.x, let by = bt.y, !bx.isEmpty, abs(bx.count - r.rows.count) <= 6 {
+                    r.x = (0..<r.rows.count).map { bx[min($0, bx.count - 1)] }
+                    r.y = (0..<r.rows.count).map { by[min($0, by.count - 1)] }
+                    ref = r
+                }
             }
         } catch {
             self.error = (error as? AppError)?.key ?? error.localizedDescription
