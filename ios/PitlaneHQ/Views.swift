@@ -2442,6 +2442,7 @@ struct AdminView: View {
                 if int("verified") != 1 { Button(t("admin_verify")) { Task { try? await account.adminAccount(str("id"), "verify"); await load() } } }
                 if int("twoFactor") == 1 { Button(t("admin_2fa_off")) { Task { try? await account.adminAccount(str("id"), "2fa-off"); await load() } } }
                 Button(t("admin_signout")) { Task { try? await account.adminAccount(str("id"), "signout"); await load() } }
+                if int("driverLinked") == 1 { Button(t("admin_unlink_driver")) { Task { try? await account.adminAccount(str("id"), "unlink-driver"); await load() } } }
                 Button(t("admin_rename")) { newName = str("display"); renaming = (str("id"), str("display")) }
                 Button(t("admin_unblock")) { Task { try? await account.adminUnlock("account", str("id")); await load() } }
             }

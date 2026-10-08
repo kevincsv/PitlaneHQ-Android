@@ -1698,6 +1698,7 @@ private fun AdminScreen(vm: PitlaneViewModel, nav: NavHostController) {
                         if (u.optInt("verified") != 1) TextButton({ vm.adminAccount(id, "verify") }) { Text(t("admin_verify"), color = Accent) }
                         if (u.optInt("twoFactor") == 1) TextButton({ vm.adminAccount(id, "2fa-off") }) { Text(t("admin_2fa_off"), color = Accent) }
                         TextButton({ vm.adminAccount(id, "signout") }) { Text(t("admin_signout"), color = Accent) }
+                        if (u.optInt("driverLinked") == 1) TextButton({ vm.adminAccount(id, "unlink-driver") }) { Text(t("admin_unlink_driver"), color = Accent) }
                         TextButton({ rename = u.optString("display") }) { Text(t("admin_rename"), color = Accent) }
                         TextButton({ vm.adminUnlock("account", id, "users") }) { Text(t("admin_unblock"), color = Accent) }
                     }

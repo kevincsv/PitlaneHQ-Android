@@ -230,6 +230,7 @@ private let strings: [String: (String, String)] = [
     "admin_unblock": ("Unblock", "Desbloquear"),
     "admin_verify": ("Confirm the email", "Confirmar el email"),
     "admin_2fa_off": ("Turn off two-step", "Quitar dos pasos"),
+    "admin_unlink_driver": ("Unlink iRacing driver", "Desvincular piloto"),
     "admin_signout": ("Sign out everywhere", "Cerrar sus sesiones"),
     "admin_rename": ("Rename", "Cambiar el nombre"),
     "admin_tools_t": ("Tools", "Herramientas"),

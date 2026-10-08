@@ -226,6 +226,7 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "admin_unblock" to ("Unblock" to "Desbloquear"),
     "admin_verify" to ("Confirm the email" to "Confirmar el email"),
     "admin_2fa_off" to ("Turn off two-step" to "Quitar dos pasos"),
+    "admin_unlink_driver" to ("Unlink iRacing driver" to "Desvincular piloto"),
     "admin_signout" to ("Sign out everywhere" to "Cerrar sus sesiones"),
     "admin_rename" to ("Rename" to "Cambiar el nombre"),
     "admin_tools_t" to ("Tools" to "Herramientas"),
