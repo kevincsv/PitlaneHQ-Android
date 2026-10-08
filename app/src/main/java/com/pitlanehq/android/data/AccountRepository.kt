@@ -401,6 +401,12 @@ class AccountRepository(context: Context) {
     }
 
     // ---------- community ----------
+    /** The card of a car: what it does on every track it was driven on (its hardest braking, where the fast drivers
+     *  shift up, its top speed), learnt by the server from its laps; null when the server has no laps of it. */
+    fun carCard(carId: Long): JSONObject? {
+        if (demo) return null
+        return runCatching { JSONObject(cachedGet("/community/car?game=iracing&carId=$carId").data) }.getOrNull()?.takeIf { it.optInt("n") > 0 }
+    }
     fun combos(): Got<List<Combo>> {
         if (demo) return Got(Demo.combos())
         val g = cachedGet("/community/combos?game=iracing")

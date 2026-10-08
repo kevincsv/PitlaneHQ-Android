@@ -1,6 +1,7 @@
 package com.pitlanehq.android.viewmodel
 
 import android.app.Application
+import org.json.JSONObject
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -16,7 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /** A lap next to the lap it is compared with. */
-data class LapAnalysis(val lap: CloudLap, val trace: Trace?, val ref: Trace?, val refLabel: String, val refTime: Double?, val refSectors: List<Double>)
+data class LapAnalysis(val lap: CloudLap, val trace: Trace?, val ref: Trace?, val refLabel: String, val refTime: Double?, val refSectors: List<Double>, val car: JSONObject? = null)
 
 enum class RefKind { MY_BEST, COMMUNITY }
 
@@ -265,6 +266,12 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
             var label = ""
             var refTime: Double? = null
             var refSec: List<Double> = emptyList()
+            // the car and track of this session among the ones the community knows, matched by name
+            val combos = runCatching { repo.combos().data }.getOrNull() ?: emptyList()
+            val c = combos.firstOrNull { it.track.equals(s.track, true) && it.car.equals(s.car, true) }
+                ?: combos.firstOrNull { s.track.startsWith(it.track, true) && it.car.equals(s.car, true) }
+            // the car card needs the car alone: what it does on other tracks, for when nobody known drove it here yet
+            val card = (c ?: combos.firstOrNull { it.car.equals(s.car, true) })?.let { runCatching { repo.carCard(it.carId) }.getOrNull() }
             if (kind == RefKind.MY_BEST) {
                 val best = all.filter { it.valid && it.time > 0 && it.id != lap.id }.minByOrNull { it.time }
                 if (best != null) {
@@ -274,9 +281,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
                     refSec = best.sectors
                 }
             } else {
-                // the community leaderboard of this track and car, matched by name
-                val c = runCatching { repo.combos().data }.getOrNull()?.firstOrNull { it.track.equals(s.track, true) && it.car.equals(s.car, true) }
-                    ?: runCatching { repo.combos().data }.getOrNull()?.firstOrNull { s.track.startsWith(it.track, true) && it.car.equals(s.car, true) }
+                // the community leaderboard of this track and car
                 val top = c?.let { runCatching { repo.leaderboard(it.trackId, it.carId).data }.getOrNull() }?.firstOrNull { it.hasTrace }
                 if (top != null) {
                     ref = runCatching { repo.communityTrace(top.id) }.getOrNull()
@@ -285,7 +290,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
                     refSec = top.sectors
                 }
             }
-            Got(LapAnalysis(lap, tr, ref, label, refTime, refSec))
+            Got(LapAnalysis(lap, tr, ref, label, refTime, refSec, card))
         }
     }
 

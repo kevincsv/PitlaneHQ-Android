@@ -6,8 +6,14 @@ when the beta ends. Every version is listed here, newest first, and gets a relea
 
 ## 0.8.16 beta
 
+**New**
+- **The car card** in the lap analysis: what this car does on other tracks (its hardest braking, the
+  speeds the fast drivers shift up at, its top speed and where), learnt by the server from its real laps
+  everywhere, against what this lap did. It helps when nobody known has driven this car on this track yet.
+
+**Changed**
 - Same version as the PC and the web (lap B with "+ Session" shows only the other session, the model's
-  references once, the title of "Choose a session" stays at the top). No changes in the apps.
+  references once, the title of "Choose a session" stays at the top).
 
 ## 0.8.15 beta
 

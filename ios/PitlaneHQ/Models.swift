@@ -232,6 +232,29 @@ struct RaceResult: Hashable {
     let laps: Int
 }
 
+/// The facts of one lap, as the server reads them: its hardest braking (m/s², the top 5 % of its braking), the
+/// speed it shifted up at in every gear (the highest point it took the gear to), its top speed.
+/// Rows [speed, throttle, brake, gear, steering, time].
+func lapFacts(_ rows: [[Double]]) -> (brake: Double?, shifts: [Int: Double], vmax: Double) {
+    var dec: [Double] = []
+    var shifts: [Int: Double] = [:]
+    var vmax = 0.0
+    if rows.count >= 2 {
+        for i in 0..<(rows.count - 1) {
+            let a = rows[i], b = rows[i + 1]
+            if a.count < 6 || b.count < 6 { continue }
+            vmax = max(vmax, a[0])
+            let dt = b[5] - a[5]
+            if dt > 0.01 && dt < 2 && a[2] >= 0.5 && a[0] > 12 && a[0] > b[0] { dec.append((a[0] - b[0]) / dt) }
+            let g = Int(a[3])
+            if g >= 1 && Int(b[3]) == g + 1 && a[0] > 5 { shifts[g] = max(shifts[g] ?? 0, a[0]) }
+        }
+    }
+    dec.sort()
+    let brake: Double? = dec.count >= 5 ? dec[min(dec.count - 1, Int((0.95 * Double(dec.count - 1) + 0.5).rounded(.down)))] : nil
+    return (brake, shifts, vmax)
+}
+
 func lapTime(_ s: Double?) -> String {
     guard let s, s.isFinite, s > 0 else { return "—" }
     let m = Int(s / 60)

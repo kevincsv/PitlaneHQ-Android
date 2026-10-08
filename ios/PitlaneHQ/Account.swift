@@ -498,6 +498,13 @@ final class Account: ObservableObject {
     }
 
     /// One line per driver: their best lap.
+    /// The card of a car: what it does on every track it was driven on (its hardest braking, where the fast
+    /// drivers shift up, its top speed), learnt by the server from its laps; nil when the server has no laps of it.
+    func carCard(carId: Int64) async throws -> [String: Any]? {
+        if demo { return nil }
+        guard let j = try await cachedGet("/community/car?game=iracing&carId=\(carId)").data as? [String: Any], ((j["n"] as? NSNumber)?.intValue ?? 0) > 0 else { return nil }
+        return j
+    }
     func leaderboard(trackId: Int64, carId: Int64) async throws -> Got<[CommunityLap]> {
         if demo { return Got(data: Demo.board(trackId: trackId, carId: carId)) }
         let g = try await cachedGet("/community/laps?game=iracing&trackId=\(trackId)&carId=\(carId)")

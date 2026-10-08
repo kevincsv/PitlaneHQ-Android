@@ -777,6 +777,9 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
                     Metric(t("delta"), d?.let { "%+.3f".format(it) } ?: "—", Modifier.weight(1f).fillMaxHeight(), if (d == null) Fg else if (d <= 0) Good else Bad)
                 }
             }
+            // the car card: what this car does on other tracks (its hardest braking, where the fast drivers shift up, its
+            // top speed) against this lap, like the web's coach
+            if (an.car != null && an.trace != null) item { CarCard(an.car, an.trace) }
             if (an.trace == null) item { Empty(t("no_trace")) }
             else {
                 val c = compare(an.trace, an.ref)
@@ -2003,6 +2006,68 @@ private fun Licences() {
 }
 
 /** What is only in the web and PC app for now, with a button to open the web. */
+/** The facts of one lap, as the server reads them: its hardest braking (m/s², the top 5 % of its braking), the speed
+ *  it shifted up at in every gear (the highest point it took the gear to), its top speed. Rows [speed, throttle, brake, gear, steering, time]. */
+private class LapFacts(val brake: Double?, val shifts: Map<Int, Double>, val vmax: Double)
+private fun lapFacts(rows: List<DoubleArray>): LapFacts {
+    val dec = ArrayList<Double>()
+    val shifts = HashMap<Int, Double>()
+    var vmax = 0.0
+    for (i in 0 until rows.size - 1) {
+        val a = rows[i]
+        val b = rows[i + 1]
+        if (a.size < 6 || b.size < 6) continue
+        if (a[0] > vmax) vmax = a[0]
+        val dt = b[5] - a[5]
+        if (dt > 0.01 && dt < 2 && a[2] >= 0.5 && a[0] > 12 && a[0] > b[0]) dec.add((a[0] - b[0]) / dt)
+        val g = a[3].toInt()
+        if (g >= 1 && b[3].toInt() == g + 1 && a[0] > 5) shifts[g] = maxOf(shifts[g] ?: 0.0, a[0])
+    }
+    dec.sort()
+    val brake = if (dec.size >= 5) dec[minOf(dec.size - 1, Math.floor(0.95 * (dec.size - 1) + 0.5).toInt())] else null
+    return LapFacts(brake, shifts, vmax)
+}
+
+/** The car card: what this car does on other tracks (its hardest braking, where the fast drivers shift up, its top
+ *  speed), learnt by the server from its laps everywhere, against what this lap did. Like the web's coach. */
+@Composable
+private fun CarCard(k: org.json.JSONObject, tr: Trace) {
+    val f = remember(tr) { lapFacts(tr.rows) }
+    val kmh = { v: Double -> "${Math.round(v * 3.6)} km/h" }
+    val gee = { v: Double -> "%.2f g".format(v / 9.81) }
+    val cardBrake = k.optDouble("brake", 0.0).takeIf { it > 0 }
+    // the gear this lap shifted earliest against the fast drivers (the highest gear when the lap has no gear read)
+    var pg = 0
+    var pv = 0.0
+    var pm: Double? = null
+    var pd: Double? = null
+    val sh = k.optJSONArray("shifts")
+    if (sh != null) for (i in 0 until sh.length()) {
+        val p = sh.optJSONArray(i) ?: continue
+        val g = p.optInt(0)
+        val v = p.optDouble(1)
+        val mv = f.shifts[g]
+        val d = mv?.let { it - v }
+        val better = pd
+        if (pg == 0 || (d != null && (better == null || d < better))) { pg = g; pv = v; pm = mv; pd = d }
+    }
+    val brakeLine = t("car_brake") + ": " + (cardBrake?.let(gee) ?: "—") + " · " +
+        (f.brake?.let { b -> t("this_lap") + " " + gee(b) + (cardBrake?.let { c -> " (${Math.round(b / c * 100)} %)" } ?: "") } ?: t("car_no_brake"))
+    val mine = pm
+    val shiftLine = t("car_shifts") + ": " + if (pg > 0) "$pg→${pg + 1} ${kmh(pv)}" +
+        (mine?.let { " · " + t("this_lap") + " " + kmh(it) + " (" + (if (it >= pv) "+" else "−") + Math.round(Math.abs(it - pv) * 3.6) + ")" } ?: "") else t("car_no_shifts")
+    val at = k.optString("vmaxTrack").takeIf { it.isNotBlank() && it != "null" }
+    val vmaxLine = t("car_vmax") + ": " + kmh(k.optDouble("vmax", 0.0)) + (at?.let { " " + t("car_at", it) } ?: "") + (if (f.vmax > 0) " · " + t("this_lap") + " " + kmh(f.vmax) else "")
+    Panel {
+        Text(t("car_card"), fontWeight = FontWeight.Bold)
+        Text(t("car_card_from", k.optInt("n"), k.optInt("tracks")), color = Muted, fontSize = 12.sp)
+        Spacer(Modifier.height(6.dp))
+        Text(brakeLine, fontSize = 13.sp)
+        Text(shiftLine, fontSize = 13.sp)
+        Text(vmaxLine, fontSize = 13.sp)
+    }
+}
+
 @Composable
 private fun WebNote(text: String) {
     val uri = LocalUriHandler.current

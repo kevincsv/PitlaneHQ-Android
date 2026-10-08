@@ -131,6 +131,53 @@ struct Licences: View {
 }
 
 /// What is only in the web and PC app for now, with a link to open the web.
+/// The car card: what this car does on other tracks (its hardest braking, where the fast drivers shift up, its
+/// top speed), learnt by the server from its laps everywhere, against what this lap did. Like the web's coach.
+struct CarCardView: View {
+    let card: [String: Any]
+    let trace: Trace
+    private func num(_ v: Any?) -> Double? { (v as? NSNumber)?.doubleValue }
+    private func kmh(_ v: Double) -> String { "\(Int((v * 3.6).rounded())) km/h" }
+    private func gee(_ v: Double) -> String { String(format: "%.2f g", v / 9.81) }
+    /// The three lines, worked out away from the view so SwiftUI has nothing to type-check.
+    private var lines: (from: String, brake: String, shift: String, vmax: String) {
+        let f = lapFacts(trace.rows)
+        let n = (card["n"] as? NSNumber)?.intValue ?? 0, tracks = (card["tracks"] as? NSNumber)?.intValue ?? 0
+        let cardBrake = num(card["brake"]).flatMap { $0 > 0 ? $0 : nil }
+        var brake = t("car_brake") + ": " + (cardBrake.map(gee) ?? "—") + " · "
+        if let b = f.brake {
+            brake += t("this_lap") + " " + gee(b)
+            if let c = cardBrake { brake += " (\(Int((b / c * 100).rounded())) %)" }
+        } else { brake += t("car_no_brake") }
+        // the gear this lap shifted earliest against the fast drivers (the highest gear when the lap has no gear read)
+        var pg = 0, pv = 0.0
+        var pm: Double? = nil, pd: Double? = nil
+        for p in (card["shifts"] as? [[NSNumber]]) ?? [] where p.count >= 2 {
+            let g = p[0].intValue, v = p[1].doubleValue, mv = f.shifts[g], d = mv.map { $0 - v }
+            if pg == 0 || (d != nil && (pd == nil || d! < pd!)) { pg = g; pv = v; pm = mv; pd = d }
+        }
+        var shift = t("car_shifts") + ": "
+        if pg > 0 {
+            shift += "\(pg)→\(pg + 1) " + kmh(pv)
+            if let m = pm { shift += " · " + t("this_lap") + " " + kmh(m) + " (" + (m >= pv ? "+" : "−") + "\(Int((abs(m - pv) * 3.6).rounded())))" }
+        } else { shift += t("car_no_shifts") }
+        var vmax = t("car_vmax") + ": " + kmh(num(card["vmax"]) ?? 0)
+        if let at = card["vmaxTrack"] as? String, !at.isEmpty { vmax += " " + t("car_at", at) }
+        if f.vmax > 0 { vmax += " · " + t("this_lap") + " " + kmh(f.vmax) }
+        return (t("car_card_from", n, tracks), brake, shift, vmax)
+    }
+    var body: some View {
+        let l = lines
+        Panel {
+            Text(t("car_card")).font(.subheadline.bold()).foregroundColor(Theme.fg)
+            Text(l.from).font(.caption).foregroundColor(Theme.muted)
+            Text(l.brake).font(.footnote).foregroundColor(Theme.fg).padding(.top, 4)
+            Text(l.shift).font(.footnote).foregroundColor(Theme.fg)
+            Text(l.vmax).font(.footnote).foregroundColor(Theme.fg)
+        }
+    }
+}
+
 struct WebNote: View {
     let text: String
     var body: some View {
@@ -987,6 +1034,7 @@ struct LapView: View {
     @State private var refTime: Double?
     @State private var refSectors: [Double] = []
     @State private var pick: Double?
+    @State private var car: [String: Any]?
 
     private func load() async {
         loading = true
@@ -997,6 +1045,12 @@ struct LapView: View {
         refSectors = []
         do {
             trace = try await account.lapTrace(lap.id)
+            // the car and track of this session among the ones the community knows, matched by name
+            let combos = (try? await account.combos().data) ?? []
+            let c = combos.first { $0.track.caseInsensitiveCompare(session.track) == .orderedSame && $0.car.caseInsensitiveCompare(session.car) == .orderedSame }
+                ?? combos.first { session.track.lowercased().hasPrefix($0.track.lowercased()) && $0.car.caseInsensitiveCompare(session.car) == .orderedSame }
+            // the car card needs the car alone: what it does on other tracks, for when nobody known drove it here yet
+            if let cc = c ?? combos.first(where: { $0.car.caseInsensitiveCompare(session.car) == .orderedSame }) { car = try? await account.carCard(carId: cc.carId) }
             if !community {
                 if let best = all.filter({ $0.valid && $0.time > 0 && $0.id != lap.id }).min(by: { $0.time < $1.time }) {
                     ref = try? await account.lapTrace(best.id)
@@ -1005,10 +1059,7 @@ struct LapView: View {
                     refSectors = best.sectors
                 }
             } else {
-                // the community leaderboard of this track and car, matched by name
-                let combos = (try? await account.combos().data) ?? []
-                let c = combos.first { $0.track.caseInsensitiveCompare(session.track) == .orderedSame && $0.car.caseInsensitiveCompare(session.car) == .orderedSame }
-                    ?? combos.first { session.track.lowercased().hasPrefix($0.track.lowercased()) && $0.car.caseInsensitiveCompare(session.car) == .orderedSame }
+                // the community leaderboard of this track and car
                 if let c, let top = (try? await account.leaderboard(trackId: c.trackId, carId: c.carId).data)?.first(where: { $0.hasTrace }) {
                     ref = try? await account.communityTrace(top.id)
                     refLabel = top.alias
@@ -1043,6 +1094,8 @@ struct LapView: View {
                 Metric(label: t("delta"), value: d.map { String(format: "%+.3f", $0) } ?? "—", color: d == nil ? Theme.fg : d! <= 0 ? Theme.good : Theme.bad)
             }
             .fixedSize(horizontal: false, vertical: true)
+            // the car card: what this car does on other tracks against this lap, like the web's coach
+            if let car, let trace { CarCardView(card: car, trace: trace) }
             if !loading {
                 if let trace {
                     let c = compare(trace, ref)
