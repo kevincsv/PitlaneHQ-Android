@@ -589,6 +589,17 @@ final class Account: ObservableObject {
         guard let j = try? await cachedGet("/community/turns?game=iracing&trackId=\(trackId)").data as? [String: Any], let a = j["turns"] as? [Any] else { return [] }
         return a.compactMap { ($0 as? NSNumber)?.doubleValue }.filter { $0 >= 0 && $0 < 1 }
     }
+    /// The pit lane of a track, learnt from laps through the pits: [5 m point of a lap of n points, metres to the left].
+    func pitLane(trackId: Int64) async -> PitLane? {
+        if demo || trackId <= 0 { return nil }
+        guard let j = try? await cachedGet("/community/pitlane?game=iracing&trackId=\(trackId)").data as? [String: Any],
+              let a = j["pts"] as? [[Any]], let n = (j["n"] as? NSNumber)?.intValue, n > 0 else { return nil }
+        let pts: [(Int, Double)] = a.compactMap { q in
+            guard q.count == 2, let i = (q[0] as? NSNumber)?.intValue, let v = (q[1] as? NSNumber)?.doubleValue else { return nil }
+            return (i, v)
+        }
+        return pts.count >= 10 ? PitLane(n: n, pts: pts) : nil
+    }
     func leaderboard(trackId: Int64, carId: Int64) async throws -> Got<[CommunityLap]> {
         if demo { return Got(data: Demo.board(trackId: trackId, carId: carId)) }
         let g = try await cachedGet("/community/laps?game=iracing&trackId=\(trackId)&carId=\(carId)")

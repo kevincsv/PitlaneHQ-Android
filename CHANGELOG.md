@@ -8,6 +8,7 @@ when the beta ends. Every version is listed here, newest first, and gets a relea
 
 - Licence summary: each category's iRating in its own colour, with one short line on when it updates.
 - The coach and the track map use the official turn numbers of the track when they have been set.
+- The track map shows the pit lane beside the track, with its entry and exit.
 - Fixes and improvements.
 
 ## 0.9.0 beta

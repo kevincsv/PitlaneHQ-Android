@@ -456,6 +456,12 @@ func turnNo(_ turns: [Double], at: Double, lapLen: Double, fallback: Int) -> Int
     return bi + 1
 }
 
+/// The pit lane of a track (from laps through the pits): [5 m point of a lap of n points, metres to the left of the track].
+struct PitLane {
+    let n: Int
+    let pts: [(Int, Double)]
+}
+
 func corners(_ c: Compared, turns: [Double] = []) -> [Corner] {
     guard let tB = c.tB, let sB = c.speedB, let bB = c.brkB, let hB = c.thrB else { return [] }
     let n = [c.tA.count, tB.count, sB.count, bB.count, hB.count, c.brkA.count, c.thrA.count, c.speedA.count].min() ?? 0

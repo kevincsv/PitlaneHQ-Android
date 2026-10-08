@@ -468,6 +468,14 @@ class AccountRepository(context: Context) {
         val a = JSONObject(cachedGet("/community/turns?game=iracing&trackId=$trackId").data).optJSONArray("turns") ?: return emptyList()
         return (0 until a.length()).map { a.optDouble(it) }.filter { it >= 0 && it < 1 }
     }
+    /** The pit lane of a track, learnt from laps through the pits (null until someone has driven through them). */
+    fun pitLane(trackId: Long): com.pitlanehq.android.viewmodel.PitLane? {
+        if (demo || trackId <= 0) return null
+        val j = JSONObject(cachedGet("/community/pitlane?game=iracing&trackId=$trackId").data)
+        val a = j.optJSONArray("pts") ?: return null
+        val pts = (0 until a.length()).mapNotNull { a.optJSONArray(it)?.let { q -> q.optInt(0) to q.optDouble(1) } }
+        return if (pts.size >= 10 && j.optInt("n") > 0) com.pitlanehq.android.viewmodel.PitLane(j.optInt("n"), pts) else null
+    }
     fun combos(): Got<List<Combo>> {
         if (demo) return Got(Demo.combos())
         val g = cachedGet("/community/combos?game=iracing")

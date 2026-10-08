@@ -1177,6 +1177,7 @@ struct LapView: View {
     @State private var pick: Double?
     @State private var car: [String: Any]?
     @State private var turns: [Double] = [] // the official turn numbers of this track, when an admin placed them
+    @State private var pit: PitLane? = nil // its pit lane, from laps through the pits
 
     private func load() async {
         loading = true
@@ -1193,7 +1194,7 @@ struct LapView: View {
                 ?? combos.first { session.track.lowercased().hasPrefix($0.track.lowercased()) && $0.car.caseInsensitiveCompare(session.car) == .orderedSame }
             // the car card needs the car alone: what it does on other tracks, for when nobody known drove it here yet
             if let cc = c ?? combos.first(where: { $0.car.caseInsensitiveCompare(session.car) == .orderedSame }) { car = try? await account.carCard(carId: cc.carId) }
-            if let tc = c { turns = await account.turns(trackId: tc.trackId) } else { turns = [] }
+            if let tc = c { turns = await account.turns(trackId: tc.trackId); pit = await account.pitLane(trackId: tc.trackId) } else { turns = []; pit = nil }
             if !community {
                 if let best = all.filter({ $0.valid && $0.time > 0 && $0.id != lap.id }).min(by: { $0.time < $1.time }) {
                     ref = try? await account.lapTrace(best.id)
@@ -1245,7 +1246,7 @@ struct LapView: View {
                     if ref == nil { Text(t("no_reference")).font(.caption).foregroundColor(Theme.muted) }
                     let refName = refLabel.isEmpty ? t("ref") : refLabel
                     let card: (Int) -> AnyView = { i in AnyView(PointCard(c: c, i: i, refName: refName, sec: lap.sectors, refSec: refSectors)) }
-                    if trace.hasShape { TrackMapView(c: c, trace: trace, pick: $pick, turns: turns) }
+                    if trace.hasShape { TrackMapView(c: c, trace: trace, pick: $pick, turns: turns, pit: pit) }
                     Chart(title: t("speed") + " (km/h)", series: speedSeries(c, refName), step: c.step, fmt: { String(format: "%.0f", $0) },
                           pick: $pick, card: card)
                     if let delta = c.delta {
@@ -1304,9 +1305,11 @@ struct TrackMapView: View {
     private let xs: [Double], ys: [Double]
     private let brkA: [Double], brkB: [Double]
     private let rings: [Corner]
+    private let pit: PitLane?
     private let minX: Double, maxX: Double, minY: Double, maxY: Double
 
-    init(c: Compared, trace: Trace, pick: Binding<Double?>, turns: [Double] = []) {
+    init(c: Compared, trace: Trace, pick: Binding<Double?>, turns: [Double] = [], pit: PitLane? = nil) {
+        self.pit = pit
         self.c = c
         self.trace = trace
         self._pick = pick
@@ -1328,6 +1331,43 @@ struct TrackMapView: View {
         let ox: Double = (size.width - 2 * pad - (maxX - minX) * k) / 2
         let oy: Double = (size.height - 2 * pad - (maxY - minY) * k) / 2
         return CGPoint(x: pad + (xs[i] - minX) * k + ox, y: size.height - pad - (ys[i] - minY) * k - oy)
+    }
+
+    private func pointXY(_ x: Double, _ y: Double, _ size: CGSize) -> CGPoint {
+        let pad: Double = 18
+        let k: Double = min((size.width - 2 * pad) / max(1e-6, maxX - minX), (size.height - 2 * pad) / max(1e-6, maxY - minY))
+        let ox: Double = (size.width - 2 * pad - (maxX - minX) * k) / 2
+        let oy: Double = (size.height - 2 * pad - (maxY - minY) * k) / 2
+        return CGPoint(x: pad + (x - minX) * k + ox, y: size.height - pad - (y - minY) * k - oy)
+    }
+
+    private struct PitRun { var path: Path; var entry: CGPoint?; var exit: CGPoint? }
+
+    /// The pit lane's stretches on this map: each point is the track's point beside it moved to its left by the metres measured.
+    private func pitRuns(_ size: CGSize) -> [PitRun] {
+        guard let pl = pit, n > 20 else { return [] }
+        func w(_ i: Int) -> Int { ((i % n) + n) % n }
+        var out: [PitRun] = []
+        var cur: [CGPoint] = []
+        var i0 = 0, last = -9
+        func flush() {
+            guard cur.count > 3 else { cur = []; return }
+            var p = Path()
+            p.move(to: cur[0])
+            for q in cur.dropFirst() { p.addLine(to: q) }
+            out.append(PitRun(path: p, entry: i0 > 3 ? cur.first : nil, exit: last < pl.n - 4 ? cur.last : nil))
+            cur = []
+        }
+        for (i, lat) in pl.pts {
+            let j = w(Int((Double(i) * Double(n) / Double(pl.n)).rounded()))
+            let tx = xs[w(j + 2)] - xs[w(j - 2)], ty = ys[w(j + 2)] - ys[w(j - 2)]
+            let tm = max(1e-6, (tx * tx + ty * ty).squareRoot())
+            if i - last > 4 { flush(); i0 = i }
+            cur.append(pointXY(xs[j] - ty / tm * lat, ys[j] + tx / tm * lat, size))
+            last = i
+        }
+        flush()
+        return out
     }
 
     private func path(_ from: Int, _ to: Int, _ size: CGSize, close: Bool = false) -> Path {
@@ -1427,6 +1467,12 @@ struct TrackMapView: View {
             path(0, n - 1, size, close: true).stroke(Color.black.opacity(0.38), style: StrokeStyle(lineWidth: 11, lineCap: .round, lineJoin: .round)).offset(x: 1.5, y: 2.5)
             path(0, n - 1, size, close: true).stroke(Theme.line.opacity(0.95), style: StrokeStyle(lineWidth: 10, lineCap: .round, lineJoin: .round)).brightness(0.08)
             path(0, n - 1, size, close: true).stroke(Color(red: 0x15 / 255, green: 0x1A / 255, blue: 0x21 / 255), style: StrokeStyle(lineWidth: 7.5, lineCap: .round, lineJoin: .round))
+            // the pit lane beside the track, dashed, with its entry (red) and exit (blue)
+            ForEach(Array(pitRuns(size).enumerated()), id: \.offset) { _, r in
+                r.path.stroke(Color(red: 0x9F / 255, green: 0xB1 / 255, blue: 0xC8 / 255).opacity(0.85), style: StrokeStyle(lineWidth: 2.4, lineCap: .round, dash: [6, 3.5]))
+                if let a = r.entry { Circle().fill(Theme.bad).frame(width: 6, height: 6).position(a) }
+                if let b = r.exit { Circle().fill(Color(red: 0.35, green: 0.66, blue: 1)).frame(width: 6, height: 6).position(b) }
+            }
             ForEach(segments) { s in
                 path(s.from, s.to, size).stroke(s.color, style: StrokeStyle(lineWidth: 6.5, lineCap: .round, lineJoin: .round))
             }

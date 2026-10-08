@@ -856,7 +856,7 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
                 if (an.ref == null) item { Text(t("no_reference"), color = Muted, fontSize = 12.sp) }
                 val refName = an.refLabel.ifBlank { t("ref") }
                 val card: @Composable (Int) -> Unit = { i -> PointCard(c, i, refName, an.lap.sectors, an.refSectors) }
-                if (an.trace.hasShape) item { TrackMap(c, an.trace, pick, an.turns) { pick = it } }
+                if (an.trace.hasShape) item { TrackMap(c, an.trace, pick, an.turns, an.pit) { pick = it } }
                 item {
                     Chart(t("speed") + " (km/h)", listOfNotNull(Series(t("you"), c.speedA, Accent), c.speedB?.let { Series(refName, it, Blue) }), c.step, { "%.0f".format(it) },
                         sel = pick, onSel = { pick = it }, card = card)
@@ -1081,7 +1081,7 @@ private fun incName(kind: String) = t(when (kind) { "contact" -> "inc_contact"; 
  * or drag on it to read that point: the charts follow it.
  */
 @Composable
-private fun TrackMap(c: Compared, tr: Trace, sel: Int?, turns: List<Double> = emptyList(), onSel: (Int) -> Unit) {
+private fun TrackMap(c: Compared, tr: Trace, sel: Int?, turns: List<Double> = emptyList(), pit: com.pitlanehq.android.viewmodel.PitLane? = null, onSel: (Int) -> Unit) {
     val xs = tr.x ?: return
     val ys = tr.y ?: return
     val incs = tr.incidents
@@ -1109,6 +1109,13 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, turns: List<Double> = em
         val oy = (size.height - 2 * pad - (maxY - minY).toFloat() * k) / 2
         return Offset(pad + (xs[i] - minX).toFloat() * k + ox, size.height - pad - (ys[i] - minY).toFloat() * k - oy)
     }
+    fun ptXY(x: Double, y: Double): Offset {
+        val pad = 18f
+        val k = minOf((size.width - 2 * pad) / maxOf(1e-6, maxX - minX).toFloat(), (size.height - 2 * pad) / maxOf(1e-6, maxY - minY).toFloat())
+        val ox = (size.width - 2 * pad - (maxX - minX).toFloat() * k) / 2
+        val oy = (size.height - 2 * pad - (maxY - minY).toFloat() * k) / 2
+        return Offset(pad + (x - minX).toFloat() * k + ox, size.height - pad - (y - minY).toFloat() * k - oy)
+    }
     fun pickAt(p: Offset) {
         var bi = 0; var bd = Float.MAX_VALUE
         for (i in 0 until n) { val q = pt(i); val d = (q.x - p.x) * (q.x - p.x) + (q.y - p.y) * (q.y - p.y); if (d < bd) { bd = d; bi = i } }
@@ -1130,6 +1137,29 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, turns: List<Double> = em
             drawContext.canvas.restore()
             drawPath(track, Line.copy(red = minOf(1f, Line.red + .12f), green = minOf(1f, Line.green + .12f), blue = minOf(1f, Line.blue + .12f)), style = Stroke(width = 10f * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round))
             drawPath(track, Color(0xFF151A21), style = Stroke(width = 7.5f * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            // the pit lane beside the track (from laps through the pits), dashed, with its entry and exit
+            if (pit != null) {
+                var run: Path? = null
+                var last = -9
+                var first: Offset? = null
+                val w = { i: Int -> ((i % n) + n) % n }
+                fun end(p: Path?, a: Offset?, b: Offset?, entry: Boolean, exit: Boolean) {
+                    if (p == null) return
+                    drawPath(p, Color(0xFF9FB1C8).copy(alpha = .85f), style = Stroke(width = 2.4f * dpx, cap = StrokeCap.Round, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(6f * dpx, 3.5f * dpx))))
+                    if (entry && a != null) drawCircle(Bad, 3f * dpx, a)
+                    if (exit && b != null) drawCircle(Blue, 3f * dpx, b)
+                }
+                var i0 = 0
+                var lastQ: Offset? = null
+                for ((i, lat) in pit.pts) {
+                    val j = w((i.toDouble() * n / pit.n).roundToInt())
+                    val tx = xs[w(j + 2)] - xs[w(j - 2)]; val ty = ys[w(j + 2)] - ys[w(j - 2)]; val tm = maxOf(1e-6, kotlin.math.hypot(tx, ty))
+                    val q = ptXY(xs[j] - ty / tm * lat, ys[j] + tx / tm * lat)
+                    if (i - last > 4) { end(run, first, lastQ, i0 > 3, last < pit.n - 4); run = Path(); run.moveTo(q.x, q.y); first = q; i0 = i } else run?.lineTo(q.x, q.y)
+                    last = i; lastQ = q
+                }
+                end(run, first, lastQ, i0 > 3, last < pit.n - 4)
+            }
             // where lap A gains or loses against the reference: 48 stretches, stronger where more time changes hands
             val delta = c.delta
             if (delta != null && m > 2) {
