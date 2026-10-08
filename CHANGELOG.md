@@ -4,6 +4,11 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
+## 0.8.16 beta
+
+- Same version as the PC and the web (lap B with "+ Session" shows only the other session, the model's
+  references once, the title of "Choose a session" stays at the top). No changes in the apps.
+
 ## 0.8.15 beta
 
 **New**
