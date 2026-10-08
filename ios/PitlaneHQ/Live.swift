@@ -193,7 +193,7 @@ final class Live: ObservableObject {
             askAt = Date()
         }
         let name = "iOS · " + UIDeviceName.current
-        guard let raw = try? JSONSerialization.data(withJSONObject: ["hello", ["id": devId, "name": name]] as [Any]),
+        guard let raw = try? JSONSerialization.data(withJSONObject: ["hello", ["id": devId, "name": name, "again": fresh]] as [Any]),
               let z = try? PLCrypto.gzip(raw), let sealed = try? PLCrypto.seal(key: key, plain: z, aad: PLCrypto.liveAAD) else { return }
         ws.send(.string("e:" + sealed)) { _ in }
     }

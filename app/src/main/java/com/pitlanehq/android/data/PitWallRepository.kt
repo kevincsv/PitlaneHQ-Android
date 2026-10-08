@@ -167,7 +167,8 @@ class PitWallRepository(private val account: AccountRepository) {
         if (mode != LiveMode.OWN) return
         if (fresh) _state.update { it.copy(ask = "wait", askAt = System.currentTimeMillis()) }
         val name = listOf(android.os.Build.MANUFACTURER.replaceFirstChar { it.uppercase() }, android.os.Build.MODEL).distinct().joinToString(" ").trim()
-        val msg = JSONArray().put("hello").put(JSONObject().put("id", account.devId).put("name", "Android · " + name.take(40)))
+        // fresh: Connect pressed by hand, so the PC asks again even if it was declined a moment ago
+        val msg = JSONArray().put("hello").put(JSONObject().put("id", account.devId).put("name", "Android · " + name.take(40)).put("again", fresh))
         ws.send("e:" + Crypto.seal(key, Crypto.gzip(msg.toString().toByteArray()), Crypto.LIVE_AAD))
     }
 

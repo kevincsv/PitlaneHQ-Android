@@ -4,6 +4,10 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
+## 0.8.24 beta
+
+- Live: after the PC declined this phone, pressing Connect again asks the PC again.
+
 ## 0.8.23 beta
 
 - Same version as the PC and the web (the admin email panel). No changes in the apps.
