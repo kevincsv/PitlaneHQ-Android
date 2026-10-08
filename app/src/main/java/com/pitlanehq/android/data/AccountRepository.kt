@@ -255,6 +255,7 @@ class AccountRepository(context: Context) {
             all.optString("races.json").takeIf { it.isNotEmpty() }?.let { b64 ->
                 runCatching { save("races", trimRaces(JSONArray(String(Base64.decode(b64, Base64.DEFAULT))))) }
             }
+            save("drivers", all.optString("drivers.json").takeIf { it.isNotEmpty() }?.let { runCatching { String(Base64.decode(it, Base64.DEFAULT)) }.getOrNull() } ?: "{}")
         }
         prefs.edit()
             .putInt("syncedFiles", files)
@@ -269,6 +270,53 @@ class AccountRepository(context: Context) {
         }
         return storedState()
     }
+
+    /** Your notes on other drivers, by their key (or "n:" and their name for older races). */
+    fun driverNotes(): Map<String, DriverNote> {
+        val o = (if (demo) prefs.getString("demoDrivers", null) else saved("drivers"))?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return emptyMap()
+        return o.keys().asSequence().mapNotNull { k -> o.optJSONObject(k)?.let { k to DriverNote(it.optString("name"), it.optString("tag"), it.optString("note")) } }.toMap()
+    }
+
+    /**
+     * Saves your note on a driver (no tag and no note removes it) in the account's bundle, the same file the PC
+     * and the web keep: the bundle is read, only drivers.json changes, and it goes back sealed with your key.
+     */
+    fun setDriverNote(key: String, name: String, tag: String, note: String) {
+        val k = key.takeIf { Regex("^[0-9a-f]{32}$").matches(it) } ?: nameKey(name)
+        if (k.isEmpty()) return
+        val nk = nameKey(name)
+        val t = tag.takeIf { it in listOf("danger", "careful", "clean", "friend") } ?: ""
+        val n = note.trim().take(500)
+        fun change(dv: JSONObject) {
+            if (nk.isNotEmpty() && nk != k) dv.remove(nk)
+            if (t.isEmpty() && n.isEmpty()) dv.remove(k)
+            else dv.put(k, JSONObject().put("name", name.take(80)).put("tag", t).put("note", n).put("updated", System.currentTimeMillis()))
+        }
+        if (demo) {
+            val dv = prefs.getString("demoDrivers", null)?.let { runCatching { JSONObject(it) }.getOrNull() } ?: JSONObject()
+            change(dv); prefs.edit().putString("demoDrivers", dv.toString()).apply(); return
+        }
+        for (attempt in 0..2) {
+            val j = JSONObject(call("GET", "/account/sync"))
+            val blob = j.optString("blob", "")
+            val all = if (blob.isEmpty()) JSONObject() else JSONObject(String(Crypto.gunzip(Crypto.open(dataKey(), blob, Crypto.ACCOUNT_AAD))))
+            val dv = all.optString("drivers.json").takeIf { it.isNotEmpty() }?.let { runCatching { JSONObject(String(Base64.decode(it, Base64.DEFAULT))) }.getOrNull() } ?: JSONObject()
+            change(dv)
+            all.put("drivers.json", Base64.encodeToString(dv.toString().toByteArray(), Base64.NO_WRAP))
+            val sealed = Crypto.seal(dataKey(), Crypto.gzip(all.toString().toByteArray()), Crypto.ACCOUNT_AAD)
+            try {
+                val r = JSONObject(call("PUT", "/account/sync", JSONObject().put("blob", sealed).put("base", j.optLong("version", 0))))
+                prefs.edit().putLong("syncVersion", r.optLong("version", 0)).apply()
+                save("drivers", dv.toString())
+                return
+            } catch (e: AppError) {
+                // another device wrote the account meanwhile: read it again and redo the change on top
+                if (attempt == 2 || e.message?.contains("conflict", true) != true) throw e
+            }
+        }
+    }
+
+    private fun nameKey(name: String) = name.trim().lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }.joinToString(" ").let { if (it.isEmpty()) "" else "n:$it" }
 
     // only what the phone shows, newest first: races.json also has braking points and more
     private fun trimRaces(a: JSONArray): String {
@@ -309,7 +357,7 @@ class AccountRepository(context: Context) {
                 dnf = r.optBoolean("dnf"),
                 laps = (0 until laps.length()).map { k -> laps.getJSONObject(k).let { RaceLap(it.optInt("n"), it.optDouble("t"), it.optInt("p"), it.optInt("i"), it.optBoolean("pit"), it.optBoolean("cut")) } },
                 results = (0 until res.length()).map { k ->
-                    res.getJSONObject(k).let { RaceResult(it.optInt("cpos").takeIf { p -> p > 0 } ?: it.optInt("pos"), fixTxt(it.optString("name")), it.optInt("ir"), it.optDouble("best").pos(), it.optInt("inc"), it.optInt("laps")) }
+                    res.getJSONObject(k).let { RaceResult(it.optInt("cpos").takeIf { p -> p > 0 } ?: it.optInt("pos"), fixTxt(it.optString("name")), it.optInt("ir"), it.optDouble("best").pos(), it.optInt("inc"), it.optInt("laps"), it.optString("k"), it.optBoolean("me")) }
                 }.sortedBy { it.pos }
             )
         }

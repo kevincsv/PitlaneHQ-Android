@@ -520,6 +520,10 @@ private fun RacesAll(vm: PitlaneViewModel, nav: NavHostController) {
 @Composable
 private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
     val x = vm.race ?: return
+    val notes by vm.driverNotes.collectAsState()
+    var editing by remember { mutableStateOf<RaceResult?>(null) }
+    LaunchedEffect(Unit) { vm.loadDriverNotes() }
+    val anyMe = x.results.any { it.me }
     Screen(x.track, x.car + " · " + dayTime(x.whenMs), back = { nav.popBackStack() }) {
         item {
             Grid(
@@ -565,11 +569,15 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
             item { Section(t("results")) }
             item {
                 Panel {
+                    Text(t("tap_driver_note"), color = Muted, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
                     x.results.forEach { p ->
-                        val me = p.pos == x.finish
-                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        val me = if (anyMe) p.me else p.pos == x.finish
+                        val note = if (me) null else noteFor(notes, p.k, p.name)
+                        // your note on a driver: their tag before the name; tap a driver to mark them
+                        Row(Modifier.fillMaxWidth().then(if (me) Modifier else Modifier.clickable { editing = p }).padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("${p.pos}", color = if (me) Accent else Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(30.dp))
-                            Text(p.name, fontSize = 12.sp, fontWeight = if (me) FontWeight.Black else FontWeight.Normal, color = if (me) Accent else Fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            if (note != null && note.tag.isNotEmpty()) { TagIcon(note.tag, 14.dp); Spacer(Modifier.width(5.dp)) }
+                            Text(p.name + if (note != null && note.note.isNotEmpty()) " ✎" else "", fontSize = 12.sp, fontWeight = if (me) FontWeight.Black else FontWeight.Normal, color = if (me) Accent else Fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                             Text(if (p.ir > 0) "${p.ir}" else "", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
                             Text(lapTime(p.best), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(66.dp))
                             Text("${p.inc}x", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(30.dp))
@@ -579,6 +587,79 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
             }
         }
     }
+    editing?.let { d -> DriverNoteDialog(vm, d, noteFor(notes, d.k, d.name)) { editing = null } }
+}
+
+// ---------- driver notes ----------
+private val TagColors = mapOf("danger" to Color(0xFFFF5B5B), "careful" to Color(0xFFFFB02E), "clean" to Color(0xFF38C97C), "friend" to Color(0xFF4C9BFF))
+
+private fun noteFor(notes: Map<String, DriverNote>, key: String, name: String): DriverNote? =
+    notes[key].takeIf { key.isNotEmpty() } ?: notes["n:" + name.trim().lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }.joinToString(" ")]
+
+/** The icon of a tag, the same as the PC's and the web's: a red triangle, an amber circle, a green tick, a blue star. */
+@Composable
+private fun TagIcon(tag: String, size: androidx.compose.ui.unit.Dp) {
+    val col = TagColors[tag] ?: return
+    Canvas(Modifier.size(size)) {
+        val u = this.size.width / 16f
+        val ink = if (tag == "careful") Color(0xFF14171C) else Color.White
+        if (tag == "danger") {
+            drawPath(Path().apply { moveTo(8 * u, 0.6f * u); lineTo(15.8f * u, 14.6f * u); lineTo(0.2f * u, 14.6f * u); close() }, col)
+            drawLine(ink, Offset(8 * u, 5 * u), Offset(8 * u, 9.6f * u), 1.9f * u, StrokeCap.Round)
+            drawCircle(ink, 1.1f * u, Offset(8 * u, 12.1f * u))
+            return@Canvas
+        }
+        drawCircle(col, 8 * u, Offset(8 * u, 8 * u))
+        when (tag) {
+            "careful" -> { drawLine(ink, Offset(8 * u, 3.8f * u), Offset(8 * u, 9 * u), 1.9f * u, StrokeCap.Round); drawCircle(ink, 1.1f * u, Offset(8 * u, 11.7f * u)) }
+            "clean" -> drawPath(Path().apply { moveTo(4.4f * u, 8.2f * u); lineTo(7 * u, 10.9f * u); lineTo(11.8f * u, 5.4f * u) }, ink, style = Stroke(1.9f * u, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            "friend" -> drawPath(Path().apply {
+                for (i in 0 until 10) {
+                    val r = if (i % 2 == 0) 5f else 2.1f
+                    val a = -Math.PI / 2 + i * Math.PI / 5
+                    val px = (8 + r * Math.cos(a)).toFloat() * u; val py = (8 + r * Math.sin(a)).toFloat() * u
+                    if (i == 0) moveTo(px, py) else lineTo(px, py)
+                }
+                close()
+            }, ink)
+        }
+    }
+}
+
+/** Mark a driver: one tag (or none) and a note only you see. */
+@Composable
+private fun DriverNoteDialog(vm: PitlaneViewModel, d: RaceResult, cur: DriverNote?, close: () -> Unit) {
+    var tag by remember { mutableStateOf(cur?.tag ?: "") }
+    var note by remember { mutableStateOf(cur?.note ?: "") }
+    var busy by remember { mutableStateOf(false) }
+    var err by remember { mutableStateOf<String?>(null) }
+    fun save(t: String, n: String) { busy = true; err = null; vm.setDriverNote(d.k, d.name, t, n) { e -> busy = false; if (e == null) close() else err = e } }
+    AlertDialog(
+        onDismissRequest = close,
+        title = { Column { Text(t("driver_note"), color = Accent, fontSize = 12.sp, fontWeight = FontWeight.Black); Text(d.name, fontWeight = FontWeight.Black) } },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("danger", "careful", "clean", "friend").forEach { tg ->
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).border(1.dp, if (tag == tg) Accent else Line, RoundedCornerShape(10.dp))
+                        .background(if (tag == tg) Accent.copy(alpha = .12f) else Color.Transparent).clickable { tag = if (tag == tg) "" else tg }.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        TagIcon(tg, 18.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Column { Text(t("tag_$tg"), fontWeight = FontWeight.Bold, fontSize = 13.sp); Text(t("tag_${tg}_hint"), color = Muted, fontSize = 11.sp) }
+                    }
+                }
+                OutlinedTextField(note, { if (it.length <= 500) note = it }, placeholder = { Text(t("driver_note_hint"), fontSize = 12.sp) }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                err?.let { Text(t(it), color = Bad, fontSize = 12.sp) }
+            }
+        },
+        confirmButton = { TextButton({ save(tag, note.trim()) }, enabled = !busy) { Text(t("save"), color = Accent) } },
+        dismissButton = {
+            Row {
+                if (cur != null) TextButton({ save("", "") }, enabled = !busy) { Text(t("remove"), color = Bad) }
+                TextButton(close) { Text(t("cancel"), color = Muted) }
+            }
+        }
+    )
 }
 
 // ---------- Analysis ----------

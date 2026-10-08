@@ -785,6 +785,8 @@ struct RacesView: View {
 
 struct RaceView: View {
     let race: Race
+    @EnvironmentObject var account: Account
+    @State private var editing: RaceResult?
     var body: some View {
         let x = race
         let best = x.laps.filter { $0.time > 0 && !$0.cut }.map(\.time).min()
@@ -825,20 +827,126 @@ struct RaceView: View {
             if !x.results.isEmpty {
                 SectionLabel(text: t("results"))
                 Panel {
+                    Text(t("tap_driver_note")).font(.system(size: 11)).foregroundColor(Theme.muted)
                     ForEach(x.results, id: \.pos) { p in
-                        let me = p.pos == x.finish
+                        let me = x.results.contains(where: { $0.me }) ? p.me : p.pos == x.finish
+                        let note = me ? nil : account.noteFor(p.k, p.name)
+                        // your note on a driver: their tag before the name; tap a driver to mark them
                         HStack {
                             Text("\(p.pos)").foregroundColor(me ? Theme.accent : Theme.muted).frame(width: 28, alignment: .leading)
-                            Text(p.name).fontWeight(me ? .black : .regular).foregroundColor(me ? Theme.accent : Theme.fg).lineLimit(1)
+                            if let n = note, !n.tag.isEmpty { TagIcon(tag: n.tag).frame(width: 14, height: 14) }
+                            Text(p.name + ((note?.note.isEmpty ?? true) ? "" : " ✎")).fontWeight(me ? .black : .regular).foregroundColor(me ? Theme.accent : Theme.fg).lineLimit(1)
                             Spacer()
                             Text(p.ir > 0 ? "\(p.ir)" : "").foregroundColor(Theme.muted).frame(width: 44, alignment: .trailing)
                             Text(lapTime(p.best)).frame(width: 66, alignment: .trailing)
                             Text("\(p.inc)x").foregroundColor(Theme.muted).frame(width: 30, alignment: .trailing)
                         }
                         .font(.system(size: 12, design: .monospaced))
+                        .contentShape(Rectangle())
+                        .onTapGesture { if !me { editing = p } }
                     }
                 }
             }
+        }
+        .onAppear { account.loadDriverNotes() }
+        .sheet(item: $editing) { d in DriverNoteSheet(driver: d, cur: account.noteFor(d.k, d.name)) }
+    }
+}
+
+// ---------- driver notes ----------
+
+private let tagColors: [String: Color] = ["danger": Color(red: 1, green: 0x5B / 255, blue: 0x5B / 255), "careful": Color(red: 1, green: 0xB0 / 255, blue: 0x2E / 255),
+                                          "clean": Color(red: 0x38 / 255, green: 0xC9 / 255, blue: 0x7C / 255), "friend": Color(red: 0x4C / 255, green: 0x9B / 255, blue: 0xFF / 255)]
+
+/// The icon of a tag, the same as the PC's and the web's: a red triangle, an amber circle, a green tick, a blue star.
+struct TagIcon: View {
+    let tag: String
+    var body: some View {
+        Canvas { ctx, size in
+            let u = size.width / 16
+            guard let col = tagColors[tag] else { return }
+            let ink: Color = tag == "careful" ? Color(red: 0x14 / 255, green: 0x17 / 255, blue: 0x1C / 255) : .white
+            func line(_ x0: CGFloat, _ y0: CGFloat, _ x1: CGFloat, _ y1: CGFloat) {
+                var p = Path(); p.move(to: CGPoint(x: x0 * u, y: y0 * u)); p.addLine(to: CGPoint(x: x1 * u, y: y1 * u))
+                ctx.stroke(p, with: .color(ink), style: StrokeStyle(lineWidth: 1.9 * u, lineCap: .round, lineJoin: .round))
+            }
+            func dot(_ x: CGFloat, _ y: CGFloat) { ctx.fill(Path(ellipseIn: CGRect(x: (x - 1.1) * u, y: (y - 1.1) * u, width: 2.2 * u, height: 2.2 * u)), with: .color(ink)) }
+            if tag == "danger" {
+                var p = Path(); p.move(to: CGPoint(x: 8 * u, y: 0.6 * u)); p.addLine(to: CGPoint(x: 15.8 * u, y: 14.6 * u)); p.addLine(to: CGPoint(x: 0.2 * u, y: 14.6 * u)); p.closeSubpath()
+                ctx.fill(p, with: .color(col)); line(8, 5, 8, 9.6); dot(8, 12.1)
+                return
+            }
+            ctx.fill(Path(ellipseIn: CGRect(x: 0, y: 0, width: 16 * u, height: 16 * u)), with: .color(col))
+            switch tag {
+            case "careful": line(8, 3.8, 8, 9); dot(8, 11.7)
+            case "clean":
+                var p = Path(); p.move(to: CGPoint(x: 4.4 * u, y: 8.2 * u)); p.addLine(to: CGPoint(x: 7 * u, y: 10.9 * u)); p.addLine(to: CGPoint(x: 11.8 * u, y: 5.4 * u))
+                ctx.stroke(p, with: .color(ink), style: StrokeStyle(lineWidth: 1.9 * u, lineCap: .round, lineJoin: .round))
+            case "friend":
+                var p = Path()
+                for i in 0..<10 {
+                    let r: CGFloat = i % 2 == 0 ? 5 : 2.1, a = -Double.pi / 2 + Double(i) * Double.pi / 5
+                    let pt = CGPoint(x: (8 + r * CGFloat(cos(a))) * u, y: (8 + r * CGFloat(sin(a))) * u)
+                    if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
+                }
+                p.closeSubpath(); ctx.fill(p, with: .color(ink))
+            default: break
+            }
+        }
+    }
+}
+
+/// Mark a driver: one tag (or none) and a note only you see.
+struct DriverNoteSheet: View {
+    let driver: RaceResult
+    let cur: DriverNote?
+    @EnvironmentObject var account: Account
+    @Environment(\.dismiss) private var dismiss
+    @State private var tag = ""
+    @State private var note = ""
+    @State private var busy = false
+    @State private var err: String?
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(["danger", "careful", "clean", "friend"], id: \.self) { tg in
+                        Button { tag = tag == tg ? "" : tg } label: {
+                            HStack(spacing: 10) {
+                                TagIcon(tag: tg).frame(width: 18, height: 18)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(t("tag_" + tg)).fontWeight(.bold).foregroundColor(Theme.fg)
+                                    Text(t("tag_" + tg + "_hint")).font(.system(size: 12)).foregroundColor(Theme.muted)
+                                }
+                                Spacer()
+                            }
+                            .padding(10)
+                            .background(tag == tg ? Theme.accent.opacity(0.12) : Color.clear)
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(tag == tg ? Theme.accent : Theme.line, lineWidth: 1))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }.buttonStyle(.plain)
+                    }
+                    TextField(t("driver_note_hint"), text: $note, axis: .vertical).lineLimit(2...5).textFieldStyle(.roundedBorder)
+                    if let err { Text(t(err)).foregroundColor(Theme.bad).font(.system(size: 12)) }
+                    if cur != nil { Button(t("remove"), role: .destructive) { save("", "") }.disabled(busy).padding(.top, 4) }
+                }
+                .padding(16)
+            }
+            .navigationTitle(driver.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button(t("cancel")) { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button(t("save")) { save(tag, note) }.disabled(busy) }
+            }
+        }
+        .onAppear { tag = cur?.tag ?? ""; note = cur?.note ?? "" }
+    }
+    private func save(_ tg: String, _ n: String) {
+        busy = true; err = nil
+        Task {
+            do { try await account.setDriverNote(key: driver.k, name: driver.name, tag: tg, note: n); dismiss() }
+            catch { err = (error as? AppError)?.key ?? error.localizedDescription }
+            busy = false
         }
     }
 }

@@ -230,6 +230,15 @@ struct RaceResult: Hashable {
     let best: Double?
     let inc: Int
     let laps: Int
+    var k: String = ""       // the driver's opaque key (the PC's driverKey): what your driver notes find them by
+    var me: Bool = false
+}
+
+/// Your note on another driver (drivers.json in the account): one tag (danger, careful, clean, friend) and a note.
+struct DriverNote: Hashable {
+    let name: String
+    let tag: String
+    let note: String
 }
 
 /// The facts of one lap, as the server reads them: its hardest braking (m/s², the top 5 % of its braking), the
@@ -496,3 +505,5 @@ func losses(_ c: Compared, segM: Double = 250) -> [Loss] {
     }
     return Array(out.filter { $0.lost > 0.02 }.sorted { $0.lost > $1.lost }.prefix(3))
 }
+
+extension RaceResult: Identifiable { var id: String { "\(pos)|\(name)" } }

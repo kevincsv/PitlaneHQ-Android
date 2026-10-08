@@ -117,6 +117,74 @@ final class Account: ObservableObject {
     var token: String? { Vault.get("token").flatMap { String(data: $0, encoding: .utf8) } }
     var dataKey: Data? { Vault.get("dataKey") }
 
+    // ---------- driver notes: your marks on other drivers (drivers.json in the account) ----------
+
+    @Published var driverNotes: [String: DriverNote] = [:]
+
+    func loadDriverNotes() {
+        let raw = demo ? UserDefaults.standard.data(forKey: "demoDrivers") : saved("drivers")
+        let o = raw.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        driverNotes = o.reduce(into: [:]) { acc, kv in
+            if let v = kv.value as? [String: Any] { acc[kv.key] = DriverNote(name: str(v["name"]), tag: str(v["tag"]), note: str(v["note"])) }
+        }
+    }
+
+    static func nameKey(_ name: String) -> String {
+        let n = name.lowercased().split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        return n.isEmpty ? "" : "n:" + n
+    }
+
+    func noteFor(_ key: String, _ name: String) -> DriverNote? {
+        if !key.isEmpty, let n = driverNotes[key] { return n }
+        return driverNotes[Account.nameKey(name)]
+    }
+
+    /// Saves your note on a driver (no tag and no note removes it) in the account's bundle, the same file the PC and
+    /// the web keep: the bundle is read, only drivers.json changes, and it goes back sealed with your key.
+    func setDriverNote(key: String, name: String, tag: String, note: String) async throws {
+        let isKey = key.count == 32 && key.allSatisfy { "0123456789abcdef".contains($0) }
+        let nk = Account.nameKey(name), k = isKey ? key : nk
+        guard !k.isEmpty else { return }
+        let t = ["danger", "careful", "clean", "friend"].contains(tag) ? tag : ""
+        let n = String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))
+        func change(_ dv: inout [String: Any]) {
+            if !nk.isEmpty && nk != k { dv.removeValue(forKey: nk) }
+            if t.isEmpty && n.isEmpty { dv.removeValue(forKey: k) }
+            else { dv[k] = ["name": String(name.prefix(80)), "tag": t, "note": n, "updated": Int(Date().timeIntervalSince1970 * 1000)] }
+        }
+        if demo {
+            var dv = UserDefaults.standard.data(forKey: "demoDrivers").flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            change(&dv)
+            UserDefaults.standard.set(try? JSONSerialization.data(withJSONObject: dv), forKey: "demoDrivers")
+            loadDriverNotes()
+            return
+        }
+        guard let dk = dataKey else { throw AppError.signedOut }
+        for attempt in 0..<3 {
+            let j = try JSONSerialization.jsonObject(with: await call("GET", "/account/sync")) as? [String: Any] ?? [:]
+            var all: [String: Any] = [:]
+            if let blob = j["blob"] as? String, !blob.isEmpty {
+                all = try JSONSerialization.jsonObject(with: PLCrypto.gunzip(PLCrypto.open(key: dk, sealed: blob, aad: PLCrypto.accountAAD))) as? [String: Any] ?? [:]
+            }
+            var dv = (all["drivers.json"] as? String).flatMap { Data(base64Encoded: $0) }.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            change(&dv)
+            let dvData = try JSONSerialization.data(withJSONObject: dv)
+            all["drivers.json"] = dvData.base64EncodedString()
+            let sealed = try PLCrypto.seal(key: dk, plain: PLCrypto.gzip(JSONSerialization.data(withJSONObject: all)), aad: PLCrypto.accountAAD)
+            do {
+                let r = try JSONSerialization.jsonObject(with: await call("PUT", "/account/sync", body: ["blob": sealed, "base": j["version"] ?? 0])) as? [String: Any] ?? [:]
+                syncVersion = int(r["version"])
+                defaults.set(syncVersion, forKey: "syncVersion")
+                save("drivers", dvData)
+                loadDriverNotes()
+                return
+            } catch let e as AppError where e.key.lowercased().contains("conflict") && attempt < 2 {
+                // another device wrote the account meanwhile: read it again and redo the change on top
+                continue
+            }
+        }
+    }
+
     // ---------- saved copies (sealed with the account's data key) ----------
 
     private func file(_ name: String) -> URL { dir.appendingPathComponent(String(name.map { $0.isLetter || $0.isNumber || "_.-".contains($0) ? $0 : "_" }.prefix(120))) }
@@ -307,6 +375,7 @@ final class Account: ObservableObject {
                     let slim = trimRaces(a)
                     if let d = try? JSONSerialization.data(withJSONObject: slim) { save("races", d) }
                 }
+                save("drivers", (all["drivers.json"] as? String).flatMap { Data(base64Encoded: $0) } ?? Data("{}".utf8))
             }
             syncedFiles = files
             syncVersion = int(j["version"])
@@ -408,7 +477,7 @@ final class Account: ObservableObject {
                 ir: int(r["ir"]), irChange: int(r["irChange"]), sof: int(r["sof"]), dnf: r["dnf"] as? Bool ?? false,
                 laps: (r["laps"] as? [[String: Any]] ?? []).map { RaceLap(n: int($0["n"]), time: num($0["t"]) ?? 0, pos: int($0["p"]), inc: int($0["i"]), pit: $0["pit"] as? Bool ?? false, cut: $0["cut"] as? Bool ?? false) },
                 results: (r["results"] as? [[String: Any]] ?? []).map {
-                    RaceResult(pos: int($0["cpos"]) > 0 ? int($0["cpos"]) : int($0["pos"]), name: fixTxt(str($0["name"])), ir: int($0["ir"]), best: pos($0["best"]), inc: int($0["inc"]), laps: int($0["laps"]))
+                    RaceResult(pos: int($0["cpos"]) > 0 ? int($0["cpos"]) : int($0["pos"]), name: fixTxt(str($0["name"])), ir: int($0["ir"]), best: pos($0["best"]), inc: int($0["inc"]), laps: int($0["laps"]), k: str($0["k"]), me: $0["me"] as? Bool ?? false)
                 }.sorted { $0.pos < $1.pos }
             )
         }

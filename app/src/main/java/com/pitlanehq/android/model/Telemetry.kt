@@ -109,7 +109,11 @@ data class Race(
 /** One lap of a race; [cut]: the car left the track, the lap is not valid. */
 data class RaceLap(val n: Int, val time: Double, val pos: Int, val inc: Int, val pit: Boolean, val cut: Boolean = false)
 
-data class RaceResult(val pos: Int, val name: String, val ir: Int, val best: Double?, val inc: Int, val laps: Int)
+/** One driver of a race; [k]: their opaque key (the PC's driverKey), what your driver notes find them by. */
+data class RaceResult(val pos: Int, val name: String, val ir: Int, val best: Double?, val inc: Int, val laps: Int, val k: String = "", val me: Boolean = false)
+
+/** Your note on another driver (drivers.json in the account): one tag (danger, careful, clean, friend) and a note. */
+data class DriverNote(val name: String, val tag: String, val note: String)
 
 /** What a screen shows: [stale] is saved data shown while the server cannot be reached. */
 data class Loadable<T>(val loading: Boolean = false, val data: T? = null, val error: String? = null, val stale: Boolean = false)

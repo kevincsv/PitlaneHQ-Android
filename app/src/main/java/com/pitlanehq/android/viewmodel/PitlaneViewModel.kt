@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** A lap next to the lap it is compared with. */
 data class LapAnalysis(val lap: CloudLap, val trace: Trace?, val ref: Trace?, val refLabel: String, val refTime: Double?, val refSectors: List<Double>, val car: JSONObject? = null)
@@ -229,6 +230,15 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun loadRaces() = load(races) { Got(repo.races()) }
+
+    /** Your notes on other drivers (the race summary shows their tag and lets you change it). */
+    val driverNotes = MutableStateFlow<Map<String, DriverNote>>(emptyMap())
+    fun loadDriverNotes() { driverNotes.value = runCatching { repo.driverNotes() }.getOrDefault(emptyMap()) }
+    fun setDriverNote(key: String, name: String, tag: String, note: String, done: (String?) -> Unit) = viewModelScope.launch(Dispatchers.IO) {
+        val err = runCatching { repo.setDriverNote(key, name, tag, note) }.exceptionOrNull()
+        loadDriverNotes()
+        withContext(Dispatchers.Main) { done(err?.message) }
+    }
     fun loadSessions() = load(sessions) { repo.sessions() }
     fun loadBests() = load(bests) { repo.bests() }
     fun loadLaps(id: String) { laps.value = Loadable(); load(laps) { repo.laps(id) } }

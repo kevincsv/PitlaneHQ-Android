@@ -80,8 +80,9 @@ jobs:
           cp "out/PitlaneHQ-Android-$VERSION.apk" out/PitlaneHQ-Android.apk
           gh release upload "$tag" out/* --clobber
           gh release edit "$tag" --latest --prerelease=false || true
+      # only master's builds go out: a build started on another branch only checks that it compiles
       - name: Publish on pitlanehq.app (R2)
-        if: env.HAS_CLOUDFLARE == 'true'
+        if: env.HAS_CLOUDFLARE == 'true' && github.ref == 'refs/heads/master'
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
