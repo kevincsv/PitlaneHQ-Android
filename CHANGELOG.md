@@ -4,9 +4,15 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
+## 0.8.42 beta
+
+- Same version as the PC and the web (the game found at once; the overlays open and close at once).
+
 ## 0.8.41 beta
 
 - DRINKS: rename a driver on the list (their shared laps take the new name) or take them off it.
+- Driver notes: tap a driver in a race summary to mark them as dangerous, careful, clean or a friend, with a note only
+  you see; their icon shows next to their name, and the notes are the same as on the PC and the web.
 - Race rivals on the leaderboards show their first name and the initial of their last name; admins can unlink an
   account's iRacing driver.
 - The bottom bar is Home, Analysis, Telemetry, Community and Account: Community sits just before Account.
