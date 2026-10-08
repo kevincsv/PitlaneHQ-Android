@@ -660,8 +660,6 @@ struct HomeView: View {
     var body: some View {
         let races = account.races
         let recent = Array(races.prefix(10))
-        let last = races.first
-        let change = recent.reduce(0) { $0 + $1.irChange }
         let wins = races.filter { $0.finish == 1 }.count
         let top5 = races.filter { (1...5).contains($0.finish) }.count
         let incSum = recent.reduce(0) { $0 + $1.inc }
@@ -672,8 +670,6 @@ struct HomeView: View {
             DaysDriven(races: races)
             SectionLabel(text: t("race_summary"))
             MetricGrid(items: [
-                MetricData(label: t("current_ir"), value: last.map { $0.ir > 0 ? "\($0.ir + $0.irChange)" : "—" } ?? "—"),
-                MetricData(label: t("ir_change"), value: recent.isEmpty ? "—" : signed(change), color: change > 0 ? Theme.good : change < 0 ? Theme.bad : Theme.fg, sub: t("last_races", recent.count)),
                 MetricData(label: t("races"), value: "\(races.count)"),
                 MetricData(label: t("wins"), value: "\(wins)"),
                 MetricData(label: t("top5"), value: "\(top5)"),

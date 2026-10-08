@@ -386,13 +386,10 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
         item { DaysDriven(vm, nav, races) }
         item { Section(t("race_summary")) }
         item {
+            // no iRating here: each category has its own (the licence summary above), never one number for all
             val recent = races.take(10)
-            val last = races.firstOrNull()
-            val ch = recent.sumOf { it.irChange }
             Grid(
                 listOf(
-                    MetricData(t("current_ir"), if (last != null && last.ir > 0) "${last.ir + last.irChange}" else "—"),
-                    MetricData(t("ir_change"), if (recent.isEmpty()) "—" else signed(ch), if (ch > 0) Good else if (ch < 0) Bad else Fg, t("last_races", recent.size)),
                     MetricData(t("races"), "${races.size}"),
                     MetricData(t("wins"), "${races.count { it.finish == 1 }}"),
                     MetricData(t("top5"), "${races.count { it.finish in 1..5 }}"),

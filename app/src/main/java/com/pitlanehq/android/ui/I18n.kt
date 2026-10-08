@@ -176,7 +176,7 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "current_ir" to ("Current iRating" to "iRating actual"),
     "ir_change" to ("iRating change" to "Cambio de iRating"),
     "race_summary" to ("SUMMARY FROM YOUR RACES" to "RESUMEN DE TUS CARRERAS"),
-    "licences" to ("LICENCES" to "LICENCIAS"),
+    "licences" to ("LICENCE SUMMARY" to "RESUMEN DE LICENCIAS"),
     "lic_class" to ("Licence" to "Licencia"),
     "cat_sports" to ("Sports Car" to "Sports Car"),
     "cat_formula" to ("Formula" to "Fórmula"),

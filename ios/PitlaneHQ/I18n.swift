@@ -179,7 +179,7 @@ private let strings: [String: (String, String)] = [
     "current_ir": ("Current iRating", "iRating actual"),
     "ir_change": ("iRating change", "Cambio de iRating"),
     "race_summary": ("SUMMARY FROM YOUR RACES", "RESUMEN DE TUS CARRERAS"),
-    "licences": ("LICENCES", "LICENCIAS"),
+    "licences": ("LICENCE SUMMARY", "RESUMEN DE LICENCIAS"),
     "lic_class": ("Licence", "Licencia"),
     "cat_sports": ("Sports Car", "Sports Car"),
     "cat_formula": ("Formula", "Fórmula"),

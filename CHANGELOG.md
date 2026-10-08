@@ -9,7 +9,8 @@ when the beta ends. Every version is listed here, newest first, and gets a relea
 - The coach reads your racing line: where you were on the track against the lap you compare with (inside or outside
   at turn-in, apex and exit, in metres), not only where you braked.
 - The track map is a road with depth showing the other lap's line and yours.
-- Licences: your iRating and licence of every category, as Pitlane HQ on your PC last saw them.
+- Licence summary: your iRating and licence of each category on its own, as Pitlane HQ on your PC last saw them;
+  Home no longer shows one iRating mixed from every category.
 - "+1L" / "−1L" in the race summary for the drivers who finished laps up or down on you.
 - Fixes and improvements.
 
