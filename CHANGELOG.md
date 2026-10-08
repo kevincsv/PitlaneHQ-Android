@@ -7,6 +7,7 @@ when the beta ends. Every version is listed here, newest first, and gets a relea
 ## 0.8.41 beta
 
 - DRINKS: rename a driver on the list (their shared laps take the new name) or take them off it.
+- The bottom bar is Home, Analysis, Telemetry, Community and Account: Community sits just before Account.
 - Same version as the PC and the web (Pitlane HQ Desktop with native screens; the real iRating of a race only from
   a session of the same category).
 

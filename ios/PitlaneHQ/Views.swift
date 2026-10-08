@@ -520,8 +520,8 @@ struct MainView: View {
         TabView(selection: $tab) {
             NavigationStack { HomeView().routes() }.tabItem { Label(t("home"), systemImage: "house") }.tag(0)
             NavigationStack { AnalysisView().routes() }.tabItem { Label(t("analysis"), systemImage: "chart.xyaxis.line") }.tag(1)
-            NavigationStack { CommunityView().routes() }.tabItem { Label(t("community"), systemImage: "person.3") }.tag(2)
             NavigationStack { LiveView() }.tabItem { Label(t("live"), systemImage: "antenna.radiowaves.left.and.right") }.tag(3)
+            NavigationStack { CommunityView().routes() }.tabItem { Label(t("community"), systemImage: "person.3") }.tag(2)
             NavigationStack { SettingsView() }.tabItem { Label(t("account_tab"), systemImage: "person") }.tag(4)
         }
         .onReceive(inbox.$goTab.compactMap { $0 }) { t in tab = t; inbox.goTab = nil }

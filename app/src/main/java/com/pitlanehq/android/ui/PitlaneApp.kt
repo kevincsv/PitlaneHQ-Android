@@ -316,8 +316,8 @@ private fun BottomBar(nav: NavHostController) {
     val dests = listOf(
         Dest("home", t("home"), Icons.Default.Home),
         Dest("analysis", t("analysis"), Icons.Default.QueryStats),
-        Dest("community", t("community"), Icons.Default.Groups),
         Dest("live", t("live"), Icons.Default.Sensors),
+        Dest("community", t("community"), Icons.Default.Groups),
         Dest("settings", t("account_tab"), Icons.Default.Person)
     )
     val current = nav.currentBackStackEntryAsState().value?.destination?.route
