@@ -161,13 +161,34 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun sync() {
-        _account.value = _account.value.copy(busy = true, error = null)
+    /** quiet: by itself (the app opened or came back), without the spinner and without an error on screen. */
+    fun sync(quiet: Boolean = false) {
+        if (!quiet) _account.value = _account.value.copy(busy = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repo.sync() }
-                .onSuccess { _account.value = it; demo.value = repo.demo; loadRaces() }
-                .onFailure { e -> if (e is SignedOut) signedOut() else _account.value = _account.value.copy(busy = false, error = errKey(e)) }
+                .onSuccess {
+                    _account.value = it; demo.value = repo.demo; loadRaces()
+                    // what is already on screen is read again too
+                    if (sessions.value.data != null) loadSessions()
+                    if (bests.value.data != null) loadBests()
+                }
+                .onFailure { e -> if (e is SignedOut) signedOut() else if (!quiet) _account.value = _account.value.copy(busy = false, error = errKey(e)) }
         }
+    }
+
+    private var lastAuto = 0L
+
+    /**
+     * The app came to the screen (it opened, or came back from the background): your account, public
+     * name, races and laps are read again by themselves, at most every 30 seconds.
+     */
+    fun onForeground() {
+        val a = _account.value
+        if (!a.signedIn || a.busy || demo.value) return
+        val now = System.currentTimeMillis()
+        if (now - lastAuto < 30_000) return
+        lastAuto = now
+        sync(quiet = true)
     }
 
     fun logout() {

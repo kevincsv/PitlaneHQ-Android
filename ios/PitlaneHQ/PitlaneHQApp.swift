@@ -8,6 +8,7 @@ struct PitlaneHQApp: App {
     @StateObject private var i18n = I18n.shared
     @StateObject private var updates = Updates()
     @StateObject private var inbox = Inbox()
+    @Environment(\.scenePhase) private var phase
 
     var body: some Scene {
         WindowGroup {
@@ -22,6 +23,9 @@ struct PitlaneHQApp: App {
             .environmentObject(inbox)
             .task { await updates.check() }
             .task { await inbox.load() }
+            // every time the app comes to the screen, the account syncs by itself
+            .task { await account.syncIfDue() }
+            .onChange(of: phase) { p in if p == .active { Task { await account.syncIfDue() } } }
             .preferredColorScheme(.dark)
             .tint(Theme.accent)
         }

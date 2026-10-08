@@ -278,10 +278,12 @@ final class Account: ObservableObject {
     }
 
     /// Pulls the encrypted settings bundle the PC keeps in the account and opens it here: your races come from it.
-    func sync() async {
-        busy = true
-        error = nil
-        defer { busy = false }
+    func sync(quiet: Bool = false) async {
+        if !quiet {
+            busy = true
+            error = nil
+        }
+        defer { if !quiet { busy = false } }
         do {
             let data = try await call("GET", "/account/sync")
             let j = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
@@ -316,8 +318,18 @@ final class Account: ObservableObject {
             }
             loadRaces()
         } catch {
-            self.error = (error as? AppError)?.key ?? error.localizedDescription
+            if !quiet || (error as? AppError)?.key == AppError.signedOut.key { self.error = (error as? AppError)?.key ?? error.localizedDescription }
         }
+    }
+
+    private var lastAuto = Date.distantPast
+
+    /// The app came to the screen (it opened, or came back from the background): your account, public
+    /// name and races are read again by themselves, at most every 30 seconds, without a spinner.
+    func syncIfDue() async {
+        guard signedIn, !busy, Date().timeIntervalSince(lastAuto) > 30 else { return }
+        lastAuto = Date()
+        await sync(quiet: true)
     }
 
     // only what the phone shows, newest first: races.json also has braking points and more

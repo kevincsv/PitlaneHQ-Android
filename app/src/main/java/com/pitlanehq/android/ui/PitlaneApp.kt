@@ -55,6 +55,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.*
@@ -100,6 +102,8 @@ private fun dayTime(ms: Long) = if (ms <= 0) "" else DateFormat.getDateTimeInsta
 @Composable
 fun PitlaneApp(vm: PitlaneViewModel = viewModel()) {
     val account by vm.account.collectAsState()
+    // every time the app comes to the screen, the account syncs by itself
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.onForeground() }
     val scheme = darkColorScheme(
         primary = Accent, onPrimary = Ink, background = Ink, onBackground = Fg, surface = Surface, onSurface = Fg,
         surfaceVariant = Surface2, onSurfaceVariant = Muted, outline = Line, error = Bad
