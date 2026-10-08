@@ -390,7 +390,7 @@ private let strings: [String: (String, String)] = [
     "waiting_pc": ("Connected · waiting for your PC: open Pitlane HQ on it with this account", "Conectado · esperando a tu PC: abre Pitlane HQ en él con esta cuenta"),
     "disconnect": ("Disconnect", "Desconectar"),
     "your_code": ("Your code for others", "Tu código para otros"),
-    "your_code_sub": ("Whoever types it in their Pitlane HQ (Live) watches your telemetry, read only.", "Quien lo escriba en su Pitlane HQ (En vivo) ve tu telemetría, solo mirar."),
+    "your_code_sub": ("Whoever types it in their Pitlane HQ (Telemetry) watches your telemetry, read only.", "Quien lo escriba en su Pitlane HQ (Telemetría) ve tu telemetría, solo mirar."),
     "new_code": ("New code", "Código nuevo"),
     "stop_sharing": ("Stop sharing", "Dejar de compartir"),
     "get_code_sub": ("Let a friend or your engineer watch your telemetry with a code.", "Deja que un amigo o tu ingeniero vea tu telemetría con un código."),

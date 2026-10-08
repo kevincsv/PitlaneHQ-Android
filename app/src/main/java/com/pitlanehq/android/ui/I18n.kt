@@ -389,7 +389,7 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "waiting_pc" to ("Connected · waiting for your PC: open Pitlane HQ on it with this account" to "Conectado · esperando a tu PC: abre Pitlane HQ en él con esta cuenta"),
     "disconnect" to ("Disconnect" to "Desconectar"),
     "your_code" to ("Your code for others" to "Tu código para otros"),
-    "your_code_sub" to ("Whoever types it in their Pitlane HQ (Live) watches your telemetry, read only." to "Quien lo escriba en su Pitlane HQ (En vivo) ve tu telemetría, solo mirar."),
+    "your_code_sub" to ("Whoever types it in their Pitlane HQ (Telemetry) watches your telemetry, read only." to "Quien lo escriba en su Pitlane HQ (Telemetría) ve tu telemetría, solo mirar."),
     "new_code" to ("New code" to "Código nuevo"),
     "stop_sharing" to ("Stop sharing" to "Dejar de compartir"),
     "get_code_sub" to ("Let a friend or your engineer watch your telemetry with a code." to "Deja que un amigo o tu ingeniero vea tu telemetría con un código."),
