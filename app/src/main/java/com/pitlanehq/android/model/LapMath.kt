@@ -9,8 +9,39 @@ class Compared(
     val step: Double, val speedA: List<Double>, val speedB: List<Double>?, val thrA: List<Double>, val brkA: List<Double>,
     val delta: List<Double>?, val tA: List<Double>, val tB: List<Double>?,
     val thrB: List<Double>? = null, val brkB: List<Double>? = null,
-    val gearA: List<Double>? = null, val gearB: List<Double>? = null
+    val gearA: List<Double>? = null, val gearB: List<Double>? = null,
+    // the racing line: how far A was to one side of B at each point (m, NaN where unknown), and B's path, on the same grid
+    val lat: List<Double>? = null, val bx: List<Double>? = null, val by: List<Double>? = null
 )
+
+/**
+ * The racing line, as the PC and the web read it: both laps carry the path their car drove (every 5 m, the game's
+ * heading for both, so the same orientation); at the same lap distance A's point along B's normal is how far A was
+ * to one side of B; the slow drift of that dead reckoning goes with a ±400 m moving average. Null when either lap has
+ * no path or the two paths are not the same track.
+ */
+fun lineOffsets(ax: List<Double>, ay: List<Double>, bx: List<Double>, by: List<Double>): DoubleArray? {
+    val n = minOf(ax.size, ay.size, bx.size, by.size)
+    if (n < 60) return null
+    val lat = DoubleArray(n); val lon = DoubleArray(n)
+    for (i in 0 until n) {
+        val i0 = max(0, i - 2); val i1 = min(n - 1, i + 2)
+        var tx = bx[i1] - bx[i0]; var ty = by[i1] - by[i0]
+        val tm = kotlin.math.hypot(tx, ty).takeIf { it > 0 } ?: 1.0
+        tx /= tm; ty /= tm
+        val dx = ax[i] - bx[i]; val dy = ay[i] - by[i]
+        lat[i] = -ty * dx + tx * dy; lon[i] = tx * dx + ty * dy
+    }
+    fun smooth(v: DoubleArray): DoubleArray {
+        val pre = DoubleArray(n + 1)
+        for (i in 0 until n) pre[i + 1] = pre[i] + v[i]
+        return DoubleArray(n) { i -> val lo = max(0, i - 80); val hi = min(n - 1, i + 80); v[i] - (pre[hi + 1] - pre[lo]) / (hi - lo + 1) }
+    }
+    val lc = smooth(lat); val oc = smooth(lon)
+    if (oc.map { kotlin.math.abs(it) }.sorted()[n / 2] > 6) return null
+    for (i in 0 until n) if (kotlin.math.abs(oc[i]) > 20 || kotlin.math.abs(lc[i]) > 25) lc[i] = Double.NaN
+    return lc
+}
 
 /** One place on the lap where time goes, with what is different there. */
 data class Loss(val fromM: Int, val lost: Double, val brakeDiffM: Int?, val minA: Double, val minB: Double, val throttleDiffM: Int?)
@@ -34,6 +65,7 @@ fun compare(a: Trace, b: Trace?, step0: Double = 10.0): Compared {
     val d = (0 until n).map { it * step }
     val tA = d.map { at(a, it, 5) }
     val tB = b?.let { tr -> d.map { at(tr, it, 5) } }
+    val line = if (a.hasShape && b != null && b.hasShape && kotlin.math.abs(a.bin - b.bin) < 1e-6) lineOffsets(a.x!!, a.y!!, b.x!!, b.y!!) else null
     return Compared(
         step,
         d.map { at(a, it, 0) * 3.6 },
@@ -45,7 +77,10 @@ fun compare(a: Trace, b: Trace?, step0: Double = 10.0): Compared {
         b?.let { tr -> d.map { at(tr, it, 1) } },
         b?.let { tr -> d.map { at(tr, it, 2) } },
         d.map { a.rows[(it / a.bin).roundToInt().coerceIn(0, a.rows.size - 1)].getOrElse(3) { 0.0 } },
-        b?.let { tr -> d.map { tr.rows[(it / tr.bin).roundToInt().coerceIn(0, tr.rows.size - 1)].getOrElse(3) { 0.0 } } }
+        b?.let { tr -> d.map { tr.rows[(it / tr.bin).roundToInt().coerceIn(0, tr.rows.size - 1)].getOrElse(3) { 0.0 } } },
+        line?.let { l -> d.map { l.getOrElse((it / a.bin).roundToInt()) { Double.NaN } } },
+        if (line != null) d.map { b!!.x!![(it / b.bin).roundToInt().coerceIn(0, b.x!!.size - 1)] } else null,
+        if (line != null) d.map { b!!.y!![(it / b.bin).roundToInt().coerceIn(0, b.y!!.size - 1)] } else null
     )
 }
 
@@ -57,8 +92,35 @@ fun compare(a: Trace, b: Trace?, step0: Double = 10.0): Compared {
  */
 data class Corner(
     val n: Int, val atM: Int, val lost: Double, val phases: Map<String, Double>, val phase: String?,
-    val coastA: Double, val coastB: Double, val tip: String?, val args: List<Any>
+    val coastA: Double, val coastB: Double, val tip: String?, val args: List<Any>,
+    val lineTip: String? = null, val lineArgs: List<Any> = emptyList()  // what the line says, besides the tip
 )
+
+/** How far A was to the inside of B (m, + inside) at B's turn-in, apex and exit; null on a straight or without a line. */
+fun cornerLine(c: Compared, brake: Int, apex: Int, exit: Int, span: Int): Triple<Double, Double, Double>? {
+    val lat = c.lat ?: return null; val bx = c.bx ?: return null; val by = c.by ?: return null
+    val n = minOf(lat.size, bx.size, by.size)
+    if (apex <= 0 || apex >= n - 1) return null
+    fun tan(i: Int): Pair<Double, Double> { val i0 = max(0, i - 1); val i1 = min(n - 1, i + 1); val tx = bx[i1] - bx[i0]; val ty = by[i1] - by[i0]; val m = kotlin.math.hypot(tx, ty).takeIf { it > 0 } ?: 1.0; return tx / m to ty / m }
+    val t1 = tan(max(0, apex - span)); val t2 = tan(min(n - 1, apex + span))
+    val cr = t1.first * t2.second - t1.second * t2.first
+    if (kotlin.math.abs(cr) < .05) return null
+    val sg = if (cr < 0) -1.0 else 1.0
+    fun at(i: Int): Double { val v = (max(0, i - 1)..min(n - 1, i + 1)).map { lat[it] }.filter { !it.isNaN() }; return if (v.isEmpty()) Double.NaN else v.average() * sg }
+    val r = Triple(at(brake), at(apex), at(min(n - 1, exit)))
+    return if (r.first.isNaN() || r.second.isNaN() || r.third.isNaN()) null else r
+}
+
+/** The advice of the line in one corner: an I18n key and its argument (metres), or null. */
+fun lineTip(l: Triple<Double, Double, Double>?, sameBrake: Boolean): Pair<String, String>? {
+    l ?: return null
+    val c = ArrayList<Triple<Double, String, String>>()
+    fun m(v: Double) = "%.1f".format(kotlin.math.abs(v))
+    if (l.first >= 1.5) c.add(Triple(l.first, if (sameBrake) "tip_line_same_brake" else "tip_line_turnin", m(l.first)))
+    if (l.second <= -1.5) c.add(Triple(-l.second, "tip_line_apex", m(l.second)))
+    if (l.third >= 1.5) c.add(Triple(l.third, "tip_line_exit", m(l.third)))
+    return c.maxByOrNull { it.first }?.let { it.second to it.third }
+}
 
 val PHASE_KEYS = listOf("brake", "entry", "apex", "exit")
 
@@ -139,7 +201,19 @@ fun corners(c: Compared): List<Corner> {
                 }
             }
         }
-        Corner(idx + 1, (zi * c.step).toInt(), lost, ph, phase, coastA, coastB, tip, args)
+        // the line: where the car was across the track; braking at the reference's point but on the wrong part of the
+        // track is said first, a generic tip gives way to it, otherwise it goes under the tip
+        var lineKey: String? = null
+        var lineArgs: List<Any> = emptyList()
+        if (lost > .03) {
+            val dd = ja?.let { ((it - zi) * c.step).toInt() }
+            val lt = lineTip(cornerLine(c, zi, zmin, zmin + bins(80.0), bins(40.0)), dd != null && kotlin.math.abs(dd) <= 6)
+            if (lt != null) {
+                if (tip in setOf("tip_brake_generic", "tip_entry_speed", "tip_apex_line", "tip_full_throttle") || (phase == "brake" && dd != null && kotlin.math.abs(dd) <= 6)) { tip = lt.first; args = listOf(lt.second) }
+                else { lineKey = lt.first; lineArgs = listOf(lt.second) }
+            }
+        }
+        Corner(idx + 1, (zi * c.step).toInt(), lost, ph, phase, coastA, coastB, tip, args, lineKey, lineArgs)
     }
 }
 

@@ -1281,6 +1281,7 @@ struct TrackMapView: View {
     @State private var showInc = true
     @State private var showBrk = true
     @State private var showCoach = true
+    @State private var showLine = true
     private let xs: [Double], ys: [Double]
     private let brkA: [Double], brkB: [Double]
     private let rings: [Corner]
@@ -1388,6 +1389,7 @@ struct TrackMapView: View {
                     chip(t("map_braking"), $showBrk)
                     if !incidents.isEmpty { chip("✕ " + t("map_incidents"), $showInc) }
                     if !rings.isEmpty { chip("Coach", $showCoach) }
+                    if c.lat != nil { chip(t("map_line"), $showLine) }
                 }
             }
             if !incidents.isEmpty { Text(incSummary).font(.caption).foregroundColor(Theme.bad) }
@@ -1402,9 +1404,16 @@ struct TrackMapView: View {
 
     private func map(_ size: CGSize) -> some View {
         ZStack {
-            path(0, n - 1, size, close: true).stroke(Theme.line, style: stroke)
+            // the track as a road with some depth: its shadow, the rim and the darker asphalt inside (like the web)
+            path(0, n - 1, size, close: true).stroke(Color.black.opacity(0.38), style: StrokeStyle(lineWidth: 11, lineCap: .round, lineJoin: .round)).offset(x: 1.5, y: 2.5)
+            path(0, n - 1, size, close: true).stroke(Theme.line.opacity(0.95), style: StrokeStyle(lineWidth: 10, lineCap: .round, lineJoin: .round)).brightness(0.08)
+            path(0, n - 1, size, close: true).stroke(Color(red: 0x15 / 255, green: 0x1A / 255, blue: 0x21 / 255), style: StrokeStyle(lineWidth: 7.5, lineCap: .round, lineJoin: .round))
             ForEach(segments) { s in
-                path(s.from, s.to, size).stroke(s.color, style: stroke)
+                path(s.from, s.to, size).stroke(s.color, style: StrokeStyle(lineWidth: 6.5, lineCap: .round, lineJoin: .round))
+            }
+            if showLine, c.lat != nil {
+                linePath(size).stroke(Theme.accent, style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+                path(0, n - 1, size, close: true).stroke(Color(red: 0xCF / 255, green: 0xE3 / 255, blue: 1).opacity(0.85), style: StrokeStyle(lineWidth: 1.3, dash: [4, 3]))
             }
             brakeMarks(size)
             incMarks(size)
@@ -1413,6 +1422,25 @@ struct TrackMapView: View {
         .contentShape(Rectangle())
         .onTapGesture { loc in pickAt(loc, size) }
         .simultaneousGesture(DragGesture(minimumDistance: 6).onChanged { v in pickAt(v.location, size) })
+    }
+
+    /// lap A's line beside the reference's (along the middle), by how far it was from it, drawn bigger (1 pt a metre)
+    private func linePath(_ size: CGSize) -> Path {
+        var p = Path()
+        guard let lat = c.lat, n > 4, m > 1 else { return p }
+        var open = false
+        for i in 0..<n {
+            let gi = max(0, min(m - 1, Int((Double(i) * trace.bin / c.step).rounded())))
+            let v = gi < lat.count ? lat[gi] : .nan
+            if v.isNaN { open = false; continue }
+            let i0 = max(0, i - 2), i1 = min(n - 1, i + 2)
+            let tx = xs[i1] - xs[i0], ty = ys[i1] - ys[i0], tm = max(1e-6, hypot(tx, ty))
+            let o = max(-5, min(5, v))
+            let q = point(i, size)
+            let pt = CGPoint(x: q.x + (-ty / tm) * o, y: q.y - (tx / tm) * o)
+            if open { p.addLine(to: pt) } else { p.move(to: pt); open = true }
+        }
+        return p
     }
 
     private var incidents: [(d: Double, pts: Int, kind: String)] { trace.incidents }
@@ -1567,13 +1595,15 @@ struct PhaseCoach: View {
                     Text(String(format: "+%.2f", k.lost)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.bad)
                 }
                 Text(tipText(k)).font(.subheadline)
+                if let lt = k.lineTip { Text(fill(t(lt), k.lineArgs)).font(.footnote).foregroundColor(Theme.accent) }
             }
         }
     }
 
-    private func tipText(_ k: Corner) -> String {
-        var s = t(k.tip ?? "")
-        for (i, a) in k.args.enumerated() { s = s.replacingOccurrences(of: "{\(i)}", with: a) }
+    private func tipText(_ k: Corner) -> String { fill(t(k.tip ?? ""), k.args) }
+    private func fill(_ s0: String, _ args: [String]) -> String {
+        var s = s0
+        for (i, a) in args.enumerated() { s = s.replacingOccurrences(of: "{\(i)}", with: a) }
         return s
     }
 }

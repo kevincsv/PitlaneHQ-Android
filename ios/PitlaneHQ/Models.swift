@@ -307,6 +307,63 @@ struct Compared {
     var brkB: [Double]? = nil
     var gearA: [Double]? = nil
     var gearB: [Double]? = nil
+    /// the racing line: how far A was to one side of B at each point (m, NaN where unknown), and B's path, same grid
+    var lat: [Double]? = nil
+    var bx: [Double]? = nil
+    var by: [Double]? = nil
+}
+
+/// The racing line, as the PC and the web read it: both laps carry the path their car drove (every 5 m, the game's
+/// heading for both); at the same lap distance A's point along B's normal is how far A was to one side of B; the slow
+/// drift of that dead reckoning goes with a ±400 m moving average. Nil when either has no path or they are not the same track.
+func lineOffsets(_ ax: [Double], _ ay: [Double], _ bx: [Double], _ by: [Double]) -> [Double]? {
+    let n = [ax.count, ay.count, bx.count, by.count].min() ?? 0
+    if n < 60 { return nil }
+    var lat = [Double](repeating: 0, count: n), lon = [Double](repeating: 0, count: n)
+    for i in 0..<n {
+        let i0 = max(0, i - 2), i1 = min(n - 1, i + 2)
+        var tx = bx[i1] - bx[i0], ty = by[i1] - by[i0]
+        let tm = hypot(tx, ty) > 0 ? hypot(tx, ty) : 1
+        tx /= tm; ty /= tm
+        let dx = ax[i] - bx[i], dy = ay[i] - by[i]
+        lat[i] = -ty * dx + tx * dy; lon[i] = tx * dx + ty * dy
+    }
+    func smooth(_ v: [Double]) -> [Double] {
+        var pre = [Double](repeating: 0, count: n + 1)
+        for i in 0..<n { pre[i + 1] = pre[i] + v[i] }
+        return (0..<n).map { i in let lo = max(0, i - 80), hi = min(n - 1, i + 80); return v[i] - (pre[hi + 1] - pre[lo]) / Double(hi - lo + 1) }
+    }
+    var lc = smooth(lat)
+    let oc = smooth(lon)
+    if oc.map({ abs($0) }).sorted()[n / 2] > 6 { return nil }
+    for i in 0..<n where abs(oc[i]) > 20 || abs(lc[i]) > 25 { lc[i] = .nan }
+    return lc
+}
+
+/// How far A was to the inside of B (m, + inside) at B's turn-in, apex and exit; nil on a straight or without a line.
+func cornerLine(_ c: Compared, brake: Int, apex: Int, exit: Int, span: Int) -> (Double, Double, Double)? {
+    guard let lat = c.lat, let bx = c.bx, let by = c.by else { return nil }
+    let n = [lat.count, bx.count, by.count].min() ?? 0
+    if apex <= 0 || apex >= n - 1 { return nil }
+    func tan(_ i: Int) -> (Double, Double) { let i0 = max(0, i - 1), i1 = min(n - 1, i + 1), tx = bx[i1] - bx[i0], ty = by[i1] - by[i0], m = hypot(tx, ty) > 0 ? hypot(tx, ty) : 1; return (tx / m, ty / m) }
+    let t1 = tan(max(0, apex - span)), t2 = tan(min(n - 1, apex + span))
+    let cr = t1.0 * t2.1 - t1.1 * t2.0
+    if abs(cr) < 0.05 { return nil }
+    let sg: Double = cr < 0 ? -1 : 1
+    func at(_ i: Int) -> Double { let v = (max(0, i - 1)...min(n - 1, i + 1)).map { lat[$0] }.filter { !$0.isNaN }; return v.isEmpty ? .nan : v.reduce(0, +) / Double(v.count) * sg }
+    let r = (at(brake), at(apex), at(min(n - 1, exit)))
+    return r.0.isNaN || r.1.isNaN || r.2.isNaN ? nil : r
+}
+
+/// The advice of the line in one corner: an I18n key and its argument (metres), or nil.
+func lineTip(_ l: (Double, Double, Double)?, sameBrake: Bool) -> (String, String)? {
+    guard let l else { return nil }
+    var c: [(Double, String, String)] = []
+    func m(_ v: Double) -> String { String(format: "%.1f", abs(v)) }
+    if l.0 >= 1.5 { c.append((l.0, sameBrake ? "tip_line_same_brake" : "tip_line_turnin", m(l.0))) }
+    if l.1 <= -1.5 { c.append((-l.1, "tip_line_apex", m(l.1))) }
+    if l.2 >= 1.5 { c.append((l.2, "tip_line_exit", m(l.2))) }
+    return c.max { $0.0 < $1.0 }.map { ($0.1, $0.2) }
 }
 
 /// The gear at a distance: the nearest row, not a blend of two gears.
@@ -347,7 +404,9 @@ func compare(_ a: Trace, _ b: Trace?, step step0: Double = 10) -> Compared {
     let d = (0..<n).map { Double($0) * step }
     let tA = d.map { at(a, $0, 5) }
     let tB = b.map { tr in d.map { at(tr, $0, 5) } }
-    return Compared(
+    var line: [Double]? = nil
+    if a.hasShape, let b, b.hasShape, abs(a.bin - b.bin) < 1e-6 { line = lineOffsets(a.x!, a.y!, b.x!, b.y!) }
+    var out = Compared(
         step: step,
         speedA: d.map { at(a, $0, 0) * 3.6 },
         speedB: b.map { tr in d.map { at(tr, $0, 0) * 3.6 } },
@@ -360,6 +419,12 @@ func compare(_ a: Trace, _ b: Trace?, step step0: Double = 10) -> Compared {
         gearA: d.map { gearAt(a, $0) },
         gearB: b.map { tr in d.map { gearAt(tr, $0) } }
     )
+    if let line, let b, let bx = b.x, let by = b.y {
+        out.lat = d.map { let i = Int(($0 / a.bin).rounded()); return i < line.count ? line[i] : .nan }
+        out.bx = d.map { bx[max(0, min(bx.count - 1, Int(($0 / b.bin).rounded())))] }
+        out.by = d.map { by[max(0, min(by.count - 1, Int(($0 / b.bin).rounded())))] }
+    }
+    return out
 }
 
 /// One corner in four phases, as driver coaches read data: braking (brake point, how hard), entry
@@ -376,6 +441,8 @@ struct Corner: Hashable {
     let coastB: Double
     let tip: String?
     let args: [String]
+    var lineTip: String? = nil  // what the line says, besides the tip
+    var lineArgs: [String] = []
 }
 
 let phaseKeys = ["brake", "entry", "apex", "exit"]
@@ -459,7 +526,18 @@ func corners(_ c: Compared) -> [Corner] {
                 else { tip = "tip_full_throttle" }
             }
         }
-        out.append(Corner(n: idx + 1, atM: Int(Double(zi) * c.step), lost: lost, phases: ph, phase: phase, coastA: coastA, coastB: coastB, tip: tip, args: args))
+        // the line: where the car was across the track; braking at the reference's point but on the wrong part of the
+        // track is said first, a generic tip gives way to it, otherwise it goes under the tip
+        var lineKey: String? = nil, lineArgs: [String] = []
+        if lost > 0.03 {
+            let dd: Int? = ja.map { Int(Double($0 - zi) * c.step) }
+            let same = dd.map { abs($0) <= 6 } ?? false
+            if let lt = lineTip(cornerLine(c, brake: zi, apex: zmin, exit: zmin + bins(80), span: bins(40)), sameBrake: same) {
+                if ["tip_brake_generic", "tip_entry_speed", "tip_apex_line", "tip_full_throttle"].contains(tip ?? "") || (phase == "brake" && same) { tip = lt.0; args = [lt.1] }
+                else { lineKey = lt.0; lineArgs = [lt.1] }
+            }
+        }
+        out.append(Corner(n: idx + 1, atM: Int(Double(zi) * c.step), lost: lost, phases: ph, phase: phase, coastA: coastA, coastB: coastB, tip: tip, args: args, lineTip: lineKey, lineArgs: lineArgs))
     }
     return out
 }

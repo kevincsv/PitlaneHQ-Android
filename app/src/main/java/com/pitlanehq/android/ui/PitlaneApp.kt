@@ -905,6 +905,7 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
                                     Text("+%.2f".format(k.lost), color = Bad, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                                 }
                                 Text(t(k.tip!!, *k.args.toTypedArray()), fontSize = 13.sp)
+                                k.lineTip?.let { lt -> Text(t(lt, *k.lineArgs.toTypedArray()), fontSize = 12.sp, color = Accent) }
                             }
                         }
                     }
@@ -1083,6 +1084,8 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, onSel: (Int) -> Unit) {
     var showInc by rememberSaveable { mutableStateOf(true) }
     var showBrk by rememberSaveable { mutableStateOf(true) }
     var showCoach by rememberSaveable { mutableStateOf(true) }
+    var showLine by rememberSaveable { mutableStateOf(true) }
+    val dpx = with(LocalDensity.current) { 1.dp.toPx() }
     val brkA = remember(c) { brakePoints(c.brkA, c.step) }
     val brkB = remember(c) { brakePoints(c.brkB, c.step) }
     val rings = remember(c) { if (c.delta != null) corners(c).filter { it.lost > .05 } else emptyList() }
@@ -1114,11 +1117,15 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, onSel: (Int) -> Unit) {
                 .pointerInput(n) { detectTapGestures(onPress = { pickAt(it) }) }
                 .pointerInput(n) { detectDragGestures(onDragStart = { pickAt(it) }, onDrag = { change, _ -> pickAt(change.position); change.consume() }) }
         ) {
-            // the track
+            // the track as a road with some depth: its shadow, the rim and the darker asphalt inside (like the web)
             val track = Path()
             for (i in 0 until n) { val q = pt(i); if (i == 0) track.moveTo(q.x, q.y) else track.lineTo(q.x, q.y) }
             track.close()
-            drawPath(track, Line, style = Stroke(width = 7f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            drawContext.canvas.save(); drawContext.canvas.translate(1.5f * dpx, 2.5f * dpx)
+            drawPath(track, Color.Black.copy(alpha = .38f), style = Stroke(width = 11f * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            drawContext.canvas.restore()
+            drawPath(track, Line.copy(red = minOf(1f, Line.red + .12f), green = minOf(1f, Line.green + .12f), blue = minOf(1f, Line.blue + .12f)), style = Stroke(width = 10f * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            drawPath(track, Color(0xFF151A21), style = Stroke(width = 7.5f * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round))
             // where lap A gains or loses against the reference: 48 stretches, stronger where more time changes hands
             val delta = c.delta
             if (delta != null && m > 2) {
@@ -1132,8 +1139,25 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, onSel: (Int) -> Unit) {
                     val p = Path()
                     for (i in i0..i1) { val q = pt(i); if (i == i0) p.moveTo(q.x, q.y) else p.lineTo(q.x, q.y) }
                     val col = if (v > 0) Bad else Good
-                    drawPath(p, col.copy(alpha = (0.3 + 0.7 * minOf(1.0, kotlin.math.abs(v) / mx)).toFloat()), style = Stroke(width = 7f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                    drawPath(p, col.copy(alpha = (0.3 + 0.7 * minOf(1.0, kotlin.math.abs(v) / mx)).toFloat()), style = Stroke(width = 6.5f * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round))
                 }
+            }
+            // the two lines: the reference along the middle, lap A beside it by how far it was from it (drawn bigger)
+            val lat = c.lat
+            if (showLine && lat != null) {
+                val ex = 1.0f * dpx
+                var run: Path? = null
+                for (i in 0 until n) {
+                    val v = lat.getOrElse(idxAt(i)) { Double.NaN }
+                    if (v.isNaN()) { run?.let { drawPath(it, Accent, style = Stroke(width = 2.2f * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round)) }; run = null; continue }
+                    val i0 = maxOf(0, i - 2); val i1 = minOf(n - 1, i + 2)
+                    val tx = xs[i1] - xs[i0]; val ty = ys[i1] - ys[i0]; val tm = maxOf(1e-6, kotlin.math.hypot(tx, ty))
+                    val o = (v.coerceIn(-5.0, 5.0) * ex).toFloat()
+                    val q = pt(i); val px = q.x + (-ty / tm).toFloat() * o; val py = q.y - (tx / tm).toFloat() * o
+                    if (run == null) { run = Path(); run.moveTo(px, py) } else run.lineTo(px, py)
+                }
+                run?.let { drawPath(it, Accent, style = Stroke(width = 2.2f * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round)) }
+                drawPath(track, Color(0xFFCFE3FF).copy(alpha = .85f), style = Stroke(width = 1.3f * dpx, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(4f * dpx, 3f * dpx))))
             }
             // the sectors like the web: the start/finish line, a cut at each sector change, S1, S2, S3 in the middle of each
             val cnt = 3
@@ -1175,6 +1199,7 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, onSel: (Int) -> Unit) {
             Chip(t("map_braking"), showBrk) { showBrk = !showBrk }
             if (incs.isNotEmpty()) Chip("✕ " + t("map_incidents"), showInc) { showInc = !showInc }
             if (rings.isNotEmpty()) Chip("Coach", showCoach) { showCoach = !showCoach }
+            if (c.lat != null) Chip(t("map_line"), showLine) { showLine = !showLine }
         }
         if (incs.isNotEmpty()) {
             val pts = incs.sumOf { it.pts }
