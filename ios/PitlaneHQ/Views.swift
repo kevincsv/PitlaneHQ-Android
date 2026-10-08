@@ -1176,6 +1176,7 @@ struct LapView: View {
     @State private var refSectors: [Double] = []
     @State private var pick: Double?
     @State private var car: [String: Any]?
+    @State private var turns: [Double] = [] // the official turn numbers of this track, when an admin placed them
 
     private func load() async {
         loading = true
@@ -1192,6 +1193,7 @@ struct LapView: View {
                 ?? combos.first { session.track.lowercased().hasPrefix($0.track.lowercased()) && $0.car.caseInsensitiveCompare(session.car) == .orderedSame }
             // the car card needs the car alone: what it does on other tracks, for when nobody known drove it here yet
             if let cc = c ?? combos.first(where: { $0.car.caseInsensitiveCompare(session.car) == .orderedSame }) { car = try? await account.carCard(carId: cc.carId) }
+            if let tc = c { turns = await account.turns(trackId: tc.trackId) } else { turns = [] }
             if !community {
                 if let best = all.filter({ $0.valid && $0.time > 0 && $0.id != lap.id }).min(by: { $0.time < $1.time }) {
                     ref = try? await account.lapTrace(best.id)
@@ -1243,7 +1245,7 @@ struct LapView: View {
                     if ref == nil { Text(t("no_reference")).font(.caption).foregroundColor(Theme.muted) }
                     let refName = refLabel.isEmpty ? t("ref") : refLabel
                     let card: (Int) -> AnyView = { i in AnyView(PointCard(c: c, i: i, refName: refName, sec: lap.sectors, refSec: refSectors)) }
-                    if trace.hasShape { TrackMapView(c: c, trace: trace, pick: $pick) }
+                    if trace.hasShape { TrackMapView(c: c, trace: trace, pick: $pick, turns: turns) }
                     Chart(title: t("speed") + " (km/h)", series: speedSeries(c, refName), step: c.step, fmt: { String(format: "%.0f", $0) },
                           pick: $pick, card: card)
                     if let delta = c.delta {
@@ -1254,7 +1256,7 @@ struct LapView: View {
                           step: c.step, fmt: { String(format: "%.0f%%", $0 * 100) }, fixedMax: 1,
                           pick: $pick)
                     if ref != nil {
-                        PhaseCoach(c: c)
+                        PhaseCoach(c: c, turns: turns)
                     }
                 } else if error == nil {
                     EmptyNote(text: t("no_trace"))
@@ -1304,7 +1306,7 @@ struct TrackMapView: View {
     private let rings: [Corner]
     private let minX: Double, maxX: Double, minY: Double, maxY: Double
 
-    init(c: Compared, trace: Trace, pick: Binding<Double?>) {
+    init(c: Compared, trace: Trace, pick: Binding<Double?>, turns: [Double] = []) {
         self.c = c
         self.trace = trace
         self._pick = pick
@@ -1312,7 +1314,7 @@ struct TrackMapView: View {
         ys = trace.y ?? []
         brkA = brakePoints(c.brkA, c.step)
         brkB = brakePoints(c.brkB, c.step)
-        rings = c.delta != nil ? corners(c).filter { $0.lost > 0.05 } : []
+        rings = c.delta != nil ? corners(c, turns: turns).filter { $0.lost > 0.05 } : []
         minX = xs.min() ?? 0; maxX = xs.max() ?? 1; minY = ys.min() ?? 0; maxY = ys.max() ?? 1
     }
 
@@ -1564,9 +1566,10 @@ struct TrackMapView: View {
 /// The coach in four phases (braking, entry, apex, exit), like the web's and Android's.
 struct PhaseCoach: View {
     let c: Compared
+    var turns: [Double] = []
 
     var body: some View {
-        let cs = corners(c)
+        let cs = corners(c, turns: turns)
         VStack(alignment: .leading, spacing: 10) {
             if cs.isEmpty { fallback } else { phases(cs) }
         }

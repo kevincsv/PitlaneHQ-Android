@@ -583,6 +583,12 @@ final class Account: ObservableObject {
         guard let j = try await cachedGet("/community/car?game=iracing&carId=\(carId)").data as? [String: Any], ((j["n"] as? NSNumber)?.intValue ?? 0) > 0 else { return nil }
         return j
     }
+    /// A track's official turns (T1 … Tn as fractions of the lap from the line), placed by an admin on its map.
+    func turns(trackId: Int64) async -> [Double] {
+        if demo || trackId <= 0 { return [] }
+        guard let j = try? await cachedGet("/community/turns?game=iracing&trackId=\(trackId)").data as? [String: Any], let a = j["turns"] as? [Any] else { return [] }
+        return a.compactMap { ($0 as? NSNumber)?.doubleValue }.filter { $0 >= 0 && $0 < 1 }
+    }
     func leaderboard(trackId: Int64, carId: Int64) async throws -> Got<[CommunityLap]> {
         if demo { return Got(data: Demo.board(trackId: trackId, carId: carId)) }
         let g = try await cachedGet("/community/laps?game=iracing&trackId=\(trackId)&carId=\(carId)")

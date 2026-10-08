@@ -462,6 +462,12 @@ class AccountRepository(context: Context) {
         if (demo) return null
         return runCatching { JSONObject(cachedGet("/community/car?game=iracing&carId=$carId").data) }.getOrNull()?.takeIf { it.optInt("n") > 0 }
     }
+    /** A track's official turns (T1 … Tn as fractions of the lap from the line), placed by an admin on its map. */
+    fun turns(trackId: Long): List<Double> {
+        if (demo || trackId <= 0) return emptyList()
+        val a = JSONObject(cachedGet("/community/turns?game=iracing&trackId=$trackId").data).optJSONArray("turns") ?: return emptyList()
+        return (0 until a.length()).map { a.optDouble(it) }.filter { it >= 0 && it < 1 }
+    }
     fun combos(): Got<List<Combo>> {
         if (demo) return Got(Demo.combos())
         val g = cachedGet("/community/combos?game=iracing")

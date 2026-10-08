@@ -124,7 +124,17 @@ fun lineTip(l: Triple<Double, Double, Double>?, sameBrake: Boolean): Pair<String
 
 val PHASE_KEYS = listOf("brake", "entry", "apex", "exit")
 
-fun corners(c: Compared): List<Corner> {
+/** The official number of the turn nearest to a point of the lap (turns: fractions of the lap, T1 … Tn in order). */
+fun turnNo(turns: List<Double>, at: Double, lapLen: Double, fallback: Int): Int {
+    if (turns.isEmpty() || lapLen <= 0) return fallback
+    val f = ((at / lapLen) % 1.0 + 1.0) % 1.0
+    var bi = 0
+    var bd = 2.0
+    turns.forEachIndexed { i, x -> val d = kotlin.math.abs(x - f).let { minOf(it, 1 - it) }; if (d < bd) { bd = d; bi = i } }
+    return bi + 1
+}
+
+fun corners(c: Compared, turns: List<Double> = emptyList()): List<Corner> {
     val tB = c.tB ?: return emptyList()
     val sB = c.speedB ?: return emptyList()
     val bB = c.brkB ?: return emptyList()
@@ -213,7 +223,7 @@ fun corners(c: Compared): List<Corner> {
                 else { lineKey = lt.first; lineArgs = listOf(lt.second) }
             }
         }
-        Corner(idx + 1, (zi * c.step).toInt(), lost, ph, phase, coastA, coastB, tip, args, lineKey, lineArgs)
+        Corner(turnNo(turns, zmin * c.step, n * c.step, idx + 1), (zi * c.step).toInt(), lost, ph, phase, coastA, coastB, tip, args, lineKey, lineArgs)
     }
 }
 

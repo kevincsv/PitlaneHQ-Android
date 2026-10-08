@@ -856,7 +856,7 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
                 if (an.ref == null) item { Text(t("no_reference"), color = Muted, fontSize = 12.sp) }
                 val refName = an.refLabel.ifBlank { t("ref") }
                 val card: @Composable (Int) -> Unit = { i -> PointCard(c, i, refName, an.lap.sectors, an.refSectors) }
-                if (an.trace.hasShape) item { TrackMap(c, an.trace, pick) { pick = it } }
+                if (an.trace.hasShape) item { TrackMap(c, an.trace, pick, an.turns) { pick = it } }
                 item {
                     Chart(t("speed") + " (km/h)", listOfNotNull(Series(t("you"), c.speedA, Accent), c.speedB?.let { Series(refName, it, Blue) }), c.step, { "%.0f".format(it) },
                         sel = pick, onSel = { pick = it }, card = card)
@@ -867,7 +867,7 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
                     sel = pick, onSel = { pick = it }) }
                 if (an.ref != null) {
                     // the coach in four phases (braking, entry, apex, exit), like the web's
-                    val cs = corners(c)
+                    val cs = corners(c, an.turns)
                     if (cs.isEmpty()) {
                         item { Section(t("where_time")) }
                         val ls = losses(c)
@@ -1081,7 +1081,7 @@ private fun incName(kind: String) = t(when (kind) { "contact" -> "inc_contact"; 
  * or drag on it to read that point: the charts follow it.
  */
 @Composable
-private fun TrackMap(c: Compared, tr: Trace, sel: Int?, onSel: (Int) -> Unit) {
+private fun TrackMap(c: Compared, tr: Trace, sel: Int?, turns: List<Double> = emptyList(), onSel: (Int) -> Unit) {
     val xs = tr.x ?: return
     val ys = tr.y ?: return
     val incs = tr.incidents
@@ -1092,7 +1092,7 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, onSel: (Int) -> Unit) {
     val dpx = with(LocalDensity.current) { 1.dp.toPx() }
     val brkA = remember(c) { brakePoints(c.brkA, c.step) }
     val brkB = remember(c) { brakePoints(c.brkB, c.step) }
-    val rings = remember(c) { if (c.delta != null) corners(c).filter { it.lost > .05 } else emptyList() }
+    val rings = remember(c, turns) { if (c.delta != null) corners(c, turns).filter { it.lost > .05 } else emptyList() }
     val labelPx = with(LocalDensity.current) { 9.sp.toPx() }
     val incPaint = remember(labelPx) { android.graphics.Paint().apply { color = android.graphics.Color.rgb(0xFF, 0x63, 0x63); textSize = labelPx; isFakeBoldText = true; isAntiAlias = true } }
     val secPaint = remember(labelPx) { android.graphics.Paint().apply { color = android.graphics.Color.rgb(0xFF, 0xB0, 0x2E); textSize = labelPx * 1.1f; isFakeBoldText = true; isAntiAlias = true } }

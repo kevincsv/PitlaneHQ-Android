@@ -447,7 +447,16 @@ struct Corner: Hashable {
 
 let phaseKeys = ["brake", "entry", "apex", "exit"]
 
-func corners(_ c: Compared) -> [Corner] {
+/// The official number of the turn nearest to a point of the lap (turns: fractions of the lap, T1 … Tn in order).
+func turnNo(_ turns: [Double], at: Double, lapLen: Double, fallback: Int) -> Int {
+    if turns.isEmpty || lapLen <= 0 { return fallback }
+    let f = ((at / lapLen).truncatingRemainder(dividingBy: 1) + 1).truncatingRemainder(dividingBy: 1)
+    var bi = 0, bd = 2.0
+    for (i, x) in turns.enumerated() { let d = min(abs(x - f), 1 - abs(x - f)); if d < bd { bd = d; bi = i } }
+    return bi + 1
+}
+
+func corners(_ c: Compared, turns: [Double] = []) -> [Corner] {
     guard let tB = c.tB, let sB = c.speedB, let bB = c.brkB, let hB = c.thrB else { return [] }
     let n = [c.tA.count, tB.count, sB.count, bB.count, hB.count, c.brkA.count, c.thrA.count, c.speedA.count].min() ?? 0
     if n < 10 { return [] }
@@ -537,7 +546,7 @@ func corners(_ c: Compared) -> [Corner] {
                 else { lineKey = lt.0; lineArgs = [lt.1] }
             }
         }
-        out.append(Corner(n: idx + 1, atM: Int(Double(zi) * c.step), lost: lost, phases: ph, phase: phase, coastA: coastA, coastB: coastB, tip: tip, args: args, lineTip: lineKey, lineArgs: lineArgs))
+        out.append(Corner(n: turnNo(turns, at: Double(zmin) * c.step, lapLen: Double(n) * c.step, fallback: idx + 1), atM: Int(Double(zi) * c.step), lost: lost, phases: ph, phase: phase, coastA: coastA, coastB: coastB, tip: tip, args: args, lineTip: lineKey, lineArgs: lineArgs))
     }
     return out
 }

@@ -18,7 +18,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** A lap next to the lap it is compared with. */
-data class LapAnalysis(val lap: CloudLap, val trace: Trace?, val ref: Trace?, val refLabel: String, val refTime: Double?, val refSectors: List<Double>, val car: JSONObject? = null)
+data class LapAnalysis(val lap: CloudLap, val trace: Trace?, val ref: Trace?, val refLabel: String, val refTime: Double?, val refSectors: List<Double>, val car: JSONObject? = null,
+    val turns: List<Double> = emptyList())
 
 enum class RefKind { MY_BEST, COMMUNITY }
 
@@ -303,7 +304,9 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
                     refSec = top.sectors
                 }
             }
-            Got(LapAnalysis(lap, tr, ref, label, refTime, refSec, card))
+            // the official turn numbers of this track, when an admin has placed them on its map (else the corners are counted)
+            val turns = c?.let { runCatching { repo.turns(it.trackId) }.getOrNull() } ?: emptyList()
+            Got(LapAnalysis(lap, tr, ref, label, refTime, refSec, card, turns))
         }
     }
 
