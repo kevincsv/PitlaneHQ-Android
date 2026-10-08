@@ -178,8 +178,17 @@ final class Live: ObservableObject {
 
     /// DRINKS mode on the PC: sealed like everything else, the PC checks the account is an admin.
     func setDrinks(on: Bool, guest: String, guestAuto: Bool) {
+        sendDrinks(["on": on, "guest": guest, "guestAuto": guestAuto])
+    }
+
+    /// A DRINKS driver gets another name (their shared laps take it too); the PC does it on the server.
+    func renameDrinksGuest(from: String, to: String) { sendDrinks(["rename": ["from": from, "to": to]]) }
+
+    /// A DRINKS driver off the list (what they shared stays).
+    func forgetDrinksGuest(_ name: String) { sendDrinks(["forget": name]) }
+
+    private func sendDrinks(_ payload: [String: Any]) {
         guard let ws = task, let key else { return }
-        let payload: [String: Any] = ["on": on, "guest": guest, "guestAuto": guestAuto]
         guard let raw = try? JSONSerialization.data(withJSONObject: ["drinks", payload] as [Any]),
               let z = try? PLCrypto.gzip(raw), let sealed = try? PLCrypto.seal(key: key, plain: z, aad: PLCrypto.liveAAD) else { return }
         ws.send(.string("e:" + sealed)) { _ in }

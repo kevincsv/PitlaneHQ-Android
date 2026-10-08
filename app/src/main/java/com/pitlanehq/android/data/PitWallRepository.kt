@@ -155,10 +155,19 @@ class PitWallRepository(private val account: AccountRepository) {
     }
 
     /** DRINKS mode on the PC: sealed like everything else, the PC checks the account is an admin. */
-    fun setDrinks(on: Boolean, guest: String, guestAuto: Boolean): Boolean {
+    fun setDrinks(on: Boolean, guest: String, guestAuto: Boolean): Boolean =
+        sendDrinks(JSONObject().put("on", on).put("guest", guest).put("guestAuto", guestAuto))
+
+    /** A DRINKS driver gets another name (their shared laps take it too); the PC does it on the server. */
+    fun renameDrinksGuest(from: String, to: String): Boolean = sendDrinks(JSONObject().put("rename", JSONObject().put("from", from).put("to", to)))
+
+    /** A DRINKS driver off the list (what they shared stays). */
+    fun forgetDrinksGuest(name: String): Boolean = sendDrinks(JSONObject().put("forget", name))
+
+    private fun sendDrinks(body: JSONObject): Boolean {
         val ws = socket ?: return false
         val key = runCatching { account.dataKey() }.getOrNull() ?: return false
-        val msg = JSONArray().put("drinks").put(JSONObject().put("on", on).put("guest", guest).put("guestAuto", guestAuto))
+        val msg = JSONArray().put("drinks").put(body)
         return ws.send("e:" + Crypto.seal(key, Crypto.gzip(msg.toString().toByteArray()), Crypto.LIVE_AAD))
     }
 

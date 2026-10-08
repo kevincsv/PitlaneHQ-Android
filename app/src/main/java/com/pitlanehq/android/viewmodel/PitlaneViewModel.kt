@@ -308,6 +308,15 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         if (name.isBlank() || known.any { it.equals(name, true) }) { setDrinks(true, name, false); return }
         viewModelScope.launch(Dispatchers.IO) { if (repo.nameFree(name)) setDrinks(true, name, false) else drinksTaken.value = name }
     }
+    // a DRINKS driver renamed: a new name is checked first like any other
+    fun renameDrinksGuest(from: String, to: String, known: List<String>) {
+        drinksTaken.value = null
+        val n = to.trim().take(32)
+        if (n.isBlank() || n == from) return
+        if (!n.equals(from, true) && known.any { it.equals(n, true) }) { drinksTaken.value = n; return }
+        viewModelScope.launch(Dispatchers.IO) { if (repo.nameFree(n)) live.renameDrinksGuest(from, n) else drinksTaken.value = n }
+    }
+    fun forgetDrinksGuest(name: String) = live.forgetDrinksGuest(name)
     // admin profile
     data class AdminState(val kind: String, val items: List<org.json.JSONObject>? = null, val error: String? = null)
     val admin = MutableStateFlow(AdminState("uploads"))

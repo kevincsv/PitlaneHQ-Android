@@ -2485,6 +2485,9 @@ struct DrinksView: View {
     @StateObject private var live = Live()
     @State private var name = ""
     @State private var taken: String?
+    @State private var editing: String?
+    @State private var newName = ""
+    @State private var forgetting: String?
 
     var body: some View {
         Screen(title: t("drinks"), sub: t("drinks_sub")) {
@@ -2505,6 +2508,27 @@ struct DrinksView: View {
         }
         .onAppear { live.start(token: account.token, key: account.dataKey, demo: false) }
         .onDisappear { live.stop() }
+        // change a name (the laps already shared change too) or take it off the list (they stay)
+        .alert(t("drinks_rename"), isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
+            TextField(t("drinks_name"), text: $newName)
+            Button(t("save")) { rename() }
+            Button(t("cancel"), role: .cancel) { editing = nil }
+        } message: { Text(t("drinks_rename_note", editing ?? "")) }
+        .alert(t("drinks_forget"), isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } })) {
+            Button(t("drinks_forget"), role: .destructive) { if let g = forgetting { live.forgetDrinksGuest(g) }; forgetting = nil }
+            Button(t("cancel"), role: .cancel) { forgetting = nil }
+        } message: { Text(t("drinks_forget_q", forgetting ?? "")) }
+    }
+
+    private func rename() {
+        guard let from = editing else { return }
+        editing = nil
+        let n = String(newName.trimmingCharacters(in: .whitespaces).prefix(32))
+        guard !n.isEmpty, n != from else { return }
+        taken = nil
+        let known = live.drinks?.guests ?? []
+        if n.caseInsensitiveCompare(from) != .orderedSame && known.contains(where: { $0.caseInsensitiveCompare(n) == .orderedSame }) { taken = n; return }
+        Task { if await account.nameFree(n) { live.renameDrinksGuest(from: from, to: n) } else { taken = n } }
     }
 
     @ViewBuilder private func controls(_ d: Drinks) -> some View {
@@ -2546,6 +2570,16 @@ struct DrinksView: View {
                                 Text(g).font(.subheadline).padding(.horizontal, 12).padding(.vertical, 6)
                                     .background(sel ? Theme.accent : Theme.surface2).foregroundColor(sel ? Theme.ink : Theme.fg).clipShape(Capsule())
                             }
+                        }
+                    }
+                }
+                Panel {
+                    ForEach(d.guests, id: \.self) { g in
+                        HStack {
+                            Text(g).font(.subheadline.bold())
+                            Spacer()
+                            Button { editing = g; newName = g } label: { Image(systemName: "pencil") }.accessibilityLabel(t("drinks_rename")).foregroundColor(Theme.muted)
+                            Button { forgetting = g } label: { Image(systemName: "xmark") }.accessibilityLabel(t("drinks_forget")).foregroundColor(Theme.muted).padding(.leading, 12)
                         }
                     }
                 }

@@ -1762,6 +1762,32 @@ private fun DrinksScreen(vm: PitlaneViewModel, nav: NavHostController) {
         onDispose { vm.stopLive() }
     }
     val d = s.drinks
+    var editing by rememberSaveable { mutableStateOf<String?>(null) }
+    var newName by rememberSaveable { mutableStateOf("") }
+    var forgetting by rememberSaveable { mutableStateOf<String?>(null) }
+    editing?.let { from ->
+        AlertDialog(
+            onDismissRequest = { editing = null },
+            title = { Text(t("drinks_rename"), fontWeight = FontWeight.Black) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(t("drinks_rename_note", from), color = Muted, fontSize = 12.sp)
+                    OutlinedTextField(newName, { newName = it.take(32) }, label = { Text(t("drinks_name")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = { TextButton({ vm.renameDrinksGuest(from, newName, d?.guests ?: emptyList()); editing = null }, enabled = newName.isNotBlank() && newName.trim() != from) { Text(t("save"), color = Accent) } },
+            dismissButton = { TextButton({ editing = null }) { Text(t("cancel"), color = Muted) } }
+        )
+    }
+    forgetting?.let { g ->
+        AlertDialog(
+            onDismissRequest = { forgetting = null },
+            title = { Text(t("drinks_forget"), fontWeight = FontWeight.Black) },
+            text = { Text(t("drinks_forget_q", g), color = Muted, fontSize = 13.sp) },
+            confirmButton = { TextButton({ vm.forgetDrinksGuest(g); forgetting = null }) { Text(t("drinks_forget"), color = Bad) } },
+            dismissButton = { TextButton({ forgetting = null }) { Text(t("cancel"), color = Muted) } }
+        )
+    }
     Screen(t("drinks"), t("drinks_sub"), back = { nav.popBackStack() }) {
         item { Status(if (s.pcOnline) t("pc_online") else if (s.link == LinkState.CONNECTING) t("connecting") else t("pc_offline"), if (s.pcOnline) Good else Muted) }
         s.message?.let { item { Text(t(it), color = Bad, fontSize = 12.sp) } }
@@ -1804,6 +1830,18 @@ private fun DrinksScreen(vm: PitlaneViewModel, nav: NavHostController) {
                                 d.guests.forEach { g ->
                                     FilterChip(g.equals(d.guest, true), { vm.setDrinks(true, g, false) }, label = { Text(g) },
                                         colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Accent, selectedLabelColor = Ink))
+                                }
+                            }
+                        }
+                        // change a name (the laps already shared change too) or take it off the list (they stay)
+                        item {
+                            Panel {
+                                d.guests.forEach { g ->
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                        Text(g, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                                        IconButton({ editing = g; newName = g }) { Icon(Icons.Default.Edit, t("drinks_rename"), tint = Muted) }
+                                        IconButton({ forgetting = g }) { Icon(Icons.Default.Close, t("drinks_forget"), tint = Muted) }
+                                    }
                                 }
                             }
                         }
