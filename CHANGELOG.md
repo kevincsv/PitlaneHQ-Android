@@ -4,6 +4,11 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
+## 0.9.1 beta
+
+- Licence summary: each category's iRating in its own colour, with one short line on when it updates.
+- Fixes and improvements.
+
 ## 0.9.0 beta
 
 - The coach reads your racing line: where you were on the track against the lap you compare with (inside or outside
