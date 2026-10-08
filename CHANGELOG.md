@@ -4,6 +4,16 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
+## 0.8.15 beta
+
+**New**
+- Analysis: the car and the track are two filters.
+- Admin: Activity (the latest sessions) and Blocked (unblock one by one) tabs; for each account,
+  confirm its email, turn off its two-step sign-in, sign it out everywhere, rename it, unblock it.
+
+**Fixed**
+- Admin: "unblock the sign-ins" works again with the server of 0.8.15.
+
 ## 0.8.14 beta
 
 **New**

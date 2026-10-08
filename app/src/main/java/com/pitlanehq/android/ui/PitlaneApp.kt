@@ -588,7 +588,8 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
     val b by vm.bests.collectAsState()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var fCat by rememberSaveable { mutableStateOf("") }
-    var fCombo by rememberSaveable { mutableStateOf("") }
+    var fCar by rememberSaveable { mutableStateOf("") }
+    var fTrack by rememberSaveable { mutableStateOf("") }
     var fKind by rememberSaveable { mutableStateOf("") }
     var fDay by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(tab) { if (tab == 0 && s.data == null && !s.loading) vm.loadSessions(); if (tab == 1 && b.data == null && !b.loading) vm.loadBests() }
@@ -600,19 +601,22 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
             val all = s.data ?: emptyList()
             // many cars, tracks and sessions make a long list: choose the discipline, the kind of session, the car and
             // track, a day you drove (the calendar), like the web's "Choose a session"
-            val combo = { x: CloudSession -> x.car + " · " + x.track + (if (x.trackConfig.isNotBlank()) " · " + x.trackConfig else "") }
+            // the car and the track are two filters: with many of each, one list of every pair gets long
+            val trackOf = { x: CloudSession -> x.track + (if (x.trackConfig.isNotBlank()) " · " + x.trackConfig else "") }
             val zone = java.time.ZoneId.systemDefault()
             val dayOf = { x: CloudSession -> java.time.Instant.ofEpochMilli(x.started).atZone(zone).toLocalDate().let { "${it.year}-${it.monthValue}-${it.dayOfMonth}" } }
             val match = { x: CloudSession, skip: String ->
-                (skip == "cat" || fCat.isEmpty() || x.cat == fCat) && (skip == "combo" || fCombo.isEmpty() || combo(x) == fCombo) &&
+                (skip == "cat" || fCat.isEmpty() || x.cat == fCat) && (skip == "car" || fCar.isEmpty() || x.car == fCar) && (skip == "track" || fTrack.isEmpty() || trackOf(x) == fTrack) &&
                     (skip == "kind" || fKind.isEmpty() || kindOf(x.kind) == fKind) && (skip == "day" || fDay.isEmpty() || dayOf(x) == fDay)
             }
             val forCat = all.filter { match(it, "cat") }
             val forKind = all.filter { match(it, "kind") }
-            val forCombo = all.filter { match(it, "combo") }
+            val forCar = all.filter { match(it, "car") }
+            val forTrack = all.filter { match(it, "track") }
             val forDay = all.filter { match(it, "day") }
             val cats = DISCS.filter { k -> all.any { it.cat == k } }
-            val combos = forCombo.map(combo).distinct().sorted()
+            val cars = forCar.map { it.car }.distinct().sorted()
+            val tracks = forTrack.map(trackOf).distinct().sorted()
             if (cats.isNotEmpty() && all.size > 1) item {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Chip(t("lic_all_full") + " (" + forCat.size + ")", fCat.isEmpty()) { fCat = "" }
@@ -625,10 +629,16 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
                     listOf("race", "qual", "prac", "test").forEach { k -> val n = forKind.count { kindOf(it.kind) == k }; if (n > 0 || fKind == k) Chip(t("filt_$k") + " ($n)", fKind == k) { fKind = if (fKind == k) "" else k } }
                 }
             }
-            if (combos.size > 1 || fCombo.isNotEmpty()) item {
+            if (cars.size > 1 || fCar.isNotEmpty()) item {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Chip(t("every_car_track"), fCombo.isEmpty()) { fCombo = "" }
-                    combos.forEach { k -> Chip(k, fCombo == k) { fCombo = if (fCombo == k) "" else k } }
+                    Chip(t("every_car") + " (" + forCar.size + ")", fCar.isEmpty()) { fCar = "" }
+                    cars.forEach { k -> Chip(k + " (" + forCar.count { it.car == k } + ")", fCar == k) { fCar = if (fCar == k) "" else k } }
+                }
+            }
+            if (tracks.size > 1 || fTrack.isNotEmpty()) item {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Chip(t("every_track") + " (" + forTrack.size + ")", fTrack.isEmpty()) { fTrack = "" }
+                    tracks.forEach { k -> Chip(k + " (" + forTrack.count { trackOf(it) == k } + ")", fTrack == k) { fTrack = if (fTrack == k) "" else k } }
                 }
             }
             if (all.size > 1) item {
@@ -641,8 +651,8 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
                 }
             }
             val list = s.data?.let { all.filter { x -> match(x, "") } }
-            if (all.size > 1 && (fCat + fCombo + fKind + fDay).isNotEmpty()) item {
-                TextButton({ fCat = ""; fCombo = ""; fKind = ""; fDay = "" }) { Text(t("clear_filters") + " · " + (list?.size ?: 0) + "/" + all.size, color = Accent) }
+            if (all.size > 1 && (fCat + fCar + fTrack + fKind + fDay).isNotEmpty()) item {
+                TextButton({ fCat = ""; fCar = ""; fTrack = ""; fKind = ""; fDay = "" }) { Text(t("clear_filters") + " · " + (list?.size ?: 0) + "/" + all.size, color = Accent) }
             }
             if (list != null && list.isEmpty()) item { Empty(t("no_sessions")) }
             items(list ?: emptyList(), key = { it.id }) { x ->
@@ -1601,8 +1611,8 @@ private fun AdminScreen(vm: PitlaneViewModel, nav: NavHostController) {
     LaunchedEffect(Unit) { vm.loadAdmin("status") }
     Screen(t("admin_profile"), t("admin_profile_sub"), back = { nav.popBackStack() }) {
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("status" to t("admin_server"), "users" to t("admin_accounts"), "uploads" to t("admin_shared")).forEach { (k, l) ->
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("status" to t("admin_server"), "users" to t("admin_accounts"), "sessions" to t("admin_activity_t"), "uploads" to t("admin_shared"), "blocked" to t("admin_blocked")).forEach { (k, l) ->
                     FilterChip(st.kind == k, { vm.loadAdmin(k) }, label = { Text(l) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Accent, selectedLabelColor = Ink))
                 }
             }
@@ -1641,6 +1651,23 @@ private fun AdminScreen(vm: PitlaneViewModel, nav: NavHostController) {
                 }
                 }
             }
+            st.kind == "sessions" -> items(list.size) { i ->
+                val x = list[i]
+                Panel {
+                    Text(x.optString("track") + (x.optString("trackConfig").takeIf { it.isNotBlank() && it != "null" }?.let { " · $it" } ?: ""), fontWeight = FontWeight.Bold)
+                    Text(x.optString("car") + " · " + kindText(x.optString("kind")) + " · " + t("laps_n", x.optInt("laps")), color = Muted, fontSize = 12.sp)
+                    Text(dayTime(x.optLong("started")) + " · " + x.optString("who").takeIf { it.isNotBlank() && it != "null" }.orEmpty(), color = Muted, fontSize = 12.sp)
+                }
+            }
+            st.kind == "blocked" -> items(list.size) { i ->
+                val x = list[i]
+                val a = x.optJSONObject("account")
+                Panel {
+                    Text(x.optString("kind") + " · " + (a?.optString("display") ?: x.optString("net").takeIf { it.isNotBlank() && it != "null" } ?: "—") + if (x.optBoolean("blocked")) " · " + t("admin_is_blocked") else "", fontWeight = FontWeight.Bold, color = if (x.optBoolean("blocked")) Bad else Fg)
+                    Text(t("admin_tries", x.optInt("n")) + " · " + dayTime(x.optLong("last")), color = Muted, fontSize = 12.sp)
+                    TextButton({ vm.adminUnlock("k", x.optString("k"), "blocked") }) { Text(t("admin_unblock"), color = Accent) }
+                }
+            }
             st.kind == "users" -> items(list.size) { i ->
                 val u = list[i]
                 var ask by remember { mutableStateOf(false) }
@@ -1652,6 +1679,24 @@ private fun AdminScreen(vm: PitlaneViewModel, nav: NavHostController) {
                     Text(id, color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                     Text(t("admin_since", day(ms)) + if (u.optLong("memberSince") > 0) " ✎" else "", color = Muted, fontSize = 12.sp)
                     Text(t("admin_user_line", u.optInt("sessions"), u.optInt("laps"), u.optInt("guests")), color = Muted, fontSize = 12.sp)
+                    // help with an account: confirm its email, turn off its two-step sign-in, sign it out, rename it, unblock it
+                    var rename by remember { mutableStateOf<String?>(null) }
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (u.optInt("verified") != 1) TextButton({ vm.adminAccount(id, "verify") }) { Text(t("admin_verify"), color = Accent) }
+                        if (u.optInt("twoFactor") == 1) TextButton({ vm.adminAccount(id, "2fa-off") }) { Text(t("admin_2fa_off"), color = Accent) }
+                        TextButton({ vm.adminAccount(id, "signout") }) { Text(t("admin_signout"), color = Accent) }
+                        TextButton({ rename = u.optString("display") }) { Text(t("admin_rename"), color = Accent) }
+                        TextButton({ vm.adminUnlock("account", id, "users") }) { Text(t("admin_unblock"), color = Accent) }
+                    }
+                    rename?.let { v ->
+                        AlertDialog(
+                            onDismissRequest = { rename = null },
+                            title = { Text(t("admin_rename")) },
+                            text = { OutlinedTextField(v, { rename = it.take(32) }, singleLine = true) },
+                            confirmButton = { TextButton({ val n = v.trim(); rename = null; if (n.isNotEmpty()) vm.adminAccount(id, "rename", n) }) { Text(t("save"), color = Accent) } },
+                            dismissButton = { TextButton({ rename = null }) { Text(t("cancel"), color = Muted) } }
+                        )
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         TextButton({ vm.loadProfile("acct:$id"); nav.navigate("profile") }) { Text(t("profile"), color = Accent) }
                         TextButton({ since = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString() }) { Text(t("admin_set_since"), color = Accent) }

@@ -520,7 +520,8 @@ final class Account: ObservableObject {
     func adminList(_ kind: String) async throws -> [[String: Any]] {
         if kind == "status" { return [try await adminStatus()] }
         let j = try JSONSerialization.jsonObject(with: await call("GET", "/community/admin/" + kind)) as? [String: Any]
-        return j?[kind == "users" ? "users" : "items"] as? [[String: Any]] ?? []
+        let key = ["users": "users", "sessions": "sessions", "blocked": "blocked"][kind] ?? "items"
+        return j?[key] as? [[String: Any]] ?? []
     }
     func adminDeleteUser(_ id: String) async throws { _ = try await call("DELETE", "/community/admin/users/" + idPath(id)) }
     /// The owner of Pitlane HQ gives or takes away the supporter badge.
@@ -528,7 +529,11 @@ final class Account: ObservableObject {
     /// "In Pitlane HQ since" by hand (nil: the day the account was created)
     func adminSince(_ id: String, _ since: Double?) async throws { _ = try await call("POST", "/community/admin/since", body: ["id": id, "since": since.map { $0 as Any } ?? NSNull()]) }
     /// the admin tools: "models" (rebuild the coach models) or "unlock" (unblock the sign-ins)
-    func adminTool(_ tool: String) async throws { _ = try await call("POST", "/community/admin/" + tool, body: [:]) }
+    func adminTool(_ tool: String) async throws { _ = try await call("POST", "/community/admin/" + tool, body: tool == "unlock" ? (["all": true] as [String: Any]) : [:]) }
+    /// help with an account: "verify", "2fa-off", "signout" or "rename" (with the new public name)
+    func adminAccount(_ id: String, _ act: String, name: String? = nil) async throws { _ = try await call("POST", "/community/admin/users/" + idPath(id) + "/" + act, body: name.map { ["name": $0] as [String: Any] } ?? [:]) }
+    /// unblock one entry ("k") or one account's sign-in ("account")
+    func adminUnlock(_ key: String, _ value: String) async throws { _ = try await call("POST", "/community/admin/unlock", body: [key: value]) }
     /// A supporter hides (or shows again) their own badge.
     func setBadgeHidden(_ hidden: Bool) async throws { _ = try await call("POST", "/community/profile/badge", body: ["hidden": hidden]) }
 

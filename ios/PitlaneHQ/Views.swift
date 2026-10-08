@@ -805,14 +805,16 @@ struct AnalysisView: View {
     @StateObject private var bests = Loader<[PersonalBest]>()
     @State private var tab = 0
     @State private var fCat = ""
-    @State private var fCombo = ""
+    @State private var fCar = ""
+    @State private var fTrack = ""
     @State private var fKind = ""
     @State private var fDay = ""
 
     private func load() async {
         if tab == 0 { await sessions.load { try await account.sessions() } } else { await bests.load { try await account.bests() } }
     }
-    private func comboName(_ x: CloudSession) -> String { x.car + " · " + x.track + (x.trackConfig.isEmpty ? "" : " · " + x.trackConfig) }
+    // the car and the track are two filters: with many of each, one list of every pair gets long
+    private func trackName(_ x: CloudSession) -> String { x.track + (x.trackConfig.isEmpty ? "" : " · " + x.trackConfig) }
     /// the day of a session, as the calendar keys it ("y-m-d")
     private func dayKey(_ x: CloudSession) -> String {
         let c = Calendar.current.dateComponents([.year, .month, .day], from: Date(timeIntervalSince1970: x.started / 1000))
@@ -820,7 +822,7 @@ struct AnalysisView: View {
     }
     /// every filter but one (what that one can still choose)
     private func match(_ x: CloudSession, skip: String = "") -> Bool {
-        (skip == "cat" || fCat.isEmpty || x.cat == fCat) && (skip == "combo" || fCombo.isEmpty || comboName(x) == fCombo) &&
+        (skip == "cat" || fCat.isEmpty || x.cat == fCat) && (skip == "car" || fCar.isEmpty || x.car == fCar) && (skip == "track" || fTrack.isEmpty || trackName(x) == fTrack) &&
             (skip == "kind" || fKind.isEmpty || kindOf(x.kind) == fKind) && (skip == "day" || fDay.isEmpty || dayKey(x) == fDay)
     }
 
@@ -835,8 +837,8 @@ struct AnalysisView: View {
                 let all = sessions.data ?? []
                 let cats = DISCS.filter { k in all.contains { $0.cat == k } }
                 let forCat = all.filter { match($0, skip: "cat") }, forKind = all.filter { match($0, skip: "kind") }
-                let forCombo = all.filter { match($0, skip: "combo") }, forDay = all.filter { match($0, skip: "day") }
-                let combos = forCombo.map { comboName($0) }.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }.sorted()
+                let forCar = all.filter { match($0, skip: "car") }, forTrack = all.filter { match($0, skip: "track") }, forDay = all.filter { match($0, skip: "day") }
+                let cars = Array(Set(forCar.map { $0.car })).sorted(), tracks = Array(Set(forTrack.map { trackName($0) })).sorted()
                 if !cats.isEmpty && all.count > 1 {
                     Pills(items: [("", t("lic_all_full") + " (\(forCat.count))")] + cats.map { k in (k, discName(k) + " (\(forCat.filter { $0.cat == k }.count))") }, selected: $fCat)
                 }
@@ -846,7 +848,8 @@ struct AnalysisView: View {
                         return n > 0 || fKind == k ? (k, t("filt_" + k) + " (\(n))") : nil
                     }, selected: $fKind)
                 }
-                if combos.count > 1 || !fCombo.isEmpty { Pills(items: [("", t("every_car_track"))] + combos.map { ($0, $0) }, selected: $fCombo) }
+                if cars.count > 1 || !fCar.isEmpty { Pills(items: [("", t("every_car") + " (\(forCar.count))")] + cars.map { k in (k, k + " (\(forCar.filter { $0.car == k }.count))") }, selected: $fCar) }
+                if tracks.count > 1 || !fTrack.isEmpty { Pills(items: [("", t("every_track") + " (\(forTrack.count))")] + tracks.map { k in (k, k + " (\(forTrack.filter { trackName($0) == k }.count))") }, selected: $fTrack) }
                 if all.count > 1 {
                     Panel {
                         HStack {
@@ -858,8 +861,8 @@ struct AnalysisView: View {
                     }
                 }
                 let list = all.filter { match($0) }
-                if all.count > 1 && !(fCat + fCombo + fKind + fDay).isEmpty {
-                    Button(t("clear_filters") + " · \(list.count)/\(all.count)") { fCat = ""; fCombo = ""; fKind = ""; fDay = "" }.font(.caption.bold()).foregroundColor(Theme.accent)
+                if all.count > 1 && !(fCat + fCar + fTrack + fKind + fDay).isEmpty {
+                    Button(t("clear_filters") + " · \(list.count)/\(all.count)") { fCat = ""; fCar = ""; fTrack = ""; fKind = ""; fDay = "" }.font(.caption.bold()).foregroundColor(Theme.accent)
                 }
                 if sessions.data != nil && list.isEmpty { EmptyNote(text: t("no_sessions")) }
                 ForEach(list) { x in
@@ -2201,21 +2204,23 @@ struct AdminView: View {
     @EnvironmentObject var account: Account
     @State private var kind = "status"
     @State private var since: SinceEdit?
+    @State private var renaming: (String, String)?
+    @State private var newName = ""
     @State private var rows: [[String: Any]]?
     @State private var error: String?
     @State private var confirmDelete: (String, String)?
 
     var body: some View {
         Screen(title: t("admin_profile"), sub: t("admin_profile_sub")) {
-            HStack(spacing: 8) {
-                ForEach([("status", t("admin_server")), ("users", t("admin_accounts")), ("uploads", t("admin_shared"))], id: \.0) { p in
+            ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 8) {
+                ForEach([("status", t("admin_server")), ("users", t("admin_accounts")), ("sessions", t("admin_activity_t")), ("uploads", t("admin_shared")), ("blocked", t("admin_blocked"))], id: \.0) { p in
                     let k = p.0
                     Button { kind = k; Task { await load() } } label: {
                         Text(p.1).font(.subheadline).padding(.horizontal, 12).padding(.vertical, 6)
                             .background(kind == k ? Theme.accent : Theme.surface2).foregroundColor(kind == k ? Theme.ink : Theme.fg).clipShape(Capsule())
                     }
                 }
-            }
+            } }
             if let e = error {
                 EmptyNote(text: t(e))
             } else if let rows = rows {
@@ -2247,6 +2252,15 @@ struct AdminView: View {
                     }
                 }
             }
+        }
+        .alert(t("admin_rename"), isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField(t("admin_rename"), text: $newName)
+            Button(t("save")) {
+                let id = renaming?.0 ?? "", n = newName.trimmingCharacters(in: .whitespaces)
+                renaming = nil
+                if !n.isEmpty { Task { try? await account.adminAccount(id, "rename", name: n); await load() } }
+            }
+            Button(t("cancel"), role: .cancel) { renaming = nil }
         }
         .alert(t("admin_delete_ask", confirmDelete?.1 ?? ""), isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } })) {
             Button(t("delete"), role: .destructive) {
@@ -2287,12 +2301,32 @@ struct AdminView: View {
                     Button(t("admin_rebuild")) { Task { try? await account.adminTool("models"); await load() } }.foregroundColor(Theme.accent).font(.caption.bold())
                     Button(t("admin_unlock", n("authFails"))) { Task { try? await account.adminTool("unlock"); await load() } }.foregroundColor(Theme.accent).font(.caption.bold())
                 }
+            } else if kind == "sessions" {
+                Text(str("track") + (str("trackConfig").isEmpty ? "" : " · " + str("trackConfig"))).font(.subheadline.bold()).foregroundColor(Theme.fg)
+                Text(str("car") + " · " + kindText(str("kind")) + " · " + t("laps_n", int("laps"))).font(.caption).foregroundColor(Theme.muted)
+                Text(day((x["started"] as? NSNumber)?.doubleValue ?? 0) + " · " + str("who")).font(.caption).foregroundColor(Theme.muted)
+            } else if kind == "blocked" {
+                let a = x["account"] as? [String: Any], bl = x["blocked"] as? Bool ?? false
+                Text(str("kind") + " · " + ((a?["display"] as? String) ?? (x["net"] as? String) ?? "—") + (bl ? " · " + t("admin_is_blocked") : "")).font(.subheadline.bold()).foregroundColor(bl ? Theme.bad : Theme.fg)
+                Text(t("admin_tries", "\(int("n"))")).font(.caption).foregroundColor(Theme.muted)
+                Button(t("admin_unblock")) { Task { try? await account.adminUnlock("k", str("k")); await load() } }.foregroundColor(Theme.accent).font(.caption.bold())
             } else if kind == "users" {
                 let ms0 = (x["memberSince"] as? NSNumber)?.doubleValue ?? 0, ms = ms0 > 0 ? ms0 : ((x["created"] as? NSNumber)?.doubleValue ?? 0)
                 Text(str("display") + ((x["admin"] as? Bool ?? false) ? " · Admin" : "")).font(.subheadline.bold()).foregroundColor(Theme.fg)
                 Text(str("id")).font(.caption2.monospaced()).foregroundColor(Theme.muted).textSelection(.enabled)
                 Text(t("admin_since", day(ms)) + (ms0 > 0 ? " ✎" : "")).font(.caption).foregroundColor(Theme.muted)
                 Text(t("admin_user_line", "\(int("sessions"))", "\(int("laps"))", "\(int("guests"))")).font(.caption).foregroundColor(Theme.muted)
+                // help with an account: confirm its email, turn off its two-step sign-in, sign it out, rename it, unblock it
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 14) {
+                        if int("verified") != 1 { Button(t("admin_verify")) { Task { try? await account.adminAccount(str("id"), "verify"); await load() } } }
+                        if int("twoFactor") == 1 { Button(t("admin_2fa_off")) { Task { try? await account.adminAccount(str("id"), "2fa-off"); await load() } } }
+                        Button(t("admin_signout")) { Task { try? await account.adminAccount(str("id"), "signout"); await load() } }
+                        Button(t("admin_rename")) { newName = str("display"); renaming = (str("id"), str("display")) }
+                        Button(t("admin_unblock")) { Task { try? await account.adminUnlock("account", str("id")); await load() } }
+                    }
+                    .foregroundColor(Theme.accent).font(.caption.bold())
+                }
                 HStack(spacing: 14) {
                     NavigationLink(value: Route.profile("acct:" + str("id"))) { Text(t("profile")) }.foregroundColor(Theme.accent).font(.caption.bold())
                     Button(t("admin_set_since")) { since = SinceEdit(id: str("id"), date: Date(timeIntervalSince1970: ms / 1000), custom: ms0 > 0) }.foregroundColor(Theme.accent).font(.caption.bold())

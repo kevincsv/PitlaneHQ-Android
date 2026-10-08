@@ -315,6 +315,12 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     fun adminSince(id: String, since: Long?) {
         viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminSince(id, since) }; loadAdmin("users") }
     }
+    fun adminAccount(id: String, act: String, name: String? = null) {
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminAccount(id, act, name) }; loadAdmin("users") }
+    }
+    fun adminUnlock(key: String, value: String, reload: String) {
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminUnlock(key, value) }; loadAdmin(reload) }
+    }
     fun adminTool(tool: String) {
         viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminTool(tool) }; loadAdmin("status") }
     }
