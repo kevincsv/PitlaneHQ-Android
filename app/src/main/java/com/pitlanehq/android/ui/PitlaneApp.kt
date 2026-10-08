@@ -1151,7 +1151,13 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, turns: List<Double> = em
                 }
                 var i0 = 0
                 var lastQ: Offset? = null
-                for ((i, lat) in pit.pts) {
+                // a pit lane 15 m off the track would sit under the drawn road: the lane moves out, same shape, like iRacing's maps
+                val kk = minOf((size.width - 36f) / maxOf(1e-6, maxX - minX).toFloat(), (size.height - 36f) / maxOf(1e-6, maxY - minY).toFloat())
+                val far = pit.pts.maxOf { kotlin.math.abs(it.second) }
+                val minM = 10f * dpx / maxOf(kk, 1e-6f)
+                val gain = if (far > 0 && minM > far) minM / far else 1.0
+                for ((i, lat0) in pit.pts) {
+                    val lat = lat0 * gain
                     val j = w((i.toDouble() * n / pit.n).roundToInt())
                     val tx = xs[w(j + 2)] - xs[w(j - 2)]; val ty = ys[w(j + 2)] - ys[w(j - 2)]; val tm = maxOf(1e-6, kotlin.math.hypot(tx, ty))
                     val q = ptXY(xs[j] - ty / tm * lat, ys[j] + tx / tm * lat)

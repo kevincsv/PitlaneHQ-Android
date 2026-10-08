@@ -1359,6 +1359,11 @@ struct TrackMapView: View {
         var out: [PitRun] = []
         var cur: [CGPoint] = []
         var i0 = 0, last = -9
+        // a pit lane 15 m off the track would sit under the drawn road: the lane moves out, same shape, like iRacing's maps
+        let k: Double = min((size.width - 36) / max(1e-6, maxX - minX), (size.height - 36) / max(1e-6, maxY - minY))
+        let far = pl.pts.map { abs($0.1) }.max() ?? 0
+        let minM = 10 / max(k, 1e-6)
+        let gain = far > 0 && minM > far ? minM / far : 1
         func flush() {
             guard cur.count > 3 else { cur = []; return }
             var p = Path()
@@ -1367,7 +1372,8 @@ struct TrackMapView: View {
             out.append(PitRun(path: p, entry: i0 > 3 ? cur.first : nil, exit: last < pl.n - 4 ? cur.last : nil))
             cur = []
         }
-        for (i, lat) in pl.pts {
+        for (i, lat0) in pl.pts {
+            let lat = lat0 * gain
             let j = w(Int((Double(i) * Double(n) / Double(pl.n)).rounded()))
             let tx = xs[w(j + 2)] - xs[w(j - 2)], ty = ys[w(j + 2)] - ys[w(j - 2)]
             let tm = max(1e-6, (tx * tx + ty * ty).squareRoot())
