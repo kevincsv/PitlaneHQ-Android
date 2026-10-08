@@ -2271,83 +2271,110 @@ struct AdminView: View {
         }
     }
 
+    // one function per kind of row: one big builder was too much for the type checker
     @ViewBuilder private func row(_ x: [String: Any]) -> some View {
-        let str = { (k: String) in x[k] as? String ?? "" }
-        let int = { (k: String) in x[k] as? Int ?? 0 }
         Panel {
-            if kind == "status" {
-                let m = x["mail"] as? [String: Any] ?? [:], c = x["counts"] as? [String: Any] ?? [:]
-                let ready = m["ready"] as? Bool ?? false
-                let n = { (k: String) in "\(c[k] as? Int ?? 0)" }
-                Text(t("admin_mail") + ": " + (ready ? t("admin_mail_ok") + " (" + (m["via"] as? String ?? "") + ")" : t("admin_mail_off"))).font(.subheadline.bold()).foregroundColor(ready ? Theme.good : Theme.bad)
-                Text(m["from"] as? String ?? "").font(.caption).foregroundColor(Theme.muted)
-                if let e = m["lastError"] as? [String: Any] {
-                    Text(t("admin_mail_err") + ": " + ["message", "reply", "status", "body"].compactMap { e[$0].map { "\($0)" } }.filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.bad)
-                }
-                let g = x["config"] as? [String: Any] ?? [:]
-                let pat = g["patreon"] as? Bool ?? false
-                Group {
-                    Text(t("admin_counts", n("accounts"), n("verified"), n("sessions"), n("shared"))).font(.caption).foregroundColor(Theme.fg)
-                    Text(t("admin_activity", n("new7"), n("drivers7"), n("sessions1"), n("sessions7"))).font(.caption).foregroundColor(Theme.muted)
-                    Text(t("admin_community", n("boards"), n("leagues"), (g["leaguesOpen"] as? Bool ?? false) ? t("admin_open") : t("admin_only"))).font(.caption).foregroundColor(Theme.muted)
-                    Text(t("admin_sup", n("supporters"), n("supportersPatreon"), n("patrons"))).font(.caption).foregroundColor(Theme.muted)
-                    Text(t("admin_model", n("learnt"), n("models")) + " · " + t("admin_dirty", n("modelsDirty"))).font(.caption).foregroundColor(Theme.muted)
-                    Text(pat ? t("admin_patreon_ok") : t("admin_patreon_off")).font(.caption).foregroundColor(pat ? Theme.good : Theme.bad)
-                }
-                // the tools: the coach models learn again, the blocked sign-ins open again
-                Group {
-                    Divider().padding(.vertical, 4)
-                    Text(t("admin_tools_t")).font(.subheadline.bold())
-                    Button(t("admin_rebuild")) { Task { try? await account.adminTool("models"); await load() } }.foregroundColor(Theme.accent).font(.caption.bold())
-                    Button(t("admin_unlock", n("authFails"))) { Task { try? await account.adminTool("unlock"); await load() } }.foregroundColor(Theme.accent).font(.caption.bold())
-                }
-            } else if kind == "sessions" {
-                Text(str("track") + (str("trackConfig").isEmpty ? "" : " · " + str("trackConfig"))).font(.subheadline.bold()).foregroundColor(Theme.fg)
-                Text(str("car") + " · " + kindText(str("kind")) + " · " + t("laps_n", int("laps"))).font(.caption).foregroundColor(Theme.muted)
-                Text(day((x["started"] as? NSNumber)?.doubleValue ?? 0) + " · " + str("who")).font(.caption).foregroundColor(Theme.muted)
-            } else if kind == "blocked" {
-                let a = x["account"] as? [String: Any], bl = x["blocked"] as? Bool ?? false
-                Text(str("kind") + " · " + ((a?["display"] as? String) ?? (x["net"] as? String) ?? "—") + (bl ? " · " + t("admin_is_blocked") : "")).font(.subheadline.bold()).foregroundColor(bl ? Theme.bad : Theme.fg)
-                Text(t("admin_tries", "\(int("n"))")).font(.caption).foregroundColor(Theme.muted)
-                Button(t("admin_unblock")) { Task { try? await account.adminUnlock("k", str("k")); await load() } }.foregroundColor(Theme.accent).font(.caption.bold())
-            } else if kind == "users" {
-                let ms0 = (x["memberSince"] as? NSNumber)?.doubleValue ?? 0, ms = ms0 > 0 ? ms0 : ((x["created"] as? NSNumber)?.doubleValue ?? 0)
-                Text(str("display") + ((x["admin"] as? Bool ?? false) ? " · Admin" : "")).font(.subheadline.bold()).foregroundColor(Theme.fg)
-                Text(str("id")).font(.caption2.monospaced()).foregroundColor(Theme.muted).textSelection(.enabled)
-                Text(t("admin_since", day(ms)) + (ms0 > 0 ? " ✎" : "")).font(.caption).foregroundColor(Theme.muted)
-                Text(t("admin_user_line", "\(int("sessions"))", "\(int("laps"))", "\(int("guests"))")).font(.caption).foregroundColor(Theme.muted)
-                // help with an account: confirm its email, turn off its two-step sign-in, sign it out, rename it, unblock it
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 14) {
-                        if int("verified") != 1 { Button(t("admin_verify")) { Task { try? await account.adminAccount(str("id"), "verify"); await load() } } }
-                        if int("twoFactor") == 1 { Button(t("admin_2fa_off")) { Task { try? await account.adminAccount(str("id"), "2fa-off"); await load() } } }
-                        Button(t("admin_signout")) { Task { try? await account.adminAccount(str("id"), "signout"); await load() } }
-                        Button(t("admin_rename")) { newName = str("display"); renaming = (str("id"), str("display")) }
-                        Button(t("admin_unblock")) { Task { try? await account.adminUnlock("account", str("id")); await load() } }
-                    }
-                    .foregroundColor(Theme.accent).font(.caption.bold())
-                }
-                HStack(spacing: 14) {
-                    NavigationLink(value: Route.profile("acct:" + str("id"))) { Text(t("profile")) }.foregroundColor(Theme.accent).font(.caption.bold())
-                    Button(t("admin_set_since")) { since = SinceEdit(id: str("id"), date: Date(timeIntervalSince1970: ms / 1000), custom: ms0 > 0) }.foregroundColor(Theme.accent).font(.caption.bold())
-                }
-                let sup = int("supporter") == 1
-                Button((sup ? "♥ " + t("supporter_remove") : t("supporter_give")) + (sup && int("supporterHidden") == 1 ? " · " + t("supporter_hidden_by") : "")) {
-                    Task { try? await account.adminSupporter(str("id"), !sup); await load() }
-                }.foregroundColor(sup ? Color(red: 1, green: 0.56, blue: 0.75) : Theme.accent).font(.caption.bold())
-                if !(x["admin"] as? Bool ?? false) {
-                    Button(t("admin_delete_account")) { confirmDelete = (str("id"), str("display")) }.foregroundColor(Theme.bad).font(.caption.bold())
-                }
-            } else {
-                Text(str("track") + " · " + str("car")).font(.subheadline.bold()).foregroundColor(Theme.fg)
-                Text((str("kind") == "laps" ? t("lap") : t("race")) + " · " + lapTime(x["time"] as? Double)).font(.caption).foregroundColor(Theme.muted)
-                Text(t("admin_shown_as", str("shownAs")) + (int("anon") == 1 ? " 🔒" : "")).font(.caption).foregroundColor(Theme.fg)
-                Text(t("admin_real", str("realUploader"))).font(.caption.bold()).foregroundColor(Theme.fg)
-                Button(t("delete")) {
-                    Task { try? await account.adminDelete(str("kind"), str("id")); await load() }
-                }.foregroundColor(Theme.bad).font(.caption.bold())
+            switch kind {
+            case "status": statusRow(x)
+            case "sessions": sessionRow(x)
+            case "blocked": blockedRow(x)
+            case "users": userRow(x)
+            default: itemRow(x)
             }
         }
+    }
+
+    @ViewBuilder private func statusRow(_ x: [String: Any]) -> some View {
+        let m = x["mail"] as? [String: Any] ?? [:], c = x["counts"] as? [String: Any] ?? [:]
+        let ready = m["ready"] as? Bool ?? false
+        let n = { (k: String) in "\(c[k] as? Int ?? 0)" }
+        Text(t("admin_mail") + ": " + (ready ? t("admin_mail_ok") + " (" + (m["via"] as? String ?? "") + ")" : t("admin_mail_off"))).font(.subheadline.bold()).foregroundColor(ready ? Theme.good : Theme.bad)
+        Text(m["from"] as? String ?? "").font(.caption).foregroundColor(Theme.muted)
+        if let e = m["lastError"] as? [String: Any] {
+            Text(t("admin_mail_err") + ": " + ["message", "reply", "status", "body"].compactMap { e[$0].map { "\($0)" } }.filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.bad)
+        }
+        let g = x["config"] as? [String: Any] ?? [:]
+        let pat = g["patreon"] as? Bool ?? false
+        Group {
+            Text(t("admin_counts", n("accounts"), n("verified"), n("sessions"), n("shared"))).font(.caption).foregroundColor(Theme.fg)
+            Text(t("admin_activity", n("new7"), n("drivers7"), n("sessions1"), n("sessions7"))).font(.caption).foregroundColor(Theme.muted)
+            Text(t("admin_community", n("boards"), n("leagues"), (g["leaguesOpen"] as? Bool ?? false) ? t("admin_open") : t("admin_only"))).font(.caption).foregroundColor(Theme.muted)
+            Text(t("admin_sup", n("supporters"), n("supportersPatreon"), n("patrons"))).font(.caption).foregroundColor(Theme.muted)
+            Text(t("admin_model", n("learnt"), n("models")) + " · " + t("admin_dirty", n("modelsDirty"))).font(.caption).foregroundColor(Theme.muted)
+            Text(pat ? t("admin_patreon_ok") : t("admin_patreon_off")).font(.caption).foregroundColor(pat ? Theme.good : Theme.bad)
+        }
+        // the tools: the coach models learn again, the blocked sign-ins open again
+        Group {
+            Divider().padding(.vertical, 4)
+            Text(t("admin_tools_t")).font(.subheadline.bold())
+            Button(t("admin_rebuild")) { Task { try? await account.adminTool("models"); await load() } }.foregroundColor(Theme.accent).font(.caption.bold())
+            Button(t("admin_unlock", n("authFails"))) { Task { try? await account.adminTool("unlock"); await load() } }.foregroundColor(Theme.accent).font(.caption.bold())
+        }
+    }
+
+    @ViewBuilder private func sessionRow(_ x: [String: Any]) -> some View {
+        let str = { (k: String) in x[k] as? String ?? "" }
+        let int = { (k: String) in (x[k] as? NSNumber)?.intValue ?? 0 }
+        Text(str("track") + (str("trackConfig").isEmpty ? "" : " · " + str("trackConfig"))).font(.subheadline.bold()).foregroundColor(Theme.fg)
+        Text(str("car") + " · " + kindText(str("kind")) + " · " + t("laps_n", int("laps"))).font(.caption).foregroundColor(Theme.muted)
+        Text(day((x["started"] as? NSNumber)?.doubleValue ?? 0) + " · " + str("who")).font(.caption).foregroundColor(Theme.muted)
+    }
+
+    @ViewBuilder private func blockedRow(_ x: [String: Any]) -> some View {
+        let str = { (k: String) in x[k] as? String ?? "" }
+        let int = { (k: String) in (x[k] as? NSNumber)?.intValue ?? 0 }
+        let a = x["account"] as? [String: Any], bl = x["blocked"] as? Bool ?? false
+        let who: String = (a?["display"] as? String) ?? (x["net"] as? String) ?? "—"
+        let title: String = str("kind") + " · " + who + (bl ? " · " + t("admin_is_blocked") : "")
+        Text(title).font(.subheadline.bold()).foregroundColor(bl ? Theme.bad : Theme.fg)
+        Text(t("admin_tries", "\(int("n"))")).font(.caption).foregroundColor(Theme.muted)
+        Button(t("admin_unblock")) { Task { try? await account.adminUnlock("k", str("k")); await load() } }.foregroundColor(Theme.accent).font(.caption.bold())
+    }
+
+    @ViewBuilder private func userRow(_ x: [String: Any]) -> some View {
+        let str = { (k: String) in x[k] as? String ?? "" }
+        let int = { (k: String) in (x[k] as? NSNumber)?.intValue ?? 0 }
+        let ms0 = (x["memberSince"] as? NSNumber)?.doubleValue ?? 0, ms = ms0 > 0 ? ms0 : ((x["created"] as? NSNumber)?.doubleValue ?? 0)
+        let name: String = str("display") + ((x["admin"] as? Bool ?? false) ? " · Admin" : "")
+        Text(name).font(.subheadline.bold()).foregroundColor(Theme.fg)
+        Text(str("id")).font(.caption2.monospaced()).foregroundColor(Theme.muted).textSelection(.enabled)
+        Text(t("admin_since", day(ms)) + (ms0 > 0 ? " ✎" : "")).font(.caption).foregroundColor(Theme.muted)
+        Text(t("admin_user_line", "\(int("sessions"))", "\(int("laps"))", "\(int("guests"))")).font(.caption).foregroundColor(Theme.muted)
+        // help with an account: confirm its email, turn off its two-step sign-in, sign it out, rename it, unblock it
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 14) {
+                if int("verified") != 1 { Button(t("admin_verify")) { Task { try? await account.adminAccount(str("id"), "verify"); await load() } } }
+                if int("twoFactor") == 1 { Button(t("admin_2fa_off")) { Task { try? await account.adminAccount(str("id"), "2fa-off"); await load() } } }
+                Button(t("admin_signout")) { Task { try? await account.adminAccount(str("id"), "signout"); await load() } }
+                Button(t("admin_rename")) { newName = str("display"); renaming = (str("id"), str("display")) }
+                Button(t("admin_unblock")) { Task { try? await account.adminUnlock("account", str("id")); await load() } }
+            }
+            .foregroundColor(Theme.accent).font(.caption.bold())
+        }
+        HStack(spacing: 14) {
+            NavigationLink(value: Route.profile("acct:" + str("id"))) { Text(t("profile")) }.foregroundColor(Theme.accent).font(.caption.bold())
+            Button(t("admin_set_since")) { since = SinceEdit(id: str("id"), date: Date(timeIntervalSince1970: ms / 1000), custom: ms0 > 0) }.foregroundColor(Theme.accent).font(.caption.bold())
+        }
+        let sup = int("supporter") == 1
+        let supLabel: String = (sup ? "♥ " + t("supporter_remove") : t("supporter_give")) + (sup && int("supporterHidden") == 1 ? " · " + t("supporter_hidden_by") : "")
+        Button(supLabel) {
+            Task { try? await account.adminSupporter(str("id"), !sup); await load() }
+        }.foregroundColor(sup ? Color(red: 1, green: 0.56, blue: 0.75) : Theme.accent).font(.caption.bold())
+        if !(x["admin"] as? Bool ?? false) {
+            Button(t("admin_delete_account")) { confirmDelete = (str("id"), str("display")) }.foregroundColor(Theme.bad).font(.caption.bold())
+        }
+    }
+
+    @ViewBuilder private func itemRow(_ x: [String: Any]) -> some View {
+        let str = { (k: String) in x[k] as? String ?? "" }
+        let int = { (k: String) in (x[k] as? NSNumber)?.intValue ?? 0 }
+        Text(str("track") + " · " + str("car")).font(.subheadline.bold()).foregroundColor(Theme.fg)
+        Text((str("kind") == "laps" ? t("lap") : t("race")) + " · " + lapTime(x["time"] as? Double)).font(.caption).foregroundColor(Theme.muted)
+        Text(t("admin_shown_as", str("shownAs")) + (int("anon") == 1 ? " 🔒" : "")).font(.caption).foregroundColor(Theme.fg)
+        Text(t("admin_real", str("realUploader"))).font(.caption.bold()).foregroundColor(Theme.fg)
+        Button(t("delete")) {
+            Task { try? await account.adminDelete(str("kind"), str("id")); await load() }
+        }.foregroundColor(Theme.bad).font(.caption.bold())
     }
 
     private func load() async {
