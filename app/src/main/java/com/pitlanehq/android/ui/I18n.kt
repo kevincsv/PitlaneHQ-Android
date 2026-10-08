@@ -161,6 +161,8 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "retry" to ("Retry" to "Reintentar"),
     "no_internet" to ("No internet connection" to "Sin conexión a internet"),
     "showing_saved" to ("No connection: showing the data saved on this phone" to "Sin conexión: se muestran los datos guardados en este teléfono"),
+    "there is no account with this email: create one" to ("There is no account with this email: use “Create an account”." to "No hay ninguna cuenta con este email: usa “Crear una cuenta”."),
+    "wrong email or password" to ("Wrong email or password." to "Email o contraseña incorrectos."),
     "server_down" to ("The Pitlane HQ server cannot be reached. Try again in a moment." to "No se puede conectar con el servidor de Pitlane HQ. Inténtalo de nuevo en un momento."),
     "signed_out" to ("Signed out: sign in again" to "Sesión cerrada: vuelve a iniciar sesión"),
     "bad_email" to ("Enter a valid email" to "Escribe un correo válido"),

@@ -255,6 +255,16 @@ func lapFacts(_ rows: [[Double]]) -> (brake: Double?, shifts: [Int: Double], vma
     return (brake, shifts, vmax)
 }
 
+/// Text that came through a wrong encoding ("AutÃ³dromo") read back as it was written ("Autódromo").
+func fixText(_ s: String) -> String {
+    guard s.contains("Ã") || s.contains("Â"), let d = s.data(using: .isoLatin1), let u = String(data: d, encoding: .utf8) else { return s }
+    return u
+}
+/// A name as a key: no accents, no case, letters and numbers only, so the same car or track is one entry.
+func nameKey(_ s: String) -> String {
+    fixText(s).folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil).lowercased().filter { $0.isLetter || $0.isNumber }
+}
+
 func lapTime(_ s: Double?) -> String {
     guard let s, s.isFinite, s > 0 else { return "—" }
     let m = Int(s / 60)

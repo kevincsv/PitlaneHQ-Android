@@ -592,6 +592,7 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
     var fTrack by rememberSaveable { mutableStateOf("") }
     var fKind by rememberSaveable { mutableStateOf("") }
     var fDay by rememberSaveable { mutableStateOf("") }
+    var showDays by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(tab) { if (tab == 0 && s.data == null && !s.loading) vm.loadSessions(); if (tab == 1 && b.data == null && !b.loading) vm.loadBests() }
     Screen(t("analysis"), t("uploaded_by_pc")) {
         item { WebNote(t("coach_web")) }
@@ -599,14 +600,16 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
         if (tab == 0) {
             state(s) { vm.loadSessions() }
             val all = s.data ?: emptyList()
-            // many cars, tracks and sessions make a long list: choose the discipline, the kind of session, the car and
-            // track, a day you drove (the calendar), like the web's "Choose a session"
-            // the car and the track are two filters: with many of each, one list of every pair gets long
-            val trackOf = { x: CloudSession -> x.track + (if (x.trackConfig.isNotBlank()) " · " + x.trackConfig else "") }
+            // many cars, tracks and sessions make a long list: four small menus (discipline, kind of session, car, track)
+            // and the days you drove behind one button, like the web's "Choose a session". A car or a track is known by its
+            // name without accents or broken characters, so one track never shows twice
+            val trackName = { x: CloudSession -> fixText(x.track) + (if (x.trackConfig.isNotBlank()) " · " + fixText(x.trackConfig) else "") }
+            val trackOf = { x: CloudSession -> nameKey(trackName(x)) }
+            val carOf = { x: CloudSession -> nameKey(x.car) }
             val zone = java.time.ZoneId.systemDefault()
             val dayOf = { x: CloudSession -> java.time.Instant.ofEpochMilli(x.started).atZone(zone).toLocalDate().let { "${it.year}-${it.monthValue}-${it.dayOfMonth}" } }
             val match = { x: CloudSession, skip: String ->
-                (skip == "cat" || fCat.isEmpty() || x.cat == fCat) && (skip == "car" || fCar.isEmpty() || x.car == fCar) && (skip == "track" || fTrack.isEmpty() || trackOf(x) == fTrack) &&
+                (skip == "cat" || fCat.isEmpty() || x.cat == fCat) && (skip == "car" || fCar.isEmpty() || carOf(x) == fCar) && (skip == "track" || fTrack.isEmpty() || trackOf(x) == fTrack) &&
                     (skip == "kind" || fKind.isEmpty() || kindOf(x.kind) == fKind) && (skip == "day" || fDay.isEmpty() || dayOf(x) == fDay)
             }
             val forCat = all.filter { match(it, "cat") }
@@ -614,51 +617,35 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
             val forCar = all.filter { match(it, "car") }
             val forTrack = all.filter { match(it, "track") }
             val forDay = all.filter { match(it, "day") }
-            val cats = DISCS.filter { k -> all.any { it.cat == k } }
-            val cars = forCar.map { it.car }.distinct().sorted()
-            val tracks = forTrack.map(trackOf).distinct().sorted()
-            if (cats.isNotEmpty() && all.size > 1) item {
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Chip(t("lic_all_full") + " (" + forCat.size + ")", fCat.isEmpty()) { fCat = "" }
-                    cats.forEach { k -> Chip(discName(k) + " (" + forCat.count { it.cat == k } + ")", fCat == k) { fCat = if (fCat == k) "" else k } }
-                }
+            val group = { l: List<CloudSession>, key: (CloudSession) -> String, name: (CloudSession) -> String ->
+                l.groupBy(key).map { (k, v) -> Triple(k, name(v.first()), v.size) }.sortedBy { it.second.lowercase() }
             }
             if (all.size > 1) item {
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Chip(t("kind_all") + " (" + forKind.size + ")", fKind.isEmpty()) { fKind = "" }
-                    listOf("race", "qual", "prac", "test").forEach { k -> val n = forKind.count { kindOf(it.kind) == k }; if (n > 0 || fKind == k) Chip(t("filt_$k") + " ($n)", fKind == k) { fKind = if (fKind == k) "" else k } }
-                }
-            }
-            if (cars.size > 1 || fCar.isNotEmpty()) item {
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Chip(t("every_car") + " (" + forCar.size + ")", fCar.isEmpty()) { fCar = "" }
-                    cars.forEach { k -> Chip(k + " (" + forCar.count { it.car == k } + ")", fCar == k) { fCar = if (fCar == k) "" else k } }
-                }
-            }
-            if (tracks.size > 1 || fTrack.isNotEmpty()) item {
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Chip(t("every_track") + " (" + forTrack.size + ")", fTrack.isEmpty()) { fTrack = "" }
-                    tracks.forEach { k -> Chip(k + " (" + forTrack.count { trackOf(it) == k } + ")", fTrack == k) { fTrack = if (fTrack == k) "" else k } }
-                }
-            }
-            if (all.size > 1) item {
-                Panel {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(t("days_drove"), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        if (fDay.isNotEmpty()) TextButton({ fDay = "" }) { Text(t("every_day"), color = Accent) } else Text(t("press_day"), color = Muted, fontSize = 12.sp)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterMenu(t("lic_all_full"), forCat.size, DISCS.filter { k -> all.any { it.cat == k } }.map { k -> Triple(k, discName(k), forCat.count { it.cat == k }) }, fCat, Modifier.weight(1f)) { fCat = it }
+                        FilterMenu(t("kind_all"), forKind.size, listOf("race", "qual", "prac", "test").map { k -> Triple(k, t("filt_$k"), forKind.count { kindOf(it.kind) == k }) }.filter { it.third > 0 || it.first == fKind }, fKind, Modifier.weight(1f)) { fKind = it }
                     }
-                    DayGrid(forDay.groupingBy(dayOf).eachCount(), fDay) { fDay = if (fDay == it) "" else it }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterMenu(t("every_car"), forCar.size, group(forCar, carOf) { fixText(it.car) }, fCar, Modifier.weight(1f)) { fCar = it }
+                        FilterMenu(t("every_track"), forTrack.size, group(forTrack, trackOf, trackName), fTrack, Modifier.weight(1f)) { fTrack = it }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton({ showDays = !showDays }) { Text((if (fDay.isEmpty()) t("days_drove") else t("days_drove") + " · " + fDay) + if (showDays) " ▴" else " ▾", color = Accent, fontSize = 13.sp) }
+                        Spacer(Modifier.weight(1f))
+                        if ((fCat + fCar + fTrack + fKind + fDay).isNotEmpty()) TextButton({ fCat = ""; fCar = ""; fTrack = ""; fKind = ""; fDay = "" }) {
+                            Text(t("clear_filters") + " · " + all.count { match(it, "") } + "/" + all.size, color = Accent, fontSize = 13.sp)
+                        }
+                    }
+                    if (showDays) Panel { DayGrid(forDay.groupingBy(dayOf).eachCount(), fDay) { fDay = if (fDay == it) "" else it } }
                 }
             }
             val list = s.data?.let { all.filter { x -> match(x, "") } }
-            if (all.size > 1 && (fCat + fCar + fTrack + fKind + fDay).isNotEmpty()) item {
-                TextButton({ fCat = ""; fCar = ""; fTrack = ""; fKind = ""; fDay = "" }) { Text(t("clear_filters") + " · " + (list?.size ?: 0) + "/" + all.size, color = Accent) }
-            }
             if (list != null && list.isEmpty()) item { Empty(t("no_sessions")) }
             items(list ?: emptyList(), key = { it.id }) { x ->
                 Panel(Modifier.clickable { vm.session = x; vm.loadLaps(x.id); nav.navigate("session") }) {
-                    Text(x.track + if (x.trackConfig.isNotBlank()) " · " + x.trackConfig else "", fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(fixText(x.track) + if (x.trackConfig.isNotBlank()) " · " + fixText(x.trackConfig) else "", fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(fixText(x.car), color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f, fill = false)) {
                             Text(listOf(kindText(x.kind), day(x.started), t("laps_n", x.laps)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
@@ -1461,6 +1448,29 @@ private fun ProfileScreen(vm: PitlaneViewModel, nav: NavHostController) {
 }
 
 /** The last 26 weeks in squares, brighter the more sessions that day (keys "y-m-d" like the web). */
+/** Text that came through a wrong encoding ("AutÃ³dromo") read back as it was written ("Autódromo"). */
+fun fixText(s: String): String = if (s.contains('Ã') || s.contains('Â')) runCatching { String(s.toByteArray(Charsets.ISO_8859_1), Charsets.UTF_8) }.getOrNull()?.takeIf { !it.contains('\uFFFD') } ?: s else s
+/** A name as a key: no accents, no case, letters and numbers only, so the same car or track is one entry. */
+fun nameKey(s: String): String = java.text.Normalizer.normalize(fixText(s).lowercase(), java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").replace(Regex("[^a-z0-9]+"), "")
+
+/** One small filter menu: "Every car (5)" and, when opened, each choice with how many sessions it has. */
+@Composable
+private fun FilterMenu(all: String, total: Int, items: List<Triple<String, String, Int>>, value: String, modifier: Modifier = Modifier, onPick: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val cur = items.firstOrNull { it.first == value }
+    Box(modifier) {
+        OutlinedButton({ open = true }, Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+            border = BorderStroke(1.dp, if (cur != null) Accent else Muted.copy(alpha = 0.4f))) {
+            Text(cur?.let { "${it.second} (${it.third})" } ?: "$all ($total)", color = if (cur != null) Accent else Fg, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text(" ▾", color = Muted, fontSize = 12.sp)
+        }
+        DropdownMenu(open, { open = false }) {
+            DropdownMenuItem({ Text("$all ($total)", fontWeight = if (cur == null) FontWeight.Bold else FontWeight.Normal) }, { open = false; onPick("") })
+            items.forEach { (k, n, c) -> DropdownMenuItem({ Text("$n ($c)", fontWeight = if (k == value) FontWeight.Bold else FontWeight.Normal) }, { open = false; onPick(k) }) }
+        }
+    }
+}
+
 @Composable
 private fun DayGrid(days: Map<String, Int>, selected: String = "", onDay: ((String) -> Unit)? = null) {
     val zone = java.time.ZoneId.systemDefault()

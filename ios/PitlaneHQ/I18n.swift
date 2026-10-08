@@ -164,6 +164,8 @@ private let strings: [String: (String, String)] = [
     "retry": ("Retry", "Reintentar"),
     "no_internet": ("No internet connection", "Sin conexión a internet"),
     "showing_saved": ("No connection: showing the data saved on this phone", "Sin conexión: se muestran los datos guardados en este teléfono"),
+    "there is no account with this email: create one": ("There is no account with this email: use “Create an account”.", "No hay ninguna cuenta con este email: usa “Crear una cuenta”."),
+    "wrong email or password": ("Wrong email or password.", "Email o contraseña incorrectos."),
     "server_down": ("The Pitlane HQ server cannot be reached. Try again in a moment.", "No se puede conectar con el servidor de Pitlane HQ. Inténtalo de nuevo en un momento."),
     "signed_out": ("Signed out: sign in again", "Sesión cerrada: vuelve a iniciar sesión"),
     "bad_email": ("Enter a valid email", "Escribe un correo válido"),

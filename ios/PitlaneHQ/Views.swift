@@ -856,12 +856,22 @@ struct AnalysisView: View {
     @State private var fTrack = ""
     @State private var fKind = ""
     @State private var fDay = ""
+    @State private var showDays = false
 
     private func load() async {
         if tab == 0 { await sessions.load { try await account.sessions() } } else { await bests.load { try await account.bests() } }
     }
     // the car and the track are two filters: with many of each, one list of every pair gets long
-    private func trackName(_ x: CloudSession) -> String { x.track + (x.trackConfig.isEmpty ? "" : " · " + x.trackConfig) }
+    // a car or a track is known by its name without accents or broken characters, so one track never shows twice
+    private func trackName(_ x: CloudSession) -> String { fixText(x.track) + (x.trackConfig.isEmpty ? "" : " · " + fixText(x.trackConfig)) }
+    private func trackKey(_ x: CloudSession) -> String { nameKey(trackName(x)) }
+    private func carKey(_ x: CloudSession) -> String { nameKey(x.car) }
+    /// the choices of one filter: (key, name, sessions), by name
+    private func group(_ l: [CloudSession], _ key: (CloudSession) -> String, _ name: (CloudSession) -> String) -> [(String, String, Int)] {
+        var out: [String: (String, Int)] = [:]
+        for x in l { let k = key(x); out[k] = (out[k]?.0 ?? name(x), (out[k]?.1 ?? 0) + 1) }
+        return out.map { ($0.key, $0.value.0, $0.value.1) }.sorted { $0.1.lowercased() < $1.1.lowercased() }
+    }
     /// the day of a session, as the calendar keys it ("y-m-d")
     private func dayKey(_ x: CloudSession) -> String {
         let c = Calendar.current.dateComponents([.year, .month, .day], from: Date(timeIntervalSince1970: x.started / 1000))
@@ -869,8 +879,39 @@ struct AnalysisView: View {
     }
     /// every filter but one (what that one can still choose)
     private func match(_ x: CloudSession, skip: String = "") -> Bool {
-        (skip == "cat" || fCat.isEmpty || x.cat == fCat) && (skip == "car" || fCar.isEmpty || x.car == fCar) && (skip == "track" || fTrack.isEmpty || trackName(x) == fTrack) &&
+        (skip == "cat" || fCat.isEmpty || x.cat == fCat) && (skip == "car" || fCar.isEmpty || carKey(x) == fCar) && (skip == "track" || fTrack.isEmpty || trackKey(x) == fTrack) &&
             (skip == "kind" || fKind.isEmpty || kindOf(x.kind) == fKind) && (skip == "day" || fDay.isEmpty || dayKey(x) == fDay)
+    }
+
+    /// four small menus (discipline, kind of session, car, track) and the days you drove behind one button,
+    /// like the web's "Choose a session"
+    @ViewBuilder private func filters(_ all: [CloudSession], _ forCat: [CloudSession], _ forKind: [CloudSession], _ forCar: [CloudSession], _ forTrack: [CloudSession], _ forDay: [CloudSession], _ shown: Int) -> some View {
+        let cats: [(String, String, Int)] = DISCS.filter { k in all.contains { $0.cat == k } }.map { k in (k, discName(k), forCat.filter { $0.cat == k }.count) }
+        let kinds: [(String, String, Int)] = ["race", "qual", "prac", "test"].map { k in (k, t("filt_" + k), forKind.filter { kindOf($0.kind) == k }.count) }.filter { $0.2 > 0 || $0.0 == fKind }
+        let cars = group(forCar, carKey) { fixText($0.car) }
+        let tracks = group(forTrack, trackKey, trackName)
+        let days: [String: Int] = forDay.reduce(into: [String: Int]()) { $0[dayKey($1), default: 0] += 1 }
+        let dayLabel: String = (fDay.isEmpty ? t("days_drove") : t("days_drove") + " · " + fDay) + (showDays ? " ▴" : " ▾")
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                FilterMenu(all: t("lic_all_full"), total: forCat.count, items: cats, value: $fCat)
+                FilterMenu(all: t("kind_all"), total: forKind.count, items: kinds, value: $fKind)
+            }
+            HStack(spacing: 6) {
+                FilterMenu(all: t("every_car"), total: forCar.count, items: cars, value: $fCar)
+                FilterMenu(all: t("every_track"), total: forTrack.count, items: tracks, value: $fTrack)
+            }
+            HStack {
+                Button(dayLabel) { showDays.toggle() }.font(.caption.bold()).foregroundColor(Theme.accent)
+                Spacer()
+                if !(fCat + fCar + fTrack + fKind + fDay).isEmpty {
+                    Button(t("clear_filters") + " · \(shown)/\(all.count)") { fCat = ""; fCar = ""; fTrack = ""; fKind = ""; fDay = "" }.font(.caption.bold()).foregroundColor(Theme.accent)
+                }
+            }
+            if showDays {
+                Panel { DayGrid(days: days, selected: fDay) { k in fDay = fDay == k ? "" : k } }
+            }
+        }
     }
 
     var body: some View {
@@ -882,41 +923,16 @@ struct AnalysisView: View {
                 // many cars, tracks and sessions make a long list: the discipline, the kind of session, the car and track,
                 // a day you drove (the calendar), like the web's "Choose a session"
                 let all = sessions.data ?? []
-                let cats = DISCS.filter { k in all.contains { $0.cat == k } }
                 let forCat = all.filter { match($0, skip: "cat") }, forKind = all.filter { match($0, skip: "kind") }
                 let forCar = all.filter { match($0, skip: "car") }, forTrack = all.filter { match($0, skip: "track") }, forDay = all.filter { match($0, skip: "day") }
-                let cars = Array(Set(forCar.map { $0.car })).sorted(), tracks = Array(Set(forTrack.map { trackName($0) })).sorted()
-                if !cats.isEmpty && all.count > 1 {
-                    Pills(items: [("", t("lic_all_full") + " (\(forCat.count))")] + cats.map { k in (k, discName(k) + " (\(forCat.filter { $0.cat == k }.count))") }, selected: $fCat)
-                }
-                if all.count > 1 {
-                    Pills(items: [("", t("kind_all") + " (\(forKind.count))")] + ["race", "qual", "prac", "test"].compactMap { (k: String) -> (String, String)? in
-                        let n = forKind.filter { kindOf($0.kind) == k }.count
-                        return n > 0 || fKind == k ? (k, t("filt_" + k) + " (\(n))") : nil
-                    }, selected: $fKind)
-                }
-                if cars.count > 1 || !fCar.isEmpty { Pills(items: [("", t("every_car") + " (\(forCar.count))")] + cars.map { k in (k, k + " (\(forCar.filter { $0.car == k }.count))") }, selected: $fCar) }
-                if tracks.count > 1 || !fTrack.isEmpty { Pills(items: [("", t("every_track") + " (\(forTrack.count))")] + tracks.map { k in (k, k + " (\(forTrack.filter { trackName($0) == k }.count))") }, selected: $fTrack) }
-                if all.count > 1 {
-                    Panel {
-                        HStack {
-                            Text(t("days_drove")).font(.subheadline.bold())
-                            Spacer()
-                            if fDay.isEmpty { Text(t("press_day")).font(.caption).foregroundColor(Theme.muted) } else { Button(t("every_day")) { fDay = "" }.font(.caption.bold()).foregroundColor(Theme.accent) }
-                        }
-                        DayGrid(days: forDay.reduce(into: [String: Int]()) { $0[dayKey($1), default: 0] += 1 }, selected: fDay) { k in fDay = fDay == k ? "" : k }
-                    }
-                }
                 let list = all.filter { match($0) }
-                if all.count > 1 && !(fCat + fCar + fTrack + fKind + fDay).isEmpty {
-                    Button(t("clear_filters") + " · \(list.count)/\(all.count)") { fCat = ""; fCar = ""; fTrack = ""; fKind = ""; fDay = "" }.font(.caption.bold()).foregroundColor(Theme.accent)
-                }
+                if all.count > 1 { filters(all, forCat, forKind, forCar, forTrack, forDay, list.count) }
                 if sessions.data != nil && list.isEmpty { EmptyNote(text: t("no_sessions")) }
                 ForEach(list) { x in
                     NavigationLink(value: Route.session(x)) {
                         Panel {
-                            Text(x.track + (x.trackConfig.isEmpty ? "" : " · " + x.trackConfig)).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
-                            Text(x.car).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+                            Text(fixText(x.track) + (x.trackConfig.isEmpty ? "" : " · " + fixText(x.trackConfig))).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
+                            Text(fixText(x.car)).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
                             HStack {
                                 Text([kindText(x.kind), day(x.started), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
                                 LicBadge(k: x.lic)
@@ -935,8 +951,8 @@ struct AnalysisView: View {
                     let s = x.bestSessionId.map { CloudSession(id: $0, started: x.last, track: x.track, trackConfig: x.trackConfig, car: x.car, kind: "", laps: x.laps, best: x.best) }
                     NavigationLink(value: s.map { Route.session($0) } ?? Route.races) {
                         Panel {
-                            Text(x.track + (x.trackConfig.isEmpty ? "" : " · " + x.trackConfig)).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
-                            Text(x.car).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+                            Text(fixText(x.track) + (x.trackConfig.isEmpty ? "" : " · " + fixText(x.trackConfig))).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
+                            Text(fixText(x.car)).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
                             HStack {
                                 Text([day(x.last), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
                                 Spacer()
@@ -1731,6 +1747,33 @@ struct SupBadge: View {
 }
 
 /// A row of small filters that scrolls sideways.
+/// One small filter menu: "Every car (5)" and, when opened, each choice with how many sessions it has.
+struct FilterMenu: View {
+    let all: String
+    let total: Int
+    let items: [(String, String, Int)] // value, name, sessions
+    @Binding var value: String
+    private var label: String {
+        if let c = items.first(where: { $0.0 == value }) { return "\(c.1) (\(c.2))" }
+        return "\(all) (\(total))"
+    }
+    var body: some View {
+        Menu {
+            Button("\(all) (\(total))") { value = "" }
+            ForEach(items, id: \.0) { it in Button("\(it.1) (\(it.2))") { value = it.0 } }
+        } label: {
+            HStack(spacing: 4) {
+                Text(label).font(.footnote).lineLimit(1).foregroundColor(value.isEmpty ? Theme.fg : Theme.accent)
+                Spacer(minLength: 0)
+                Text("▾").font(.caption2).foregroundColor(Theme.muted)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .frame(maxWidth: .infinity)
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(value.isEmpty ? Theme.line : Theme.accent, lineWidth: 1))
+        }
+    }
+}
+
 struct Pills: View {
     let items: [(String, String)] // value, label
     @Binding var selected: String
