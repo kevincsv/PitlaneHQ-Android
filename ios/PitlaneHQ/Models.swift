@@ -11,6 +11,9 @@ struct CloudSession: Identifiable, Hashable {
     let kind: String
     let laps: Int
     let best: Double?
+    /// the discipline (oval, sports_car, formula_car, dirt_oval, dirt_road) and your license class in it (R, D, C, B, A, P)
+    var cat: String? = nil
+    var lic: String? = nil
 }
 
 struct CloudLap: Identifiable, Hashable {
@@ -63,6 +66,7 @@ struct Combo: Identifiable, Hashable {
     let car: String
     let laps: Int
     let best: Double?
+    var cat: String? = nil
 }
 
 struct CommunityLap: Identifiable, Hashable {
@@ -74,6 +78,55 @@ struct CommunityLap: Identifiable, Hashable {
     let sectors: [Double]
     /// the signed-in driver's own lap, also when it was shared anonymously (only they see that)
     var mine: Bool = false
+    var lic: String? = nil
+    /// the name opens the driver's profile (never for an anonymous lap)
+    var prof: Bool = false
+    /// a supporter (someone who donates)
+    var sup: Bool = false
+    /// a rival of a race someone drove
+    var field: Bool = false
+}
+
+/// A driver's profile: their nickname (never their iRacing name), license classes, recent races and laps on the leaderboards.
+struct DriverProfile {
+    let name: String
+    let since: Double
+    let mine: Bool
+    let admin: Bool
+    let anonymous: Bool
+    let supporter: Bool
+    let supporterHidden: Bool
+    let lics: [String: String]
+    let races: [ProfileRace]
+    let laps: [ProfileLap]
+}
+
+struct ProfileRace: Identifiable {
+    let id = UUID()
+    let when: Double
+    let track: String
+    let car: String
+    let cat: String?
+    let lic: String?
+    let official: Bool
+    let start: Int
+    let finish: Int
+    let field: Int
+    let inc: Int
+    let best: Double?
+    let irChange: Int
+    let dnf: Bool
+}
+
+struct ProfileLap: Identifiable {
+    let id = UUID()
+    let track: String
+    let car: String
+    let time: Double
+    let created: Double
+    let cat: String?
+    let lic: String?
+    let anon: Bool
 }
 
 struct SharedReport: Identifiable, Hashable {

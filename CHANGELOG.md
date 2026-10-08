@@ -4,6 +4,26 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
+## 0.8.11 beta
+
+**New**
+- **Leaderboards by discipline and license**: Community filters by Oval, Sports Car, Formula Car,
+  Dirt Oval and Dirt Road; each leaderboard shows the license class of every driver and filters by
+  class. When your lap is the fastest, it says you are the fastest.
+- **Driver profiles**: tap a driver on a leaderboard to see their nickname (never the iRacing name),
+  license classes, recent races and laps. Yours is in Account → My profile. Anonymous laps open no
+  profile. Your recent races are summarised for your profile after each sync (only your own result).
+- **Supporter badge** next to the drivers who donate; admins give it and take it away in the admin
+  profile, and a supporter hides it from their profile.
+- **Leagues** tab in Community, in development: admins see what is coming, everyone else reads that
+  we are working on it.
+- **Analysis filters your sessions** by license (discipline) and then car and track; a session shows
+  the car, the discipline and your license class.
+
+**Changed**
+- Same version as the PC and the web (fastest lap shared by itself, test drives out of the model and
+  the leaderboards, incidents completed in older race summaries).
+
 ## 0.8.10 beta
 
 **Fixed**

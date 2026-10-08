@@ -52,6 +52,7 @@ enum Vault {
 private func num(_ v: Any?) -> Double? { (v as? NSNumber)?.doubleValue }
 private func int(_ v: Any?) -> Int { (v as? NSNumber)?.intValue ?? 0 }
 private func str(_ v: Any?) -> String { v as? String ?? "" }
+private func orNull(_ v: Any?) -> Any { v ?? NSNull() }
 private func pos(_ v: Any?) -> Double? { num(v).flatMap { $0.isFinite && $0 > 0 ? $0 : nil } }
 private func doubles(_ v: Any?) -> [Double] { (v as? [NSNumber] ?? []).map(\.doubleValue) }
 
@@ -317,6 +318,7 @@ final class Account: ObservableObject {
                 defaults.set(recoveryLeft, forKey: "recoveryLeft")
             }
             loadRaces()
+            await publishProfileRaces()
         } catch {
             if !quiet || (error as? AppError)?.key == AppError.signedOut.key { self.error = (error as? AppError)?.key ?? error.localizedDescription }
         }
@@ -428,7 +430,8 @@ final class Account: ObservableObject {
         let g = try await cachedGet("/api/sessions?limit=100")
         return Got(data: (g.data as? [[String: Any]] ?? []).compactMap { s in
             guard let id = s["id"] as? String else { return nil }
-            return CloudSession(id: id, started: num(s["started"]) ?? 0, track: str(s["track"]), trackConfig: str(s["track_config"]), car: str(s["car"]), kind: str(s["kind"]), laps: int(s["laps"]), best: pos(s["best"]))
+            return CloudSession(id: id, started: num(s["started"]) ?? 0, track: str(s["track"]), trackConfig: str(s["track_config"]), car: str(s["car"]), kind: str(s["kind"]), laps: int(s["laps"]), best: pos(s["best"]),
+                                cat: s["cat"] as? String, lic: s["lic"] as? String)
         }, stale: g.stale)
     }
 
@@ -477,7 +480,7 @@ final class Account: ObservableObject {
         let g = try await cachedGet("/community/combos?game=iracing")
         let a = (g.data as? [String: Any])?["combos"] as? [[String: Any]] ?? []
         return Got(data: a.map { c in
-            Combo(trackId: (c["trackId"] as? NSNumber)?.int64Value ?? 0, track: str(c["track"]), carId: (c["carId"] as? NSNumber)?.int64Value ?? 0, car: str(c["car"]), laps: int(c["laps"]), best: pos(c["best"]))
+            Combo(trackId: (c["trackId"] as? NSNumber)?.int64Value ?? 0, track: str(c["track"]), carId: (c["carId"] as? NSNumber)?.int64Value ?? 0, car: str(c["car"]), laps: int(c["laps"]), best: pos(c["best"]), cat: c["cat"] as? String)
         }, stale: g.stale)
     }
 
@@ -494,7 +497,8 @@ final class Account: ObservableObject {
                 if seen.contains(alias) { continue }
                 seen.insert(alias)
             }
-            out.append(CommunityLap(id: str(l["id"]), alias: alias, time: t, created: num(l["created"]) ?? 0, hasTrace: (l["hasTrace"] as? Bool) ?? false, sectors: doubles(l["sectors"]), mine: (l["mine"] as? Bool) ?? false))
+            out.append(CommunityLap(id: str(l["id"]), alias: alias, time: t, created: num(l["created"]) ?? 0, hasTrace: (l["hasTrace"] as? Bool) ?? false, sectors: doubles(l["sectors"]), mine: (l["mine"] as? Bool) ?? false,
+                                    lic: l["lic"] as? String, prof: (l["prof"] as? Bool) ?? false, sup: (l["sup"] as? Bool) ?? false, field: (l["field"] as? Bool) ?? false))
         }
         return Got(data: out.sorted { $0.time < $1.time }, stale: g.stale)
     }
@@ -506,6 +510,47 @@ final class Account: ObservableObject {
         return j?[kind == "users" ? "users" : "items"] as? [[String: Any]] ?? []
     }
     func adminDeleteUser(_ id: String) async throws { _ = try await call("DELETE", "/community/admin/users/" + idPath(id)) }
+    /// The owner of Pitlane HQ gives or takes away the supporter badge.
+    func adminSupporter(_ id: String, _ on: Bool) async throws { _ = try await call("POST", "/community/admin/supporter", body: ["id": id, "on": on]) }
+    /// A supporter hides (or shows again) their own badge.
+    func setBadgeHidden(_ hidden: Bool) async throws { _ = try await call("POST", "/community/profile/badge", body: ["hidden": hidden]) }
+
+    /// A driver's profile, from one of their laps on a leaderboard, or yours (lapId nil).
+    func profile(_ lapId: String?) async throws -> DriverProfile {
+        if demo { return Demo.profile(lapId) }
+        let q = lapId.map { "lap=" + ($0.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? $0) } ?? "me=1"
+        let j = (try JSONSerialization.jsonObject(with: await call("GET", "/community/profile?" + q, auth: token != nil)) as? [String: Any]) ?? [:]
+        let races = (j["races"] as? [[String: Any]] ?? []).map { r in
+            ProfileRace(when: num(r["when"]) ?? 0, track: fixTxt(str(r["track"])), car: fixTxt(str(r["car"])), cat: r["cat"] as? String, lic: r["lic"] as? String, official: r["official"] as? Bool ?? false,
+                        start: int(r["start"]), finish: int(r["finish"]), field: int(r["field"]), inc: int(r["inc"]), best: pos(r["best"]), irChange: int(r["irChange"]), dnf: r["dnf"] as? Bool ?? false)
+        }
+        let laps = (j["laps"] as? [[String: Any]] ?? []).map { x in
+            ProfileLap(track: fixTxt(str(x["track"])), car: fixTxt(str(x["car"])), time: num(x["time"]) ?? 0, created: num(x["created"]) ?? 0, cat: x["cat"] as? String, lic: x["lic"] as? String, anon: x["anon"] as? Bool ?? false)
+        }
+        return DriverProfile(name: (j["name"] as? String) ?? "Driver", since: num(j["since"]) ?? 0, mine: j["mine"] as? Bool ?? false, admin: j["admin"] as? Bool ?? false, anonymous: j["anonymous"] as? Bool ?? false,
+                             supporter: j["supporter"] as? Bool ?? false, supporterHidden: j["supporterHidden"] as? Bool ?? false, lics: j["lics"] as? [String: String] ?? [:], races: races, laps: laps)
+    }
+
+    /// Your profile's recent races: a summary of your own result in each (the race history itself stays encrypted).
+    func publishProfileRaces() async {
+        guard !demo, signedIn, let d = saved("races"), let a = try? JSONSerialization.jsonObject(with: d) as? [[String: Any]] else { return }
+        let cats = ["oval": "oval", "dirtoval": "dirt_oval", "dirtroad": "dirt_road", "formulacar": "formula_car", "sportscar": "sports_car"]
+        let list: [[String: Any]] = a.filter { int($0["finish"]) > 0 && (num($0["when"]) ?? 0) > 0 && !($0["partial"] as? Bool ?? false) }
+            .sorted { (num($0["when"]) ?? 0) > (num($1["when"]) ?? 0) }.prefix(20).map { r -> [String: Any] in
+                let me = (r["results"] as? [[String: Any]] ?? []).first { $0["me"] as? Bool ?? false }
+                let rawCat = str(r["cat"]).lowercased().filter { $0.isLetter }
+                let id0 = String(str(r["id"]).filter { ($0.isASCII && ($0.isLetter || $0.isNumber)) || "_.:-".contains($0) }.prefix(80))
+                return ["id": id0.isEmpty ? "r\(Int(num(r["when"]) ?? 0))" : id0, "when": num(r["when"]) ?? 0, "game": str(r["game"]).isEmpty ? "iracing" : str(r["game"]),
+                        "track": str(r["track"]), "car": str(r["car"]), "cat": orNull(cats[rawCat]), "lic": orNull(me?["lic"] as? String),
+                        "official": r["official"] as? Bool ?? false, "start": int(r["start"]), "finish": int(r["finish"]), "field": int(r["field"]), "inc": int(r["inc"]),
+                        "best": orNull(pos(r["best"])), "laps": (r["laps"] as? [Any])?.count ?? 0, "ir": int(r["ir"]), "irChange": int(r["irChange"]), "sof": int(r["sof"]), "dnf": r["dnf"] as? Bool ?? false]
+            }
+        guard let body = try? JSONSerialization.data(withJSONObject: list, options: [.sortedKeys]) else { return }
+        let last = UserDefaults.standard.string(forKey: "profRaces") ?? ""
+        let sig = String(body.count) + ":" + String(body.reduce(UInt32(2166136261)) { ($0 ^ UInt32($1)) &* 16777619 })
+        if last == sig { return }
+        if (try? await call("POST", "/community/profile/races", body: ["races": list])) != nil { UserDefaults.standard.set(sig, forKey: "profRaces") }
+    }
     func adminStatus() async throws -> [String: Any] {
         (try JSONSerialization.jsonObject(with: await call("GET", "/community/admin/status")) as? [String: Any]) ?? [:]
     }

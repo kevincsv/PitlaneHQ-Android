@@ -329,7 +329,8 @@ class AccountRepository(context: Context) {
             CloudSession(
                 id = s.getString("id"), started = s.optLong("started"), track = s.optString("track"),
                 trackConfig = s.optString("track_config").takeUnless { it == "null" } ?: "", car = s.optString("car"),
-                kind = s.optString("kind").takeUnless { it == "null" } ?: "", laps = s.optInt("laps"), best = s.optDouble("best").pos()
+                kind = s.optString("kind").takeUnless { it == "null" } ?: "", laps = s.optInt("laps"), best = s.optDouble("best").pos(),
+                cat = s.optStr("cat"), lic = s.optStr("lic")
             )
         }, g.stale)
     }
@@ -386,7 +387,7 @@ class AccountRepository(context: Context) {
         val a = JSONObject(g.data).optJSONArray("combos") ?: JSONArray()
         return Got((0 until a.length()).map { i ->
             val c = a.getJSONObject(i)
-            Combo(c.optLong("trackId"), c.optString("track"), c.optLong("carId"), c.optString("car"), c.optInt("laps"), c.optDouble("best").pos())
+            Combo(c.optLong("trackId"), c.optString("track"), c.optLong("carId"), c.optString("car"), c.optInt("laps"), c.optDouble("best").pos(), c.optStr("cat"))
         }, g.stale)
     }
 
@@ -399,11 +400,62 @@ class AccountRepository(context: Context) {
         val out = ArrayList<CommunityLap>()
         for (i in 0 until a.length()) {
             val l = a.getJSONObject(i)
-            val lap = CommunityLap(l.optString("id"), l.optString("alias", "Driver"), l.optDouble("time"), l.optLong("created"), l.optBoolean("hasTrace"), doubles(l.optJSONArray("sectors")), l.optBoolean("mine"))
+            val lap = CommunityLap(l.optString("id"), l.optString("alias", "Driver"), l.optDouble("time"), l.optLong("created"), l.optBoolean("hasTrace"), doubles(l.optJSONArray("sectors")), l.optBoolean("mine"),
+                l.optStr("lic"), l.optBoolean("prof"), l.optBoolean("sup"), l.optBoolean("field"))
             if (lap.alias != "Anonymous" && !seen.add(lap.alias)) continue
             out.add(lap)
         }
         return Got(out.sortedBy { it.time }, g.stale)
+    }
+
+    private fun JSONObject.optStr(k: String): String? = optString(k, "").takeUnless { it.isEmpty() || it == "null" }
+
+    /** A driver's profile, from one of their laps on a leaderboard, or yours (lapId null). */
+    fun profile(lapId: String?): DriverProfile {
+        if (demo) return Demo.profile(lapId)
+        val signed = runCatching { token() }.isSuccess
+        val j = JSONObject(call("GET", "/community/profile?" + if (lapId == null) "me=1" else "lap=" + URLEncoder.encode(lapId, "UTF-8"), null, signed))
+        val l = j.optJSONObject("lics") ?: JSONObject()
+        val rs = j.optJSONArray("races") ?: JSONArray()
+        val ls = j.optJSONArray("laps") ?: JSONArray()
+        return DriverProfile(
+            j.optString("name", "Driver"), j.optLong("since"), j.optBoolean("mine"), j.optBoolean("admin"), j.optBoolean("anonymous"), j.optBoolean("supporter"), j.optBoolean("supporterHidden"),
+            l.keys().asSequence().associateWith { l.optString(it) },
+            (0 until rs.length()).mapNotNull { rs.optJSONObject(it) }.map { r ->
+                ProfileRace(r.optLong("when"), fixTxt(r.optString("track")), fixTxt(r.optString("car")), r.optStr("cat"), r.optStr("lic"), r.optBoolean("official"), r.optInt("start"), r.optInt("finish"), r.optInt("field"),
+                    r.optInt("inc"), r.optDouble("best").pos(), r.optInt("irChange"), r.optBoolean("dnf"))
+            },
+            (0 until ls.length()).mapNotNull { ls.optJSONObject(it) }.map { x -> ProfileLap(fixTxt(x.optString("track")), fixTxt(x.optString("car")), x.optDouble("time"), x.optLong("created"), x.optStr("cat"), x.optStr("lic"), x.optBoolean("anon")) }
+        )
+    }
+
+    /** A supporter hides (or shows again) their own badge. */
+    fun setBadgeHidden(hidden: Boolean) { call("POST", "/community/profile/badge", JSONObject().put("hidden", hidden)) }
+
+    /** The owner of Pitlane HQ gives or takes away the supporter badge. */
+    fun adminSupporter(id: String, on: Boolean) { call("POST", "/community/admin/supporter", JSONObject().put("id", id).put("on", on)) }
+
+    /** Your profile's recent races: a summary of your own result in each (the race history itself stays encrypted). */
+    fun publishProfileRaces() {
+        if (demo) return
+        val a = saved("races")?.let { JSONArray(it) } ?: return
+        val cats = mapOf("oval" to "oval", "dirtoval" to "dirt_oval", "dirtroad" to "dirt_road", "formulacar" to "formula_car", "sportscar" to "sports_car")
+        val out = JSONArray()
+        (0 until a.length()).mapNotNull { a.optJSONObject(it) }.filter { it.optInt("finish") > 0 && it.optLong("when") > 0 && !it.optBoolean("partial") }
+            .sortedByDescending { it.optLong("when") }.take(20).forEach { r ->
+                val res = r.optJSONArray("results")
+                val me = res?.let { x -> (0 until x.length()).mapNotNull { x.optJSONObject(it) }.firstOrNull { it.optBoolean("me") } }
+                out.put(JSONObject().put("id", r.optString("id").replace(Regex("[^A-Za-z0-9_.:-]"), "").take(80).ifEmpty { "r" + r.optLong("when") })
+                    .put("when", r.optLong("when")).put("game", r.optString("game", "iracing").ifEmpty { "iracing" }).put("track", r.optString("track")).put("car", r.optString("car"))
+                    .put("cat", cats[r.optString("cat").lowercase().replace(Regex("[^a-z]"), "")] ?: JSONObject.NULL).put("lic", me?.optStr("lic") ?: JSONObject.NULL)
+                    .put("official", r.optBoolean("official")).put("start", r.optInt("start")).put("finish", r.optInt("finish")).put("field", r.optInt("field"))
+                    .put("inc", r.optInt("inc")).put("best", r.optDouble("best").pos() ?: JSONObject.NULL).put("laps", r.optJSONArray("laps")?.length() ?: 0)
+                    .put("ir", r.optInt("ir")).put("irChange", r.optInt("irChange")).put("sof", r.optInt("sof")).put("dnf", r.optBoolean("dnf")))
+            }
+        val key = out.toString().hashCode()
+        if (prefs.getInt("profRaces", 0) == key) return
+        call("POST", "/community/profile/races", JSONObject().put("races", out))
+        prefs.edit().putInt("profRaces", key).apply()
     }
 
     // the admin profile: accounts, and shared items with who really uploaded them

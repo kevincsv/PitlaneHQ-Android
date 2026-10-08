@@ -44,6 +44,8 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     val reports = MutableStateFlow(Loadable<List<SharedReport>>())
     val setups = MutableStateFlow(Loadable<List<SharedSetup>>())
     val devices = MutableStateFlow(Loadable<List<Device>>())
+    val profile = MutableStateFlow(Loadable<DriverProfile>())
+    private var profileLap: String? = null
 
     // what the detail screens show
     var session: CloudSession? = null
@@ -171,6 +173,8 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
                     // what is already on screen is read again too
                     if (sessions.value.data != null) loadSessions()
                     if (bests.value.data != null) loadBests()
+                    // your profile's recent races (your own result in each), when they changed
+                    runCatching { repo.publishProfileRaces() }
                 }
                 .onFailure { e -> if (e is SignedOut) signedOut() else if (!quiet) _account.value = _account.value.copy(busy = false, error = errKey(e)) }
         }
@@ -224,6 +228,10 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     fun loadReports() = load(reports) { repo.reports() }
     fun loadSetups() = load(setups) { repo.setups() }
     fun loadDevices() = load(devices) { Got(repo.devices()) }
+    /** A driver's profile, from one of their laps (null: yours). */
+    fun loadProfile(lapId: String?) { profileLap = lapId; profile.value = Loadable(); load(profile) { Got(repo.profile(lapId)) } }
+    fun setBadgeHidden(hidden: Boolean) = viewModelScope.launch(Dispatchers.IO) { runCatching { repo.setBadgeHidden(hidden) }; loadProfile(profileLap) }
+    fun adminSupporter(id: String, on: Boolean) = viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminSupporter(id, on) }; loadAdmin("users") }
 
     fun revoke(id: String) {
         viewModelScope.launch(Dispatchers.IO) {

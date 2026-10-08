@@ -32,7 +32,9 @@ data class CloudSession(
     val car: String,
     val kind: String,
     val laps: Int,
-    val best: Double?
+    val best: Double?,
+    val cat: String? = null,   // the discipline: oval, sports_car, formula_car, dirt_oval, dirt_road
+    val lic: String? = null    // your license class in it: R, D, C, B, A, P
 )
 
 data class CloudLap(val id: String, val n: Int, val time: Double, val valid: Boolean, val sectors: List<Double>, val inc: Int = 0)
@@ -62,10 +64,18 @@ data class PersonalBest(
 )
 
 /** A track and car the community has laps for (GET /community/combos). */
-data class Combo(val trackId: Long, val track: String, val carId: Long, val car: String, val laps: Int, val best: Double?)
+data class Combo(val trackId: Long, val track: String, val carId: Long, val car: String, val laps: Int, val best: Double?, val cat: String? = null)
 
 /** `mine`: the signed-in driver's own lap, also when it was shared anonymously (only they see that). */
-data class CommunityLap(val id: String, val alias: String, val time: Double, val created: Long, val hasTrace: Boolean, val sectors: List<Double>, val mine: Boolean = false)
+data class CommunityLap(val id: String, val alias: String, val time: Double, val created: Long, val hasTrace: Boolean, val sectors: List<Double>, val mine: Boolean = false,
+    val lic: String? = null, val prof: Boolean = false, val sup: Boolean = false, val field: Boolean = false)
+
+/** A driver's profile: their nickname (never their iRacing name), license classes, recent races and laps on the leaderboards. */
+data class DriverProfile(val name: String, val since: Long, val mine: Boolean, val admin: Boolean, val anonymous: Boolean, val supporter: Boolean, val supporterHidden: Boolean,
+    val lics: Map<String, String>, val races: List<ProfileRace>, val laps: List<ProfileLap>)
+data class ProfileRace(val whenMs: Long, val track: String, val car: String, val cat: String?, val lic: String?, val official: Boolean, val start: Int, val finish: Int, val field: Int,
+    val inc: Int, val best: Double?, val irChange: Int, val dnf: Boolean)
+data class ProfileLap(val track: String, val car: String, val time: Double, val created: Long, val cat: String?, val lic: String?, val anon: Boolean)
 
 data class SharedReport(val id: String, val alias: String, val track: String, val car: String, val created: Long, val finish: Int, val field: Int, val best: Double?, val mine: Boolean = false)
 

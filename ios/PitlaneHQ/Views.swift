@@ -274,6 +274,7 @@ enum Route: Hashable {
     case session(CloudSession)
     case lap(CloudSession, CloudLap, [CloudLap])
     case combo(Combo)
+    case profile(String?)
 }
 
 extension View {
@@ -285,6 +286,7 @@ extension View {
             case let .session(s): SessionView(session: s)
             case let .lap(s, l, all): LapView(session: s, lap: l, all: all)
             case let .combo(c): ComboView(combo: c)
+            case let .profile(id): ProfileView(lapId: id)
             }
         }
     }
@@ -801,10 +803,13 @@ struct AnalysisView: View {
     @StateObject private var sessions = Loader<[CloudSession]>()
     @StateObject private var bests = Loader<[PersonalBest]>()
     @State private var tab = 0
+    @State private var fCat = ""
+    @State private var fCombo = ""
 
     private func load() async {
         if tab == 0 { await sessions.load { try await account.sessions() } } else { await bests.load { try await account.bests() } }
     }
+    private func comboName(_ x: CloudSession) -> String { x.car + " · " + x.track + (x.trackConfig.isEmpty ? "" : " · " + x.trackConfig) }
 
     var body: some View {
         Screen(title: t("analysis"), sub: t("uploaded_by_pc")) {
@@ -812,14 +817,26 @@ struct AnalysisView: View {
             Tabs(labels: [t("sessions"), t("bests")], selected: $tab)
             if tab == 0 {
                 LoadState(loading: sessions.loading, error: sessions.error, stale: sessions.stale) { Task { await load() } }
-                if let s = sessions.data, s.isEmpty { EmptyNote(text: t("no_sessions")) }
-                ForEach(sessions.data ?? []) { x in
+                // many cars, tracks and licenses make a long list: first the license (the discipline), then the car and track
+                let all = sessions.data ?? []
+                let cats = DISCS.filter { k in all.contains { $0.cat == k } }
+                let inCat = all.filter { fCat.isEmpty || $0.cat == fCat }
+                let combos = inCat.map { comboName($0) }.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+                if !cats.isEmpty && all.count > 1 {
+                    Pills(items: [("", t("lic_all_full") + " (\(all.count))")] + cats.map { k in (k, discName(k) + " (\(all.filter { $0.cat == k }.count))") }, selected: $fCat)
+                        .onChange(of: fCat) { _ in fCombo = "" }
+                }
+                if combos.count > 1 { Pills(items: [("", t("every_car_track"))] + combos.map { ($0, $0) }, selected: $fCombo) }
+                let list = inCat.filter { fCombo.isEmpty || comboName($0) == fCombo }
+                if sessions.data != nil && list.isEmpty { EmptyNote(text: t("no_sessions")) }
+                ForEach(list) { x in
                     NavigationLink(value: Route.session(x)) {
                         Panel {
                             Text(x.track + (x.trackConfig.isEmpty ? "" : " · " + x.trackConfig)).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
                             Text(x.car).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
                             HStack {
-                                Text([kindText(x.kind), day(x.started), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
+                                Text([kindText(x.kind), day(x.started), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+                                LicBadge(k: x.lic)
                                 Spacer()
                                 Text(lapTime(x.best)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
                             }
@@ -876,6 +893,9 @@ struct SessionView: View {
         let avg: Double? = valid.isEmpty ? nil : valid.map(\.time).reduce(0, +) / Double(valid.count)
         return Screen(title: session.track, sub: session.car) {
             LoadState(loading: laps.loading, error: laps.error, stale: laps.stale) { Task { await laps.load { try await account.laps(session.id) } } }
+            if session.cat != nil {
+                HStack(spacing: 6) { Text(t("viewing", session.car, discName(session.cat))).font(.caption).foregroundColor(Theme.muted); LicBadge(k: session.lic); Spacer() }
+            }
             HStack(spacing: 8) {
                 Metric(label: t("best"), value: lapTime(best), color: Theme.purple)
                 Metric(label: t("average"), value: lapTime(avg))
@@ -1571,6 +1591,58 @@ struct Chart: View {
 
 // ---------- Community ----------
 
+// the disciplines iRacing splits its licenses into, and the license classes, like on the web
+let DISCS = ["oval", "sports_car", "formula_car", "dirt_oval", "dirt_road"]
+let LICS = ["R", "D", "C", "B", "A", "P"]
+func discName(_ k: String?) -> String { k.map { DISCS.contains($0) ? t("disc_" + $0) : "" } ?? "" }
+private func licColor(_ k: String) -> Color {
+    switch k {
+    case "R": return Color(red: 1, green: 0x63 / 255, blue: 0x63 / 255)
+    case "D": return Color(red: 1, green: 0x8F / 255, blue: 0x45 / 255)
+    case "C": return Color(red: 0xF2 / 255, green: 0xC9 / 255, blue: 0x4C / 255)
+    case "B": return Color(red: 0x38 / 255, green: 0xC9 / 255, blue: 0x7C / 255)
+    case "A": return Color(red: 0x5C / 255, green: 0x9D / 255, blue: 1)
+    default: return Color(red: 0xC9 / 255, green: 0xD1 / 255, blue: 0xDC / 255)
+    }
+}
+
+/// The license class as a small coloured square (R, D, C, B, A, Pro).
+struct LicBadge: View {
+    let k: String?
+    var body: some View {
+        if let k, LICS.contains(k) {
+            Text(k == "P" ? "Pro" : k).font(.system(size: 10, weight: .black)).foregroundColor(Theme.fg).padding(.horizontal, 5).padding(.vertical, 1)
+                .background(licColor(k).opacity(0.55)).overlay(RoundedRectangle(cornerRadius: 4).stroke(licColor(k), lineWidth: 1.5)).clipShape(RoundedRectangle(cornerRadius: 4))
+        }
+    }
+}
+
+/// The supporter badge: people who donate, given by hand by the owner of Pitlane HQ.
+struct SupBadge: View {
+    var body: some View {
+        Text("♥ SUPPORTER").font(.system(size: 9, weight: .black)).foregroundColor(Color(red: 1, green: 0.84, blue: 0.9)).padding(.horizontal, 6).padding(.vertical, 1)
+            .background(Color(red: 0.91, green: 0.24, blue: 0.55).opacity(0.33)).overlay(Capsule().stroke(Color(red: 0.91, green: 0.24, blue: 0.55).opacity(0.65), lineWidth: 1)).clipShape(Capsule())
+    }
+}
+
+/// A row of small filters that scrolls sideways.
+struct Pills: View {
+    let items: [(String, String)] // value, label
+    @Binding var selected: String
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(items, id: \.0) { it in
+                    Button { selected = selected == it.0 && !it.0.isEmpty ? "" : it.0 } label: {
+                        Text(it.1).font(.caption.bold()).padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(selected == it.0 ? Theme.accent : Theme.surface2).foregroundColor(selected == it.0 ? Theme.ink : Theme.muted).clipShape(Capsule())
+                    }
+                }
+            }
+        }
+    }
+}
+
 struct CommunityView: View {
     @EnvironmentObject var account: Account
     @EnvironmentObject var net: NetMonitor
@@ -1580,6 +1652,8 @@ struct CommunityView: View {
     @State private var tab = 0
     @State private var q = ""
     @State private var lastDemo = false
+    @State private var sec = 0
+    @State private var cat = ""
 
     private func match(_ s: String...) -> Bool { q.isEmpty || s.contains { $0.localizedCaseInsensitiveContains(q) } }
 
@@ -1595,12 +1669,21 @@ struct CommunityView: View {
 
     var body: some View {
         Screen(title: t("community"), sub: t("shared_by")) {
+            Tabs(labels: [t("leaderboards"), t("leagues")], selected: $sec)
+            if sec == 1 {
+                // leagues: in development, only the admins get in; everyone else reads that we are working on it
+                Panel {
+                    HStack { Text(t("leagues")).font(.headline.weight(.black)); Spacer(); StatusPill(text: t("in_development"), color: Theme.accent) }
+                    Text(account.admin ? t("leagues_admin") : t("leagues_wip")).font(.subheadline).foregroundColor(Theme.muted).padding(.top, 4)
+                }
+            } else {
             WebNote(text: t("community_web"))
-            // setups and shared race analyses are switched off for now: only the leaderboards
+            // setups and shared race analyses are switched off for now: only the leaderboards, by lap time, per discipline
+            Pills(items: [("", t("disc_all"))] + DISCS.map { k in (k, discName(k) + " (\((combos.data ?? []).filter { $0.cat == k }.count))") }, selected: $cat)
             TextField(t("search"), text: $q).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
             switch tab {
             case 0:
-                let list = (combos.data ?? []).filter { match($0.track, $0.car) }
+                let list = (combos.data ?? []).filter { match($0.track, $0.car) && (cat.isEmpty || $0.cat == cat) }
                 LoadState(loading: combos.loading, error: combos.error, stale: combos.stale) { Task { await load() } }
                 if combos.data != nil && list.isEmpty { EmptyNote(text: t("nothing_found")) }
                 ForEach(list) { x in
@@ -1609,7 +1692,7 @@ struct CommunityView: View {
                             Text(x.track).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
                             Text(x.car).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
                             HStack {
-                                Text(t("laps_n", x.laps)).font(.caption).foregroundColor(Theme.muted)
+                                Text([discName(x.cat), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
                                 Spacer()
                                 Text(lapTime(x.best)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
                             }
@@ -1651,6 +1734,7 @@ struct CommunityView: View {
                     }
                 }
             }
+            }
         }
         .refreshable { await load() }
         .task(id: "\(tab)-\(account.demo)") {
@@ -1664,9 +1748,11 @@ struct ComboView: View {
     @EnvironmentObject var account: Account
     let combo: Combo
     @StateObject private var board = Loader<[CommunityLap]>()
+    @State private var lic = ""
 
     var body: some View {
         let laps = board.data ?? []
+        let shown = lic.isEmpty ? laps : laps.filter { $0.lic == lic }
         let top = laps.first?.time
         // the server marks the signed-in driver's own lap (anonymous ones too); older servers: by the public name
         let mine = laps.firstIndex { $0.mine } ?? laps.firstIndex { !account.display.isEmpty && $0.alias.caseInsensitiveCompare(account.display) == .orderedSame }
@@ -1674,22 +1760,34 @@ struct ComboView: View {
             LoadState(loading: board.loading, error: board.error, stale: board.stale) { Task { await board.load { try await account.leaderboard(trackId: combo.trackId, carId: combo.carId) } } }
             if board.data != nil {
                 Panel {
-                    if let mine { Text(t("your_position", mine + 1, laps.count, lapTime(laps[mine].time))).font(.subheadline.bold()).foregroundColor(Theme.accent) }
+                    if mine == 0 && laps.count > 1 {
+                        Text("🏆 " + t("you_fastest")).font(.subheadline.weight(.black)).foregroundColor(Theme.purple)
+                        Text(t("you_fastest_sub", laps.count, lapTime(laps[0].time))).font(.caption).foregroundColor(Theme.muted)
+                    } else if let mine { Text(t("your_position", mine + 1, laps.count, lapTime(laps[mine].time))).font(.subheadline.bold()).foregroundColor(Theme.accent) }
                     else { Text(t("not_on_board")).font(.caption).foregroundColor(Theme.muted) }
-                    Text(t("drivers", laps.count)).font(.caption2).foregroundColor(Theme.muted)
+                    Text([discName(combo.cat), t("drivers", laps.count)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption2).foregroundColor(Theme.muted)
                 }
             }
+            // one license class: its drivers only, with their place in the whole leaderboard
+            if laps.contains(where: { $0.lic != nil }) {
+                Pills(items: [("", t("lic_all"))] + LICS.filter { k in laps.contains { $0.lic == k } }.map { k in (k, (k == "P" ? "Pro" : k) + " (\(laps.filter { $0.lic == k }.count))") }, selected: $lic)
+            }
             SectionLabel(text: t("fastest_drivers"))
-            ForEach(Array(laps.enumerated()), id: \.element.id) { i, lap in
+            ForEach(shown) { lap in
+                let i = laps.firstIndex(of: lap) ?? 0
                 let me = i == mine
+                NavigationLink(value: Route.profile(lap.id)) {
                 Panel {
                     HStack {
                         Text("\(i + 1)").font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(i == 0 ? Theme.purple : me ? Theme.accent : Theme.muted).frame(width: 32, alignment: .leading)
                         VStack(alignment: .leading, spacing: 1) {
                             HStack(spacing: 6) {
-                                Text(lap.alias == "Anonymous" ? t("anonymous") : lap.alias).font(.subheadline.bold()).foregroundColor(me ? Theme.accent : Theme.fg).lineLimit(1)
+                                LicBadge(k: lap.lic)
+                                Text(lap.alias == "Anonymous" ? t("anonymous") : lap.alias).font(.subheadline.bold()).foregroundColor(me ? Theme.accent : Theme.fg).lineLimit(1).underline(lap.prof)
+                                if lap.sup { SupBadge() }
                                 if lap.mine { Text(t("you_badge")).font(.system(size: 10, weight: .bold)).foregroundColor(Theme.accent) }
                             }
+                            if lap.field && !lap.mine { Text(t("rival_race")).font(.system(size: 10)).foregroundColor(Theme.muted) }
                             if !lap.sectors.isEmpty { Text(lap.sectors.map { String(format: "%.3f", $0) }.joined(separator: "  ")).font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.muted) }
                             if !lap.hasTrace { Text(t("trace_not_shared")).font(.system(size: 10)).foregroundColor(Theme.muted) }
                         }
@@ -1700,9 +1798,91 @@ struct ComboView: View {
                         }
                     }
                 }
+                }
+                .buttonStyle(.plain)
+                .disabled(!lap.prof)
             }
         }
         .task { if board.data == nil { await board.load { try await account.leaderboard(trackId: combo.trackId, carId: combo.carId) } } }
+    }
+}
+
+/// A driver's profile: nickname (never the iRacing name), license classes, recent races, laps on the leaderboards.
+struct ProfileView: View {
+    @EnvironmentObject var account: Account
+    let lapId: String?
+    @State private var p: DriverProfile?
+    @State private var error: String?
+
+    private func load() async {
+        do { p = try await account.profile(lapId); error = nil } catch { self.error = (error as? AppError)?.key ?? error.localizedDescription }
+    }
+
+    var body: some View {
+        Screen(title: p?.name ?? t("profile"), sub: p.map { t("since", day($0.since)) } ?? "") {
+            if let p {
+                Panel {
+                    HStack(spacing: 8) {
+                        Text(p.name).font(.title3.weight(.black)).lineLimit(2)
+                        if p.supporter && !(p.mine && p.supporterHidden) { SupBadge() }
+                        Spacer()
+                    }
+                    if p.anonymous { Text("🔒 " + t(p.mine ? "anon_mine" : "anon_admins_only")).font(.caption).foregroundColor(Theme.muted) }
+                    if p.mine && p.supporter && p.supporterHidden { Text(t("badge_hidden")).font(.caption).foregroundColor(Theme.muted) }
+                    let ls = DISCS.filter { p.lics[$0] != nil }
+                    if !ls.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 10) { ForEach(ls, id: \.self) { k in HStack(spacing: 4) { LicBadge(k: p.lics[k]); Text(discName(k)).font(.caption) } } }
+                        }.padding(.top, 6)
+                    }
+                    if p.mine && p.supporter {
+                        Button(t(p.supporterHidden ? "show_badge" : "hide_badge")) { Task { try? await account.setBadgeHidden(!p.supporterHidden); await load() } }
+                            .font(.caption.bold()).foregroundColor(Theme.accent).padding(.top, 6)
+                    }
+                }
+                SectionLabel(text: t("recent_races").uppercased())
+                if p.races.isEmpty { EmptyNote(text: t("no_races_yet")) }
+                ForEach(p.races) { r in
+                    Panel {
+                        HStack(spacing: 6) {
+                            Text([day(r.when), r.official ? t("official") : "", discName(r.cat)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption2).foregroundColor(Theme.muted)
+                            LicBadge(k: r.lic)
+                        }
+                        HStack {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(r.track).font(.subheadline.bold()).lineLimit(1)
+                                Text(r.car).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+                            }
+                            Spacer()
+                            Text(r.dnf ? "DNF" : r.finish > 0 ? "P\(r.finish)/\(r.field)" : "—").font(.system(.headline, design: .monospaced).weight(.black))
+                        }
+                        let dif = r.start > 0 && r.finish > 0 ? r.start - r.finish : 0
+                        Text([dif != 0 ? (dif > 0 ? "+" : "") + "\(dif) " + t("places") : "", "\(r.inc)x", r.irChange != 0 ? "iR " + (r.irChange > 0 ? "+" : "") + "\(r.irChange)" : "", r.best.map { t("best_short") + " " + lapTime($0) } ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(.caption2).foregroundColor(Theme.muted)
+                    }
+                }
+                SectionLabel(text: t("on_leaderboards").uppercased())
+                if p.laps.isEmpty { EmptyNote(text: t("no_laps_yet")) }
+                ForEach(p.laps) { l in
+                    Panel {
+                        HStack(spacing: 6) {
+                            LicBadge(k: l.lic)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(l.track).font(.subheadline.bold()).lineLimit(1)
+                                Text([l.car, discName(l.cat)].filter { !$0.isEmpty }.joined(separator: " · ") + (l.anon ? " · 🔒 " + t(p.mine ? "anon_lap_mine" : "anon_lap_admins") : "")).font(.caption2).foregroundColor(Theme.muted).lineLimit(2)
+                            }
+                            Spacer()
+                            Text(lapTime(l.time)).font(.system(.subheadline, design: .monospaced).bold())
+                        }
+                    }
+                }
+            } else if let error {
+                EmptyNote(text: error.localizedCaseInsensitiveContains("anonymous") ? t("anonymous_private") : t(error))
+            } else {
+                EmptyNote(text: t("loading"))
+            }
+        }
+        .task { if p == nil { await load() } }
     }
 }
 
@@ -1841,6 +2021,10 @@ struct AdminView: View {
             } else if kind == "users" {
                 Text(str("display") + ((x["admin"] as? Bool ?? false) ? " · Admin" : "")).font(.subheadline.bold()).foregroundColor(Theme.fg)
                 Text(t("admin_user_line", "\(int("sessions"))", "\(int("laps"))", "\(int("guests"))")).font(.caption).foregroundColor(Theme.muted)
+                let sup = int("supporter") == 1
+                Button((sup ? "♥ " + t("supporter_remove") : t("supporter_give")) + (sup && int("supporterHidden") == 1 ? " · " + t("supporter_hidden_by") : "")) {
+                    Task { try? await account.adminSupporter(str("id"), !sup); await load() }
+                }.foregroundColor(sup ? Color(red: 1, green: 0.56, blue: 0.75) : Theme.accent).font(.caption.bold())
                 if !(x["admin"] as? Bool ?? false) {
                     Button(t("admin_delete_account")) { confirmDelete = (str("id"), str("display")) }.foregroundColor(Theme.bad).font(.caption.bold())
                 }
@@ -1955,6 +2139,8 @@ struct SettingsView: View {
                 Text(account.verified ? t("verified") : t("not_verified")).font(.caption2).foregroundColor(account.verified ? Theme.good : Theme.accent)
             }
             TwoFactorPanel()
+            NavigationLink(value: Route.profile(nil)) { ActionRow(title: t("my_profile").uppercased(), sub: t("my_profile_sub"), icon: "person.crop.circle") }
+                .buttonStyle(.plain)
             Link(destination: webApp) { ActionRow(title: t("web").uppercased(), sub: t("web_sub"), icon: "safari") }
             if let u = URL(string: patreonURL), !patreonURL.isEmpty {
                 Link(destination: u) { ActionRow(title: t("support").uppercased(), sub: t("support_sub"), icon: "heart") }

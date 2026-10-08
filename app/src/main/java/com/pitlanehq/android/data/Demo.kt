@@ -112,7 +112,16 @@ object Demo {
         PersonalBest(c.track, c.cfg, c.car, c.lap + 0.2, 23, now - i * 2 * DAY, "demo:$i:r:3", "demo:$i:r")
     }
 
-    fun combos(): List<Combo> = combos.map { c -> Combo(c.trackId, c.track, c.carId, c.car, 40 + c.carId.toInt() % 30, c.lap - 0.7) }
+    fun combos(): List<Combo> = combos.map { c -> Combo(c.trackId, c.track, c.carId, c.car, 40 + c.carId.toInt() % 30, c.lap - 0.7, "sports_car") }
+
+    private val demoLics = listOf("A", "B", "C", "B", "D", "R", "A", "C", "B", "P")
+
+    fun profile(lapId: String?): DriverProfile {
+        val k = lapId?.substringAfterLast(":")?.toIntOrNull() ?: 0
+        return DriverProfile(if (lapId == null) "Demo Driver" else names[k % names.size], now - 200 * DAY, lapId == null, false, false, k % 3 == 0, false, mapOf("sports_car" to demoLics[k % demoLics.size], "oval" to "D"),
+            races().take(6).map { r -> ProfileRace(r.whenMs, r.track, r.car, "sports_car", demoLics[k % demoLics.size], r.official, r.start, r.finish, r.field, r.inc, r.best, r.irChange, r.dnf) },
+            combos.map { c -> ProfileLap(c.track, c.car, c.lap - 0.3, now - 3 * DAY, "sports_car", demoLics[k % demoLics.size], false) })
+    }
 
     fun board(trackId: Long, carId: Long): List<CommunityLap> {
         val i = combos.indexOfFirst { it.trackId == trackId && it.carId == carId }
@@ -120,7 +129,7 @@ object Demo {
         val r = Random(i * 31 + 7)
         return names.mapIndexed { k, n ->
             val time = c.lap - 0.7 + k * r.nextDouble(0.08, 0.35)
-            CommunityLap("comm:$i:$k", n, time, now - k * DAY, true, sectors(time, r))
+            CommunityLap("comm:$i:$k", n, time, now - k * DAY, true, sectors(time, r), false, demoLics[k % demoLics.size], true, k % 3 == 0)
         }.sortedBy { it.time }
     }
 

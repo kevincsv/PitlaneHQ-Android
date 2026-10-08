@@ -149,7 +149,7 @@ enum Demo {
     static func combos() -> [Combo] {
         var out: [Combo] = []
         for c in combos0 {
-            out.append(Combo(trackId: c.trackId, track: c.track, carId: c.carId, car: c.car, laps: 40 + Int(c.carId) % 30, best: c.lap - 0.7))
+            out.append(Combo(trackId: c.trackId, track: c.track, carId: c.carId, car: c.car, laps: 40 + Int(c.carId) % 30, best: c.lap - 0.7, cat: "sports_car"))
         }
         return out
     }
@@ -163,9 +163,20 @@ enum Demo {
             let step: Double = Double.random(in: 0.08...0.35, using: &r)
             let time: Double = c.lap - 0.7 + Double(k) * step
             let created: Double = now - Double(k) * dayMs
-            out.append(CommunityLap(id: "comm:\(i):\(k)", alias: n, time: time, created: created, hasTrace: true, sectors: sectors(time, &r)))
+            out.append(CommunityLap(id: "comm:\(i):\(k)", alias: n, time: time, created: created, hasTrace: true, sectors: sectors(time, &r), lic: demoLics[k % demoLics.count], prof: true, sup: k % 3 == 0))
         }
         return out.sorted { $0.time < $1.time }
+    }
+
+    private static let demoLics = ["A", "B", "C", "B", "D", "R", "A", "C", "B", "P"]
+
+    static func profile(_ lapId: String?) -> DriverProfile {
+        let k = Int(lapId?.split(separator: ":").last ?? "0") ?? 0
+        let lic = demoLics[k % demoLics.count]
+        let rs = races().prefix(6).map { r in ProfileRace(when: r.when, track: r.track, car: r.car, cat: "sports_car", lic: lic, official: r.official, start: r.start, finish: r.finish, field: r.field, inc: r.inc, best: r.best, irChange: r.irChange, dnf: r.dnf) }
+        let ls = combos0.map { c in ProfileLap(track: c.track, car: c.car, time: c.lap - 0.3, created: now - 3 * dayMs, cat: "sports_car", lic: lic, anon: false) }
+        return DriverProfile(name: lapId == nil ? "Demo Driver" : names[k % names.count], since: now - 200 * dayMs, mine: lapId == nil, admin: false, anonymous: false, supporter: k % 3 == 0, supporterHidden: false,
+                             lics: ["sports_car": lic, "oval": "D"], races: Array(rs), laps: ls)
     }
 
     static func reports() -> [SharedReport] {

@@ -3,6 +3,7 @@ package com.pitlanehq.android.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -203,6 +204,7 @@ private fun MainApp(vm: PitlaneViewModel) {
                 composable("lap") { LapDetail(vm, nav) }
                 composable("community") { Community(vm, nav) }
                 composable("combo") { ComboDetail(vm, nav) }
+                composable("profile") { ProfileScreen(vm, nav) }
                 composable("live") { Live(vm) }
                 composable("settings") { Settings(vm, nav) }
                 composable("drinks") { DrinksScreen(vm, nav) }
@@ -584,20 +586,42 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
     val s by vm.sessions.collectAsState()
     val b by vm.bests.collectAsState()
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    var fCat by rememberSaveable { mutableStateOf("") }
+    var fCombo by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(tab) { if (tab == 0 && s.data == null && !s.loading) vm.loadSessions(); if (tab == 1 && b.data == null && !b.loading) vm.loadBests() }
     Screen(t("analysis"), t("uploaded_by_pc")) {
         item { WebNote(t("coach_web")) }
         item { Tabs(listOf(t("sessions"), t("bests")), tab) { tab = it } }
         if (tab == 0) {
             state(s) { vm.loadSessions() }
-            val list = s.data
+            val all = s.data ?: emptyList()
+            // many cars, tracks and licenses make a long list: first the license (the discipline), then the car and track
+            val cats = DISCS.filter { k -> all.any { it.cat == k } }
+            val inCat = all.filter { fCat.isEmpty() || it.cat == fCat }
+            val combos = inCat.map { it.car + " · " + it.track + (if (it.trackConfig.isNotBlank()) " · " + it.trackConfig else "") }.distinct()
+            if (cats.isNotEmpty() && all.size > 1) item {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Chip(t("lic_all_full") + " (" + all.size + ")", fCat.isEmpty()) { fCat = ""; fCombo = "" }
+                    cats.forEach { k -> Chip(discName(k) + " (" + all.count { it.cat == k } + ")", fCat == k) { fCat = if (fCat == k) "" else k; fCombo = "" } }
+                }
+            }
+            if (combos.size > 1) item {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Chip(t("every_car_track"), fCombo.isEmpty()) { fCombo = "" }
+                    combos.forEach { k -> Chip(k, fCombo == k) { fCombo = if (fCombo == k) "" else k } }
+                }
+            }
+            val list = s.data?.let { inCat.filter { x -> fCombo.isEmpty() || x.car + " · " + x.track + (if (x.trackConfig.isNotBlank()) " · " + x.trackConfig else "") == fCombo } }
             if (list != null && list.isEmpty()) item { Empty(t("no_sessions")) }
             items(list ?: emptyList(), key = { it.id }) { x ->
                 Panel(Modifier.clickable { vm.session = x; vm.loadLaps(x.id); nav.navigate("session") }) {
                     Text(x.track + if (x.trackConfig.isNotBlank()) " · " + x.trackConfig else "", fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(listOf(kindText(x.kind), day(x.started), t("laps_n", x.laps)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f, fill = false)) {
+                            Text(listOf(kindText(x.kind), day(x.started), t("laps_n", x.laps)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                            LicBadge(x.lic)
+                        }
                         Text(lapTime(x.best), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                     }
                 }
@@ -637,6 +661,12 @@ private fun SessionDetail(vm: PitlaneViewModel, nav: NavHostController) {
     val avg = if (valid.isNotEmpty()) valid.map { it.time }.average() else null
     Screen(x.track, x.car, back = { nav.popBackStack() }) {
         state(l) { vm.loadLaps(x.id) }
+        if (x.cat != null) item {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(t("viewing", x.car, discName(x.cat)), color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f, fill = false))
+                LicBadge(x.lic)
+            }
+        }
         item {
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Metric(t("best"), lapTime(best), Modifier.weight(1f).fillMaxHeight(), Purple)
@@ -893,6 +923,28 @@ private fun Chip(label: String, on: Boolean, onClick: () -> Unit) {
     )
 }
 
+// the disciplines iRacing splits its licenses into, and the license classes, like on the web
+private val DISCS = listOf("oval", "sports_car", "formula_car", "dirt_oval", "dirt_road")
+private val LICS = listOf("R", "D", "C", "B", "A", "P")
+private fun discName(k: String?) = if (k in DISCS) t("disc_$k") else ""
+private fun licColor(k: String) = when (k) { "R" -> Color(0xFFFF6363); "D" -> Color(0xFFFF8F45); "C" -> Color(0xFFF2C94C); "B" -> Color(0xFF38C97C); "A" -> Color(0xFF5C9DFF); else -> Color(0xFFC9D1DC) }
+
+/** The license class as a small coloured square (R, D, C, B, A, Pro). */
+@Composable
+private fun LicBadge(k: String?) {
+    if (k == null || k !in LICS) return
+    val c = licColor(k)
+    Text(if (k == "P") "Pro" else k, color = Fg, fontSize = 10.sp, fontWeight = FontWeight.Black,
+        modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(c.copy(alpha = 0.55f)).border(1.5.dp, c, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp))
+}
+
+/** The supporter badge: people who donate, given by hand by the owner of Pitlane HQ. */
+@Composable
+private fun SupBadge() {
+    Text("♥ SUPPORTER", color = Color(0xFFFFD6E7), fontSize = 9.sp, fontWeight = FontWeight.Black,
+        modifier = Modifier.clip(RoundedCornerShape(999.dp)).background(Color(0x55E83E8C)).border(1.dp, Color(0xAAE83E8C), RoundedCornerShape(999.dp)).padding(horizontal = 6.dp, vertical = 1.dp))
+}
+
 /** An incident as the game names it, from its points: 1x off track, 2x loss of control (or a slight contact), 4x car contact. */
 private fun incName(kind: String) = t(when (kind) { "contact" -> "inc_contact"; "light" -> "inc_light"; "loss" -> "inc_loss"; else -> "inc_off" })
 
@@ -1085,21 +1137,41 @@ private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
     }
     fun match(vararg s: String) = q.isBlank() || s.any { it.contains(q, true) }
     LaunchedEffect(Unit) { tab = 0 }
+    var sec by rememberSaveable { mutableIntStateOf(0) }
+    var cat by rememberSaveable { mutableStateOf("") }
+    val acc by vm.account.collectAsState()
     Screen(t("community"), t("shared_by")) {
+        item { Tabs(listOf(t("leaderboards"), t("leagues")), sec) { sec = it } }
+        if (sec == 1) {
+            // leagues: in development, only the admins get in; everyone else reads that we are working on it
+            item {
+                Panel {
+                    Row(verticalAlignment = Alignment.CenterVertically) { Text(t("leagues"), fontWeight = FontWeight.Black, modifier = Modifier.weight(1f)); Status(t("in_development"), Accent) }
+                    Text(if (acc.admin) t("leagues_admin") else t("leagues_wip"), color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+                }
+            }
+            return@Screen
+        }
         item { WebNote(t("community_web")) }
-        // setups and shared race analyses are switched off for now: only the leaderboards
+        // setups and shared race analyses are switched off for now: only the leaderboards, by lap time, per discipline
+        item {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Chip(t("disc_all"), cat.isEmpty()) { cat = "" }
+                DISCS.forEach { k -> Chip(discName(k) + " (" + (c.data ?: emptyList()).count { it.cat == k } + ")", cat == k) { cat = if (cat == k) "" else k } }
+            }
+        }
         item { OutlinedTextField(q, { q = it }, label = { Text(t("search")) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
         when (tab) {
             0 -> {
                 state(c) { vm.loadCombos() }
-                val list = (c.data ?: emptyList()).filter { match(it.track, it.car) }
+                val list = (c.data ?: emptyList()).filter { match(it.track, it.car) && (cat.isEmpty() || it.cat == cat) }
                 if (c.data != null && list.isEmpty()) item { Empty(t("nothing_found")) }
                 items(list, key = { "${it.trackId}-${it.carId}" }) { x ->
                     Panel(Modifier.clickable { vm.combo = x; vm.loadBoard(x); nav.navigate("combo") }) {
                         Text(x.track, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(t("laps_n", x.laps), color = Muted, fontSize = 12.sp)
+                            Text(listOf(discName(x.cat), t("laps_n", x.laps)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
                             Text(lapTime(x.best), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                         }
                     }
@@ -1147,30 +1219,48 @@ private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
     val x = vm.combo ?: return
     val b by vm.board.collectAsState()
     val a by vm.account.collectAsState()
-    val list = b.data ?: emptyList()
-    val top = list.firstOrNull()?.time
+    val all = b.data ?: emptyList()
+    var lic by rememberSaveable { mutableStateOf("") }
+    val list = if (lic.isEmpty()) all else all.filter { it.lic == lic }
+    val top = all.firstOrNull()?.time
     // the server marks the signed-in driver's own lap (anonymous ones too); older servers: by the public name
-    val mine = list.indexOfFirst { it.mine }.let { i -> if (i >= 0) i else list.indexOfFirst { a.display.isNotBlank() && it.alias.equals(a.display, true) } }
+    val mineAll = all.indexOfFirst { it.mine }.let { i -> if (i >= 0) i else all.indexOfFirst { a.display.isNotBlank() && it.alias.equals(a.display, true) } }
     Screen(x.track, x.car, back = { nav.popBackStack() }) {
         state(b) { vm.loadBoard(x) }
         if (b.data != null) item {
             Panel {
-                if (mine >= 0) Text(t("your_position", mine + 1, list.size, lapTime(list[mine].time)), color = Accent, fontWeight = FontWeight.Bold)
+                if (mineAll == 0 && all.size > 1) {
+                    Row(verticalAlignment = Alignment.CenterVertically) { Text("🏆 ", fontSize = 16.sp); Text(t("you_fastest"), color = Purple, fontWeight = FontWeight.Black) }
+                    Text(t("you_fastest_sub", all.size, lapTime(all[0].time)), color = Muted, fontSize = 12.sp)
+                } else if (mineAll >= 0) Text(t("your_position", mineAll + 1, all.size, lapTime(all[mineAll].time)), color = Accent, fontWeight = FontWeight.Bold)
                 else Text(t("not_on_board"), color = Muted, fontSize = 12.sp)
-                Text(t("drivers", list.size), color = Muted, fontSize = 11.sp)
+                Text(listOf(discName(x.cat), t("drivers", all.size)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 11.sp)
+            }
+        }
+        // one license class: its drivers only, with their place in the whole leaderboard
+        if (all.any { it.lic != null }) item {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Chip(t("lic_all"), lic.isEmpty()) { lic = "" }
+                LICS.filter { k -> all.any { it.lic == k } }.forEach { k -> Chip((if (k == "P") "Pro" else k) + " (" + all.count { it.lic == k } + ")", lic == k) { lic = if (lic == k) "" else k } }
             }
         }
         item { Section(t("fastest_drivers")) }
-        itemsIndexed(list) { i, lap ->
-            val me = i == mine
-            Panel {
+        items(list.size) { j ->
+            val lap = list[j]
+            val i = all.indexOf(lap)
+            val me = i == mineAll
+            Panel(if (lap.prof) Modifier.clickable { vm.loadProfile(lap.id); nav.navigate("profile") } else Modifier) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("${i + 1}", color = if (i == 0) Purple else if (me) Accent else Muted, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, modifier = Modifier.width(32.dp))
                     Column(Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (lap.alias == "Anonymous") t("anonymous") else lap.alias, fontWeight = FontWeight.Bold, color = if (me) Accent else Fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                            if (lap.mine) Text(t("you_badge"), color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            LicBadge(lap.lic)
+                            Text(if (lap.alias == "Anonymous") t("anonymous") else lap.alias, fontWeight = FontWeight.Bold, color = if (me) Accent else Fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
+                                textDecoration = if (lap.prof) TextDecoration.Underline else TextDecoration.None)
+                            if (lap.sup) SupBadge()
+                            if (lap.mine) Text(t("you_badge"), color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
+                        if (lap.field && !lap.mine) Text(t("rival_race"), color = Muted, fontSize = 10.sp)
                         if (lap.sectors.isNotEmpty()) Text(lap.sectors.joinToString("  ") { "%.3f".format(it) }, color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                         if (!lap.hasTrace) Text(t("trace_not_shared"), color = Muted, fontSize = 10.sp)
                     }
@@ -1178,6 +1268,69 @@ private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
                         Text(lapTime(lap.time), color = if (i == 0) Purple else Fg, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                         if (top != null && i > 0) Text("+%.3f".format(lap.time - top), color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                     }
+                }
+            }
+        }
+    }
+}
+
+/** A driver's profile: nickname (never the iRacing name), license classes, recent races, laps on the leaderboards. */
+@Composable
+private fun ProfileScreen(vm: PitlaneViewModel, nav: NavHostController) {
+    val st by vm.profile.collectAsState()
+    val p = st.data
+    Screen(p?.name ?: t("profile"), if (p != null) t("since", day(p.since)) else "", back = { nav.popBackStack() }) {
+        if (p == null) {
+            if (st.error != null) item { Empty(if (st.error!!.contains("anonymous", true)) t("anonymous_private") else t(st.error!!)) } else item { Empty(t("loading")) }
+            return@Screen
+        }
+        item {
+            Panel {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(p.name, fontWeight = FontWeight.Black, fontSize = 20.sp, modifier = Modifier.weight(1f, fill = false), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (p.supporter && !(p.mine && p.supporterHidden)) SupBadge()
+                }
+                if (p.anonymous) Text("🔒 " + t(if (p.mine) "anon_mine" else "anon_admins_only"), color = Muted, fontSize = 12.sp)
+                if (p.mine && p.supporter && p.supporterHidden) Text(t("badge_hidden"), color = Muted, fontSize = 12.sp)
+                val ls = DISCS.filter { p.lics[it] != null }
+                if (ls.isNotEmpty()) Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ls.forEach { k -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) { LicBadge(p.lics[k]); Text(discName(k), fontSize = 12.sp) } }
+                }
+                if (p.mine && p.supporter) TextButton({ vm.setBadgeHidden(!p.supporterHidden) }) { Text(t(if (p.supporterHidden) "show_badge" else "hide_badge"), color = Accent) }
+            }
+        }
+        item { Section(t("recent_races").uppercase()) }
+        if (p.races.isEmpty()) item { Empty(t("no_races_yet")) }
+        items(p.races.size) { i ->
+            val r = p.races[i]
+            Panel {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(listOf(day(r.whenMs), if (r.official) t("official") else "", discName(r.cat)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 11.sp, modifier = Modifier.weight(1f, fill = false))
+                    LicBadge(r.lic)
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(r.track, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(r.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Text(if (r.dnf) "DNF" else if (r.finish > 0) "P${r.finish}/${r.field}" else "—", fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+                }
+                val dif = if (r.start > 0 && r.finish > 0) r.start - r.finish else 0
+                Text(listOf(if (dif != 0) (if (dif > 0) "+" else "") + dif + " " + t("places") else "", "${r.inc}x", if (r.irChange != 0) "iR " + (if (r.irChange > 0) "+" else "") + r.irChange else "", if (r.best != null) t("best_short") + " " + lapTime(r.best) else "").filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 11.sp)
+            }
+        }
+        item { Section(t("on_leaderboards").uppercase()) }
+        if (p.laps.isEmpty()) item { Empty(t("no_laps_yet")) }
+        items(p.laps.size) { i ->
+            val l = p.laps[i]
+            Panel {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LicBadge(l.lic)
+                    Column(Modifier.weight(1f)) {
+                        Text(l.track, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(listOf(l.car, discName(l.cat)).filter { it.isNotBlank() }.joinToString(" · ") + if (l.anon) " · 🔒 " + t(if (p.mine) "anon_lap_mine" else "anon_lap_admins") else "", color = Muted, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    Text(lapTime(l.time), fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -1283,6 +1436,10 @@ private fun AdminScreen(vm: PitlaneViewModel, nav: NavHostController) {
                 Panel {
                     Text(u.optString("display", "–") + if (u.optBoolean("admin")) " · Admin" else "", fontWeight = FontWeight.Bold)
                     Text(t("admin_user_line", u.optInt("sessions"), u.optInt("laps"), u.optInt("guests")), color = Muted, fontSize = 12.sp)
+                    val sup = u.optInt("supporter") == 1
+                    TextButton({ vm.adminSupporter(u.optString("id"), !sup) }) {
+                        Text((if (sup) "♥ " + t("supporter_remove") else t("supporter_give")) + if (sup && u.optInt("supporterHidden") == 1) " · " + t("supporter_hidden_by") else "", color = if (sup) Color(0xFFFF8FBF) else Accent)
+                    }
                     if (!u.optBoolean("admin")) TextButton({ ask = true }) { Text(t("admin_delete_account"), color = Bad) }
                 }
                 if (ask) AlertDialog(
@@ -1417,6 +1574,7 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
             }
         }
         if (a.admin) item { Section(t("admin_tools")) }
+        if (a.signedIn) item { Action(t("my_profile").uppercase(), t("my_profile_sub"), Icons.Default.Person) { vm.loadProfile(null); nav.navigate("profile") } }
         if (a.admin) item { Action(t("admin_profile").uppercase(), t("admin_profile_sub"), Icons.Default.AdminPanelSettings) { nav.navigate("admin") } }
         if (a.admin) item { Action(t("drinks").uppercase(), t("drinks_sub"), Icons.Default.LocalBar) { nav.navigate("drinks") } }
         if (a.admin) item {
