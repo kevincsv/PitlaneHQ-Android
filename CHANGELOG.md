@@ -4,6 +4,23 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
+## 0.8.12 beta
+
+**New**
+- **Live: Connect, Disconnect and codes.** Live shows whether your PC is online and connects when
+  you press Connect (until Disconnect). While you watch your PC you can get a code for others; and
+  with someone's code you watch their telemetry (Watch another driver). The PC app's download is
+  right under it.
+- **Leagues** for admins (in development): explore by discipline, post yours with its Discord
+  invite, edit or remove it. Everyone else still reads that we are working on it.
+- **Profiles:** each lap opens its leaderboard and says the driver's place; the days they drove.
+- **Your badges** (Admin, Supporter) next to your name on Home and in Account; the supporter badge
+  comes by itself with Patreon (same email). Your email stays hidden until you press Show.
+
+**Changed**
+- Leaderboards without license classes: the fastest drivers of each car and track of the discipline.
+- Same version as the PC and the web.
+
 ## 0.8.11 beta
 
 **New**

@@ -2,6 +2,7 @@ package com.pitlanehq.android.data
 
 import com.pitlanehq.android.model.Drinks
 import com.pitlanehq.android.model.LIVE_VARS
+import com.pitlanehq.android.model.LiveMode
 import com.pitlanehq.android.model.LinkState
 import com.pitlanehq.android.model.LiveState
 import kotlinx.coroutines.CoroutineScope
@@ -36,6 +37,31 @@ class PitWallRepository(private val account: AccountRepository) {
     private var fields: List<String> = emptyList()
     private val _state = MutableStateFlow(LiveState())
     val state = _state.asStateFlow()
+    // what is watched: kept for your own PC (Connect stays on), never for someone's code
+    private var mode = if (account.liveOwn) LiveMode.OWN else LiveMode.IDLE
+    private var code = ""
+    private var codeKey: ByteArray? = null
+
+    /** Connect to your PC (OWN), watch a code (CODE), or Disconnect (IDLE): the link opens again the new way. */
+    fun watch(m: LiveMode, c: String = "") {
+        mode = m
+        code = if (m == LiveMode.CODE) c else ""
+        codeKey = null
+        account.liveOwn = m == LiveMode.OWN
+        val running = loop?.isActive == true
+        stop()
+        _state.value = LiveState(mode = m, code = code)
+        if (running) start()
+    }
+
+    /** Your share code, made or stopped by your PC: on, new (a new code stops the old one). */
+    fun share(on: Boolean, new: Boolean): Boolean {
+        val ws = socket ?: return false
+        if (mode != LiveMode.OWN) return false
+        val key = runCatching { account.dataKey() }.getOrNull() ?: return false
+        val msg = JSONArray().put("share").put(JSONObject().put("on", on).put("new", new))
+        return ws.send("e:" + Crypto.seal(key, Crypto.gzip(msg.toString().toByteArray()), Crypto.LIVE_AAD))
+    }
 
     fun start() {
         if (loop?.isActive == true) return
@@ -76,15 +102,16 @@ class PitWallRepository(private val account: AccountRepository) {
         loop = null
         socket?.close(1000, "bye")
         socket = null
-        _state.value = LiveState()
+        _state.value = LiveState(mode = mode, code = code)
     }
 
     private fun open(closed: kotlinx.coroutines.CompletableDeferred<Unit>) {
-        val key = account.dataKey()
-        val req = Request.Builder()
-            .url(SERVER.replaceFirst("http", "ws") + "/live?role=view")
-            .header("Authorization", "Bearer " + account.token())
-            .build()
+        val m = mode
+        val key = if (m == LiveMode.CODE) (codeKey ?: Crypto.codeKey(code).also { codeKey = it }) else account.dataKey()
+        val q = (if (m == LiveMode.IDLE) "idle" else "view") + if (m == LiveMode.CODE) "&share=" + Crypto.codeRoom(code) else ""
+        val b = Request.Builder().url(SERVER.replaceFirst("http", "ws") + "/live?role=" + q)
+        runCatching { account.token() }.getOrNull()?.let { b.header("Authorization", "Bearer $it") }
+        val req = b.build()
         _state.update { it.copy(link = LinkState.CONNECTING, message = null) }
         fields = emptyList()
         socket = null
@@ -143,6 +170,7 @@ class PitWallRepository(private val account: AccountRepository) {
             val o = JSONObject(text)
             if (o.optString("ctl") == "pc") {
                 val on = o.optBoolean("on")
+                if (mode == LiveMode.IDLE) { _state.update { it.copy(pcOnline = on) }; return }
                 _state.update { if (on) it.copy(pcOnline = true) else it.copy(pcOnline = false, simConnected = false, values = emptyMap()) }
                 if (on) want(ws, key) // a PC that just started needs to be told what to send
             }
@@ -151,6 +179,7 @@ class PitWallRepository(private val account: AccountRepository) {
         if (!text.startsWith("e:")) return
         val a = JSONArray(String(Crypto.gunzip(Crypto.open(key, text.substring(2), Crypto.LIVE_AAD))))
         when (a.getString(0)) {
+            "share" -> _state.update { it.copy(myCode = a.optJSONObject(1)?.optString("code").orEmpty()) }
             "status" -> {
                 val s = a.getJSONObject(1)
                 _state.update { it.copy(pcOnline = true, simConnected = s.optBoolean("connected")) }

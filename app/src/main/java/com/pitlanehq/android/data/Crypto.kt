@@ -59,6 +59,12 @@ object Crypto {
         return Base64.encodeToString(nonce + c.doFinal(plain), Base64.NO_WRAP)
     }
 
+    /** A live share code ("ABCD-EFGH-JK"): its room on the server (one hash) and its key (PBKDF2), like the PC. */
+    fun codeNorm(v: String) = v.uppercase().filter { it in 'A'..'Z' || it in '0'..'9' }
+    fun codeOk(c: String) = c.length == 10 && c.all { it in "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" }
+    fun codeRoom(c: String): String = MessageDigest.getInstance("SHA-256").digest(("pitlanehq-share-room|" + c).toByteArray()).take(16).joinToString("") { "%02x".format(it) }
+    fun codeKey(c: String): ByteArray = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(PBEKeySpec(c.toCharArray(), "pitlanehq-share-key-v1".toByteArray(), 100_000, 256)).encoded
+
     fun gunzip(b: ByteArray): ByteArray {
         val out = ByteArrayOutputStream()
         GZIPInputStream(ByteArrayInputStream(b)).use { it.copyTo(out) }

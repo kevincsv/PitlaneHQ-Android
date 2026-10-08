@@ -19,6 +19,17 @@ enum PLCrypto {
         var errorDescription: String? { self == .derive ? "Could not derive the account key" : "Damaged data" }
     }
 
+    /// A live share code ("ABCD-EFGH-JK"): its room on the server (one hash) and its key (PBKDF2), like the PC.
+    static func codeNorm(_ v: String) -> String { String(v.uppercased().filter { ($0 >= "A" && $0 <= "Z") || ($0 >= "0" && $0 <= "9") }) }
+    static func codeOk(_ c: String) -> Bool { c.count == 10 && c.allSatisfy { "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".contains($0) } }
+    static func codeRoom(_ c: String) -> String { Data(SHA256.hash(data: Data(("pitlanehq-share-room|" + c).utf8))).prefix(16).map { String(format: "%02x", $0) }.joined() }
+    static func codeKey(_ c: String) -> Data? {
+        let pw = Array(c.utf8).map { Int8(bitPattern: $0) }, salt = Array("pitlanehq-share-key-v1".utf8)
+        var out = [UInt8](repeating: 0, count: 32)
+        let rc = CCKeyDerivationPBKDF(CCPBKDFAlgorithm(kCCPBKDF2), pw, pw.count, salt, salt.count, CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256), 100_000, &out, out.count)
+        return rc == Int32(kCCSuccess) ? Data(out) : nil
+    }
+
     static func derive(email: String, password: String) throws -> Keys {
         let salt = Data(SHA256.hash(data: Data(("pitlanehq-account-v1:" + email.trimmingCharacters(in: .whitespaces).lowercased()).utf8)))
         let pw = Array(password.utf8).map { Int8(bitPattern: $0) }

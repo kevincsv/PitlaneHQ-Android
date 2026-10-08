@@ -36,7 +36,9 @@ data class AccountState(
     val error: String? = null,
     val needCode: Boolean = false,      // the password was right: the authenticator code comes next
     val twoFactor: Boolean = false,     // two-step sign-in is on for this account
-    val recoveryLeft: Int = 0
+    val recoveryLeft: Int = 0,
+    val supporter: Boolean = false,     // the supporter badge (donates)
+    val supporterHidden: Boolean = false
 )
 
 /** What the server gives to set up two-step sign-in: the key and the otpauth link for the app. */
@@ -80,7 +82,9 @@ class AccountRepository(context: Context) {
         syncVersion = prefs.getLong("syncVersion", 0),
         syncUpdated = prefs.getLong("syncUpdated", 0),
         twoFactor = prefs.getBoolean("twoFactor", false),
-        recoveryLeft = prefs.getInt("recoveryLeft", 0)
+        recoveryLeft = prefs.getInt("recoveryLeft", 0),
+        supporter = prefs.getBoolean("supporter", false),
+        supporterHidden = prefs.getBoolean("supporterHidden", false)
     )
 
     // ---------- device storage ----------
@@ -112,6 +116,11 @@ class AccountRepository(context: Context) {
 
     private fun protect(v: ByteArray) = Base64.encodeToString(protectBytes(v), Base64.NO_WRAP)
     private fun unprotect(v: String) = unprotectBytes(Base64.decode(v, Base64.NO_WRAP))
+
+    /** Live: you pressed Connect for your own PC (it stays connected until Disconnect). */
+    var liveOwn: Boolean
+        get() = prefs.getBoolean("liveOwn", false)
+        set(v) { prefs.edit().putBoolean("liveOwn", v).apply() }
 
     fun token(): String = runCatching { String(unprotect(prefs.getString("token", null)!!)) }.getOrElse { throw SignedOut() }
     fun dataKey(): ByteArray = runCatching { unprotect(prefs.getString("dataKey", null)!!) }.getOrElse { throw SignedOut() }
@@ -245,7 +254,8 @@ class AccountRepository(context: Context) {
         runCatching {
             val me = JSONObject(call("GET", "/account/me"))
             prefs.edit().putString("display", me.optString("display", "")).putBoolean("verified", me.optBoolean("verified", true)).putBoolean("admin", me.optBoolean("admin", false))
-                .putBoolean("twoFactor", me.optBoolean("twoFactor", false)).putInt("recoveryLeft", me.optInt("recoveryLeft", 0)).apply()
+                .putBoolean("twoFactor", me.optBoolean("twoFactor", false)).putInt("recoveryLeft", me.optInt("recoveryLeft", 0))
+                .putBoolean("supporter", me.optBoolean("supporter", false)).putBoolean("supporterHidden", me.optBoolean("supporterHidden", false)).apply()
         }
         return storedState()
     }
@@ -414,7 +424,9 @@ class AccountRepository(context: Context) {
     fun profile(lapId: String?): DriverProfile {
         if (demo) return Demo.profile(lapId)
         val signed = runCatching { token() }.isSuccess
-        val j = JSONObject(call("GET", "/community/profile?" + if (lapId == null) "me=1" else "lap=" + URLEncoder.encode(lapId, "UTF-8"), null, signed))
+        val tz = -java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60000
+        val j = JSONObject(call("GET", "/community/profile?" + (if (lapId == null) "me=1" else "lap=" + URLEncoder.encode(lapId, "UTF-8")) + "&tz=$tz", null, signed))
+        val dj = j.optJSONObject("days") ?: JSONObject()
         val l = j.optJSONObject("lics") ?: JSONObject()
         val rs = j.optJSONArray("races") ?: JSONArray()
         val ls = j.optJSONArray("laps") ?: JSONArray()
@@ -425,9 +437,24 @@ class AccountRepository(context: Context) {
                 ProfileRace(r.optLong("when"), fixTxt(r.optString("track")), fixTxt(r.optString("car")), r.optStr("cat"), r.optStr("lic"), r.optBoolean("official"), r.optInt("start"), r.optInt("finish"), r.optInt("field"),
                     r.optInt("inc"), r.optDouble("best").pos(), r.optInt("irChange"), r.optBoolean("dnf"))
             },
-            (0 until ls.length()).mapNotNull { ls.optJSONObject(it) }.map { x -> ProfileLap(fixTxt(x.optString("track")), fixTxt(x.optString("car")), x.optDouble("time"), x.optLong("created"), x.optStr("cat"), x.optStr("lic"), x.optBoolean("anon")) }
+            (0 until ls.length()).mapNotNull { ls.optJSONObject(it) }.map { x -> ProfileLap(fixTxt(x.optString("track")), fixTxt(x.optString("car")), x.optDouble("time"), x.optLong("created"), x.optStr("cat"), x.optStr("lic"), x.optBoolean("anon"),
+                x.optLong("trackId"), x.optLong("carId"), x.optInt("pos"), x.optInt("of")) },
+            dj.keys().asSequence().associateWith { dj.optInt(it) }
         )
     }
+
+    /** Leagues (in development: admins only for now): post one with a Discord invite, edit or remove yours. */
+    fun leagues(): List<League> {
+        val a = JSONObject(call("GET", "/community/leagues")).optJSONArray("leagues") ?: JSONArray()
+        return (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { x ->
+            League(x.optString("id"), fixTxt(x.optString("name")), fixTxt(x.optString("about")), x.optStr("cat"), x.optString("discord"), x.optString("web"), x.optString("schedule"), fixTxt(x.optString("cars")), x.optString("lang"), x.optBoolean("mine"), x.optString("by"))
+        }
+    }
+    fun saveLeague(id: String?, l: League) {
+        call("POST", "/community/leagues" + (id?.let { "/" + URLEncoder.encode(it, "UTF-8") } ?: ""), JSONObject().put("name", l.name).put("about", l.about).put("cat", l.cat ?: JSONObject.NULL)
+            .put("discord", l.discord).put("web", l.web).put("schedule", l.schedule).put("cars", l.cars).put("lang", l.lang))
+    }
+    fun deleteLeague(id: String) { call("POST", "/community/leagues/" + URLEncoder.encode(id, "UTF-8"), JSONObject().put("delete", true)) }
 
     /** A supporter hides (or shows again) their own badge. */
     fun setBadgeHidden(hidden: Boolean) { call("POST", "/community/profile/badge", JSONObject().put("hidden", hidden)) }

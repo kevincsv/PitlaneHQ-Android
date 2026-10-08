@@ -615,6 +615,7 @@ struct HomeView: View {
         let incSum = recent.reduce(0) { $0 + $1.inc }
         let avgInc = recent.isEmpty ? "—" : String(format: "%.1f", Double(incSum) / Double(recent.count))
         Screen(title: account.display.isEmpty ? t("driver") : account.display, sub: t("racing_companion")) {
+            if account.admin || (account.supporter && !account.supporterHidden) { HStack(spacing: 6) { MyBadges(); Spacer() } }
             Licences()
             DaysDriven(races: races)
             SectionLabel(text: t("race_summary"))
@@ -1617,6 +1618,17 @@ struct LicBadge: View {
     }
 }
 
+/// Your badges, wherever your name shows: Admin, and Supporter unless you hid it.
+struct MyBadges: View {
+    @EnvironmentObject var account: Account
+    var body: some View {
+        HStack(spacing: 6) {
+            if account.admin { StatusPill(text: "ADMIN", color: Theme.accent) }
+            if account.supporter && !account.supporterHidden { SupBadge() }
+        }
+    }
+}
+
 /// The supporter badge: people who donate, given by hand by the owner of Pitlane HQ.
 struct SupBadge: View {
     var body: some View {
@@ -1640,6 +1652,81 @@ struct Pills: View {
                 }
             }
         }
+    }
+}
+
+/// Leagues (in development, admins only): explore by discipline, post one with its Discord invite, edit or remove yours.
+struct LeaguesAdmin: View {
+    @EnvironmentObject var account: Account
+    @Environment(\.openURL) private var openURL
+    @State private var list: [League]?
+    @State private var err: String?
+    @State private var tab = 0
+    @State private var cat = ""
+    @State private var editId: String?
+    @State private var f = League(id: "", name: "", about: "", cat: nil, discord: "", web: "", schedule: "", cars: "", lang: "")
+    @State private var fCat = ""
+    @State private var fErr: String?
+
+    private func load() async { do { list = try await account.leagues(); err = nil } catch { err = (error as? AppError)?.key ?? error.localizedDescription; list = list ?? [] } }
+    private func field(_ label: String, _ v: Binding<String>) -> some View {
+        TextField(label, text: v).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+    private func bind(_ k: WritableKeyPath<League, String>) -> Binding<String> { Binding(get: { f[keyPath: k] }, set: { f[keyPath: k] = $0 }) }
+
+    var body: some View {
+        let all = list ?? []
+        VStack(alignment: .leading, spacing: 10) {
+            Tabs(labels: [t("leagues_explore"), editId != nil ? t("leagues_edit") : t("leagues_post"), t("leagues_mine")], selected: $tab)
+            if let err { Text(t(err)).font(.caption).foregroundColor(Theme.bad) }
+            if tab == 1 {
+                Panel {
+                    field(t("league_name"), bind(\.name))
+                    Pills(items: DISCS.map { ($0, discName($0)) }, selected: $fCat)
+                    field("https://discord.gg/…", bind(\.discord))
+                    field(t("league_web"), bind(\.web))
+                    field(t("league_when"), bind(\.schedule))
+                    field(t("league_cars"), bind(\.cars))
+                    field(t("league_lang"), bind(\.lang))
+                    field(t("league_about"), bind(\.about))
+                    if let fErr { Text(t(fErr)).font(.caption).foregroundColor(Theme.bad) }
+                    Button(editId != nil ? t("save") : t("league_publish")) {
+                        let ok = f.discord.range(of: "^https://(discord\\.gg|(www\\.)?discord\\.com/invite)/[A-Za-z0-9-]{2,40}/?$", options: .regularExpression) != nil
+                        if f.name.trimmingCharacters(in: .whitespaces).count < 3 { fErr = "league_need_name"; return }
+                        if !ok { fErr = "league_need_discord"; return }
+                        let l = League(id: "", name: f.name.trimmingCharacters(in: .whitespaces), about: f.about, cat: fCat.isEmpty ? nil : fCat, discord: f.discord.trimmingCharacters(in: .whitespaces), web: f.web, schedule: f.schedule, cars: f.cars, lang: f.lang)
+                        Task {
+                            do { try await account.saveLeague(editId, l); editId = nil; fErr = nil; f = League(id: "", name: "", about: "", cat: nil, discord: "", web: "", schedule: "", cars: "", lang: ""); fCat = ""; tab = 2; await load() }
+                            catch { fErr = (error as? AppError)?.key ?? error.localizedDescription }
+                        }
+                    }.buttonStyle(.borderedProminent).tint(Theme.accent)
+                    Text(t("league_note")).font(.caption2).foregroundColor(Theme.muted)
+                }
+            } else {
+                if tab == 0 { Pills(items: [("", t("disc_all") + " (\(all.count))")] + DISCS.map { k in (k, discName(k) + " (\(all.filter { $0.cat == k }.count))") }, selected: $cat) }
+                let shown = tab == 2 ? all.filter { $0.mine } : all.filter { cat.isEmpty || $0.cat == cat }
+                if list != nil && shown.isEmpty { EmptyNote(text: t(tab == 2 ? "leagues_none_mine" : "leagues_none")) }
+                ForEach(shown) { x in
+                    Panel {
+                        Text(x.name).font(.headline.weight(.black))
+                        Text([discName(x.cat), x.lang, t("by_name", x.by)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
+                        if !x.about.isEmpty { Text(x.about).font(.subheadline) }
+                        if !x.schedule.isEmpty || !x.cars.isEmpty { Text([x.schedule, x.cars].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted) }
+                        HStack(spacing: 10) {
+                            Button(t("join_discord")) { if let u = URL(string: x.discord) { openURL(u) } }.buttonStyle(.borderedProminent).tint(Theme.accent)
+                            if let u = URL(string: x.web), !x.web.isEmpty { Button(t("league_site")) { openURL(u) }.foregroundColor(Theme.accent) }
+                        }
+                        if x.mine || account.admin {
+                            HStack(spacing: 14) {
+                                Button(t("edit")) { editId = x.id; f = x; fCat = x.cat ?? ""; fErr = nil; tab = 1 }.foregroundColor(Theme.accent)
+                                Button(t("remove")) { Task { try? await account.deleteLeague(x.id); await load() } }.foregroundColor(Theme.bad)
+                            }.font(.caption.bold())
+                        }
+                    }
+                }
+            }
+        }
+        .task { if list == nil { await load() } }
     }
 }
 
@@ -1676,6 +1763,7 @@ struct CommunityView: View {
                     HStack { Text(t("leagues")).font(.headline.weight(.black)); Spacer(); StatusPill(text: t("in_development"), color: Theme.accent) }
                     Text(account.admin ? t("leagues_admin") : t("leagues_wip")).font(.subheadline).foregroundColor(Theme.muted).padding(.top, 4)
                 }
+                if account.admin { LeaguesAdmin() }
             } else {
             WebNote(text: t("community_web"))
             // setups and shared race analyses are switched off for now: only the leaderboards, by lap time, per discipline
@@ -1748,11 +1836,10 @@ struct ComboView: View {
     @EnvironmentObject var account: Account
     let combo: Combo
     @StateObject private var board = Loader<[CommunityLap]>()
-    @State private var lic = ""
 
     var body: some View {
         let laps = board.data ?? []
-        let shown = lic.isEmpty ? laps : laps.filter { $0.lic == lic }
+        let shown = laps
         let top = laps.first?.time
         // the server marks the signed-in driver's own lap (anonymous ones too); older servers: by the public name
         let mine = laps.firstIndex { $0.mine } ?? laps.firstIndex { !account.display.isEmpty && $0.alias.caseInsensitiveCompare(account.display) == .orderedSame }
@@ -1768,10 +1855,6 @@ struct ComboView: View {
                     Text([discName(combo.cat), t("drivers", laps.count)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption2).foregroundColor(Theme.muted)
                 }
             }
-            // one license class: its drivers only, with their place in the whole leaderboard
-            if laps.contains(where: { $0.lic != nil }) {
-                Pills(items: [("", t("lic_all"))] + LICS.filter { k in laps.contains { $0.lic == k } }.map { k in (k, (k == "P" ? "Pro" : k) + " (\(laps.filter { $0.lic == k }.count))") }, selected: $lic)
-            }
             SectionLabel(text: t("fastest_drivers"))
             ForEach(shown) { lap in
                 let i = laps.firstIndex(of: lap) ?? 0
@@ -1782,7 +1865,6 @@ struct ComboView: View {
                         Text("\(i + 1)").font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(i == 0 ? Theme.purple : me ? Theme.accent : Theme.muted).frame(width: 32, alignment: .leading)
                         VStack(alignment: .leading, spacing: 1) {
                             HStack(spacing: 6) {
-                                LicBadge(k: lap.lic)
                                 Text(lap.alias == "Anonymous" ? t("anonymous") : lap.alias).font(.subheadline.bold()).foregroundColor(me ? Theme.accent : Theme.fg).lineLimit(1).underline(lap.prof)
                                 if lap.sup { SupBadge() }
                                 if lap.mine { Text(t("you_badge")).font(.system(size: 10, weight: .bold)).foregroundColor(Theme.accent) }
@@ -1804,6 +1886,32 @@ struct ComboView: View {
             }
         }
         .task { if board.data == nil { await board.load { try await account.leaderboard(trackId: combo.trackId, carId: combo.carId) } } }
+    }
+}
+
+/// The last 26 weeks in squares, brighter the more sessions that day (keys "y-m-d" like the web).
+struct DayGrid: View {
+    let days: [String: Int]
+    var body: some View {
+        let cal = Calendar.current, today = cal.startOfDay(for: Date())
+        let wd = (cal.component(.weekday, from: today) + 5) % 7 // Monday = 0
+        let start = cal.date(byAdding: .day, value: -(wd + 25 * 7), to: today) ?? today
+        let mx = max(1, days.values.max() ?? 1)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 3) {
+                ForEach(0..<26, id: \.self) { w in
+                    VStack(spacing: 3) {
+                        ForEach(0..<7, id: \.self) { d in
+                            let day = cal.date(byAdding: .day, value: w * 7 + d, to: start) ?? start
+                            let c = cal.dateComponents([.year, .month, .day], from: day)
+                            let n = day > today ? -1 : days["\(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0)"] ?? 0
+                            let lv = n > 0 ? min(4, max(1, Int((Double(n) / Double(mx) * 4).rounded(.up)))) : 0
+                            RoundedRectangle(cornerRadius: 2).fill(n < 0 ? Color.clear : lv == 0 ? Theme.surface2 : Theme.accent.opacity(0.25 + Double(lv) * 0.18)).frame(width: 10, height: 10)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1840,6 +1948,8 @@ struct ProfileView: View {
                             .font(.caption.bold()).foregroundColor(Theme.accent).padding(.top, 6)
                     }
                 }
+                SectionLabel(text: t("days_driven").uppercased() + " · " + t("days_in_6m", p.days.count))
+                Panel { DayGrid(days: p.days) }
                 SectionLabel(text: t("recent_races").uppercased())
                 if p.races.isEmpty { EmptyNote(text: t("no_races_yet")) }
                 ForEach(p.races) { r in
@@ -1864,6 +1974,7 @@ struct ProfileView: View {
                 SectionLabel(text: t("on_leaderboards").uppercased())
                 if p.laps.isEmpty { EmptyNote(text: t("no_laps_yet")) }
                 ForEach(p.laps) { l in
+                    NavigationLink(value: Route.combo(Combo(trackId: l.trackId, track: l.track, carId: l.carId, car: l.car, laps: 0, best: l.time, cat: l.cat))) {
                     Panel {
                         HStack(spacing: 6) {
                             LicBadge(k: l.lic)
@@ -1872,9 +1983,15 @@ struct ProfileView: View {
                                 Text([l.car, discName(l.cat)].filter { !$0.isEmpty }.joined(separator: " · ") + (l.anon ? " · 🔒 " + t(p.mine ? "anon_lap_mine" : "anon_lap_admins") : "")).font(.caption2).foregroundColor(Theme.muted).lineLimit(2)
                             }
                             Spacer()
-                            Text(lapTime(l.time)).font(.system(.subheadline, design: .monospaced).bold())
+                            VStack(alignment: .trailing, spacing: 1) {
+                                Text(lapTime(l.time)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.fg)
+                                if l.pos > 0 { Text("P\(l.pos)" + (l.of > 0 ? "/\(l.of)" : "")).font(.system(size: 11, design: .monospaced)).foregroundColor(l.pos == 1 ? Theme.purple : Theme.muted) }
+                            }
                         }
                     }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(l.trackId == 0 || l.carId == 0)
                 }
             } else if let error {
                 EmptyNote(text: error.localizedCaseInsensitiveContains("anonymous") ? t("anonymous_private") : t(error))
@@ -1892,6 +2009,8 @@ struct LiveView: View {
     @EnvironmentObject var account: Account
     @StateObject private var live = Live()
     @Environment(\.scenePhase) private var phase
+    @State private var codeIn = ""
+    @State private var codeErr = false
 
     private var status: (String, Color) {
         switch live.link {
@@ -1910,10 +2029,58 @@ struct LiveView: View {
         let gear = live.num("Gear").map { Int($0) }
         let delta = live.num("LapDeltaToBestLap")
         Screen(title: t("live_title"), sub: t("live_sub")) {
+            // your PC, from anywhere: Connect when it is online, Disconnect to stop the live data on this phone
+            Panel {
+                Text(t("your_pc_anywhere")).font(.headline.weight(.black))
+                switch live.mode {
+                case .own:
+                    Text(live.pcOnline ? t("watching_pc") : t("waiting_pc")).font(.subheadline).foregroundColor(live.pcOnline ? Theme.good : Theme.muted).padding(.vertical, 4)
+                    Button(t("disconnect")) { live.watch(.idle) }.foregroundColor(Theme.bad).font(.subheadline.bold())
+                    if live.pcOnline {
+                        Divider().padding(.vertical, 6)
+                        Text(t("your_code")).font(.subheadline.bold())
+                        if !live.myCode.isEmpty {
+                            Text(live.myCode).font(.system(size: 22, weight: .black, design: .monospaced)).foregroundColor(Theme.accent).padding(.vertical, 2)
+                            Text(t("your_code_sub")).font(.caption).foregroundColor(Theme.muted)
+                            HStack(spacing: 14) {
+                                Button(t("new_code")) { live.share(on: true, new: true) }.foregroundColor(Theme.accent)
+                                Button(t("stop_sharing")) { live.share(on: false) }.foregroundColor(Theme.bad)
+                            }.font(.caption.bold()).padding(.top, 4)
+                        } else {
+                            Text(t("get_code_sub")).font(.caption).foregroundColor(Theme.muted)
+                            Button(t("get_code")) { live.share(on: true) }.foregroundColor(Theme.accent).font(.caption.bold()).padding(.top, 4)
+                        }
+                    }
+                case .code:
+                    Text(t("watching_other_back")).font(.subheadline).foregroundColor(Theme.muted).padding(.vertical, 4)
+                    Button(t("connect")) { live.watch(.own) }.buttonStyle(.borderedProminent).tint(Theme.accent)
+                case .idle:
+                    Text(live.pcOnline ? t("pc_is_online") : t("open_pc")).font(.subheadline).foregroundColor(live.pcOnline ? Theme.good : Theme.muted).padding(.vertical, 4)
+                    Button(t("connect")) { live.watch(.own) }.buttonStyle(.borderedProminent).tint(Theme.accent).disabled(!live.pcOnline)
+                }
+            }
+            // the PC app, right under it: it is what sends the telemetry
+            Link(destination: URL(string: "https://pitlanehq.app/dl/PitlaneHQ-Setup.exe")!) { ActionRow(title: t("download_pc").uppercased(), sub: t("download_pc_sub"), icon: "desktopcomputer") }
+            // someone else's telemetry with the code they give you
+            Panel {
+                Text(t("watch_other")).font(.headline.weight(.black))
+                if live.mode == .code {
+                    Text((live.pcOnline ? t("watching") : t("waiting_their_pc")) + " · " + stride(from: 0, to: live.code.count, by: 4).map { i in String(Array(live.code)[i..<min(i + 4, live.code.count)]) }.joined(separator: "-"))
+                        .font(.subheadline).foregroundColor(live.pcOnline ? Theme.good : Theme.muted).padding(.vertical, 4)
+                    Button(t("disconnect")) { live.watch(.idle) }.foregroundColor(Theme.bad).font(.subheadline.bold())
+                } else {
+                    Text(t("watch_other_sub")).font(.caption).foregroundColor(Theme.muted).padding(.vertical, 4)
+                    TextField("ABCD-EFGH-JK", text: $codeIn).textInputAutocapitalization(.characters).autocorrectionDisabled().padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
+                    if codeErr { Text(t("code_bad")).font(.caption).foregroundColor(Theme.bad) }
+                    Button(t("watch")) {
+                        let c = PLCrypto.codeNorm(codeIn)
+                        if PLCrypto.codeOk(c) { codeErr = false; live.watch(.code, code: c) } else { codeErr = true }
+                    }.buttonStyle(.borderedProminent).tint(Theme.accent).padding(.top, 4)
+                }
+            }
+            if live.mode != .idle {
             StatusPill(text: status.0, color: status.1)
-            WebNote(text: t("live_web"))
             if let m = live.message { Text(t(m)).font(.caption).foregroundColor(Theme.bad) }
-            if live.link == .open && !live.pcOnline { EmptyNote(text: t("open_pc")) }
             HStack(spacing: 8) {
                 Metric(label: t("speed"), value: live.num("Speed").map { String(format: "%.0f", $0 * 3.6) } ?? "—")
                 Metric(label: t("gear"), value: gear.map { $0 < 0 ? "R" : $0 == 0 ? "N" : "\($0)" } ?? "—")
@@ -1937,6 +2104,7 @@ struct LiveView: View {
                 SectionLabel(text: t("inputs").uppercased())
                 bar(t("throttle"), live.num("Throttle"), Theme.good)
                 bar(t("brake"), live.num("Brake"), Theme.bad)
+            }
             }
             Text(t("e2e")).font(.caption2).foregroundColor(Theme.muted)
         }
@@ -2126,6 +2294,7 @@ struct DrinksView: View {
 struct SettingsView: View {
     @EnvironmentObject var account: Account
     @EnvironmentObject var i18n: I18n
+    @State private var showMail = false
     @StateObject private var devices = Loader<[Device]>()
 
     private var version: String { (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") + " beta" }
@@ -2134,8 +2303,11 @@ struct SettingsView: View {
         Screen(title: t("account_tab")) {
             SectionLabel(text: t("account"))
             Panel {
-                Text(account.display.isEmpty ? t("driver") : account.display).font(.title3.weight(.black))
-                Text(account.email).font(.caption).foregroundColor(Theme.muted)
+                HStack(spacing: 6) { Text(account.display.isEmpty ? t("driver") : account.display).font(.title3.weight(.black)).lineLimit(1); MyBadges() }
+                HStack {
+                    Text(showMail ? account.email : String(repeating: "•", count: min(14, max(8, account.email.count)))).font(.caption).foregroundColor(Theme.muted)
+                    Button(t(showMail ? "hide" : "show")) { showMail.toggle() }.font(.caption.bold()).foregroundColor(Theme.accent)
+                }
                 Text(account.verified ? t("verified") : t("not_verified")).font(.caption2).foregroundColor(account.verified ? Theme.good : Theme.accent)
             }
             TwoFactorPanel()

@@ -7,10 +7,16 @@ data class LiveState(
     val simConnected: Boolean = false,
     val values: Map<String, Any?> = emptyMap(),
     val drinks: Drinks? = null,
-    val message: String? = null
+    val message: String? = null,
+    val mode: LiveMode = LiveMode.IDLE,   // what this screen watches
+    val code: String = "",                // the code of the driver you watch (CODE)
+    val myCode: String = ""               // your share code, as your PC says (OWN)
 ) {
     fun num(name: String): Double? = (values[name] as? Number)?.toDouble()
 }
+
+/** IDLE: only whether your PC is online (it sends nothing); OWN: you watch your PC; CODE: you watch someone's share code. */
+enum class LiveMode { IDLE, OWN, CODE }
 
 /** DRINKS mode on the PC (admins only): friends drive and their laps go to the community under their name. */
 data class Drinks(val admin: Boolean, val on: Boolean, val guest: String, val guestAuto: Boolean, val guests: List<String>, val driver: String)
@@ -72,10 +78,14 @@ data class CommunityLap(val id: String, val alias: String, val time: Double, val
 
 /** A driver's profile: their nickname (never their iRacing name), license classes, recent races and laps on the leaderboards. */
 data class DriverProfile(val name: String, val since: Long, val mine: Boolean, val admin: Boolean, val anonymous: Boolean, val supporter: Boolean, val supporterHidden: Boolean,
-    val lics: Map<String, String>, val races: List<ProfileRace>, val laps: List<ProfileLap>)
+    val lics: Map<String, String>, val races: List<ProfileRace>, val laps: List<ProfileLap>, val days: Map<String, Int> = emptyMap())
 data class ProfileRace(val whenMs: Long, val track: String, val car: String, val cat: String?, val lic: String?, val official: Boolean, val start: Int, val finish: Int, val field: Int,
     val inc: Int, val best: Double?, val irChange: Int, val dnf: Boolean)
-data class ProfileLap(val track: String, val car: String, val time: Double, val created: Long, val cat: String?, val lic: String?, val anon: Boolean)
+data class ProfileLap(val track: String, val car: String, val time: Double, val created: Long, val cat: String?, val lic: String?, val anon: Boolean,
+    val trackId: Long = 0, val carId: Long = 0, val pos: Int = 0, val of: Int = 0)
+
+/** A league posted on Pitlane HQ, with a direct link to its Discord. */
+data class League(val id: String, val name: String, val about: String, val cat: String?, val discord: String, val web: String, val schedule: String, val cars: String, val lang: String, val mine: Boolean = false, val by: String = "")
 
 data class SharedReport(val id: String, val alias: String, val track: String, val car: String, val created: Long, val finish: Int, val field: Int, val best: Double?, val mine: Boolean = false)
 

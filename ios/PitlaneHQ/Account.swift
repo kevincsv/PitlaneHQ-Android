@@ -74,6 +74,9 @@ final class Account: ObservableObject {
     @Published var needCode = false        // the password was right: the authenticator code comes next
     @Published var twoFactor = UserDefaults.standard.bool(forKey: "twoFactor")
     @Published var recoveryLeft = UserDefaults.standard.integer(forKey: "recoveryLeft")
+    /// the supporter badge (donates), and whether its owner hid it
+    @Published var supporter = UserDefaults.standard.bool(forKey: "supporter")
+    @Published var supporterHidden = UserDefaults.standard.bool(forKey: "supporterHidden")
     private var pending: (token: String, email: String, wrap: Data)?
     @Published var syncedFiles = 0
     @Published var syncVersion = 0
@@ -311,6 +314,10 @@ final class Account: ObservableObject {
                 admin = me["admin"] as? Bool ?? false
                 twoFactor = me["twoFactor"] as? Bool ?? false
                 recoveryLeft = me["recoveryLeft"] as? Int ?? 0
+                supporter = me["supporter"] as? Bool ?? false
+                supporterHidden = me["supporterHidden"] as? Bool ?? false
+                defaults.set(supporter, forKey: "supporter")
+                defaults.set(supporterHidden, forKey: "supporterHidden")
                 defaults.set(admin, forKey: "admin")
                 defaults.set(display, forKey: "display")
                 defaults.set(verified, forKey: "verified")
@@ -518,17 +525,35 @@ final class Account: ObservableObject {
     /// A driver's profile, from one of their laps on a leaderboard, or yours (lapId nil).
     func profile(_ lapId: String?) async throws -> DriverProfile {
         if demo { return Demo.profile(lapId) }
-        let q = lapId.map { "lap=" + ($0.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? $0) } ?? "me=1"
+        let q = (lapId.map { "lap=" + ($0.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? $0) } ?? "me=1") + "&tz=\(-TimeZone.current.secondsFromGMT() / 60)"
         let j = (try JSONSerialization.jsonObject(with: await call("GET", "/community/profile?" + q, auth: token != nil)) as? [String: Any]) ?? [:]
         let races = (j["races"] as? [[String: Any]] ?? []).map { r in
             ProfileRace(when: num(r["when"]) ?? 0, track: fixTxt(str(r["track"])), car: fixTxt(str(r["car"])), cat: r["cat"] as? String, lic: r["lic"] as? String, official: r["official"] as? Bool ?? false,
                         start: int(r["start"]), finish: int(r["finish"]), field: int(r["field"]), inc: int(r["inc"]), best: pos(r["best"]), irChange: int(r["irChange"]), dnf: r["dnf"] as? Bool ?? false)
         }
         let laps = (j["laps"] as? [[String: Any]] ?? []).map { x in
-            ProfileLap(track: fixTxt(str(x["track"])), car: fixTxt(str(x["car"])), time: num(x["time"]) ?? 0, created: num(x["created"]) ?? 0, cat: x["cat"] as? String, lic: x["lic"] as? String, anon: x["anon"] as? Bool ?? false)
+            ProfileLap(track: fixTxt(str(x["track"])), car: fixTxt(str(x["car"])), time: num(x["time"]) ?? 0, created: num(x["created"]) ?? 0, cat: x["cat"] as? String, lic: x["lic"] as? String, anon: x["anon"] as? Bool ?? false,
+                       trackId: (x["trackId"] as? NSNumber)?.int64Value ?? 0, carId: (x["carId"] as? NSNumber)?.int64Value ?? 0, pos: int(x["pos"]), of: int(x["of"]))
         }
         return DriverProfile(name: (j["name"] as? String) ?? "Driver", since: num(j["since"]) ?? 0, mine: j["mine"] as? Bool ?? false, admin: j["admin"] as? Bool ?? false, anonymous: j["anonymous"] as? Bool ?? false,
-                             supporter: j["supporter"] as? Bool ?? false, supporterHidden: j["supporterHidden"] as? Bool ?? false, lics: j["lics"] as? [String: String] ?? [:], races: races, laps: laps)
+                             supporter: j["supporter"] as? Bool ?? false, supporterHidden: j["supporterHidden"] as? Bool ?? false, lics: j["lics"] as? [String: String] ?? [:], races: races, laps: laps,
+                             days: (j["days"] as? [String: Any] ?? [:]).mapValues { int($0) })
+    }
+
+    /// Leagues (in development: admins only for now): post one with a Discord invite, edit or remove yours.
+    func leagues() async throws -> [League] {
+        let j = (try JSONSerialization.jsonObject(with: await call("GET", "/community/leagues")) as? [String: Any]) ?? [:]
+        return (j["leagues"] as? [[String: Any]] ?? []).map { x in
+            League(id: str(x["id"]), name: fixTxt(str(x["name"])), about: fixTxt(str(x["about"])), cat: x["cat"] as? String, discord: str(x["discord"]), web: str(x["web"]), schedule: str(x["schedule"]),
+                   cars: fixTxt(str(x["cars"])), lang: str(x["lang"]), mine: x["mine"] as? Bool ?? false, by: str(x["by"]))
+        }
+    }
+    func saveLeague(_ id: String?, _ l: League) async throws {
+        let path = "/community/leagues" + (id.map { "/" + ($0.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? $0) } ?? "")
+        _ = try await call("POST", path, body: ["name": l.name, "about": l.about, "cat": l.cat ?? NSNull(), "discord": l.discord, "web": l.web, "schedule": l.schedule, "cars": l.cars, "lang": l.lang])
+    }
+    func deleteLeague(_ id: String) async throws {
+        _ = try await call("POST", "/community/leagues/" + (id.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? id), body: ["delete": true])
     }
 
     /// Your profile's recent races: a summary of your own result in each (the race history itself stays encrypted).

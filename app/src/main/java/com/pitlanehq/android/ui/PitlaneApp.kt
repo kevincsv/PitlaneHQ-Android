@@ -380,6 +380,7 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
     val r by vm.races.collectAsState()
     val races = r.data ?: emptyList()
     Screen(a.display.ifBlank { t("driver") }, t("racing_companion")) {
+        if (a.admin || (a.supporter && !a.supporterHidden)) item { Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { MyBadges(a) } }
         state(r) { vm.loadRaces() }
         item { Licences() }
         item { DaysDriven(vm, nav, races) }
@@ -938,6 +939,13 @@ private fun LicBadge(k: String?) {
         modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(c.copy(alpha = 0.55f)).border(1.5.dp, c, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp))
 }
 
+/** Your badges, wherever your name shows: Admin, and Supporter unless you hid it. */
+@Composable
+private fun MyBadges(a: AccountState) {
+    if (a.admin) Status("ADMIN", Accent)
+    if (a.supporter && !a.supporterHidden) SupBadge()
+}
+
 /** The supporter badge: people who donate, given by hand by the owner of Pitlane HQ. */
 @Composable
 private fun SupBadge() {
@@ -1140,6 +1148,21 @@ private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
     var sec by rememberSaveable { mutableIntStateOf(0) }
     var cat by rememberSaveable { mutableStateOf("") }
     val acc by vm.account.collectAsState()
+    val lg by vm.leagues.collectAsState()
+    val uri = LocalUriHandler.current
+    var lsec by rememberSaveable { mutableIntStateOf(0) }
+    var lcat by rememberSaveable { mutableStateOf("") }
+    var editId by rememberSaveable { mutableStateOf<String?>(null) }
+    var fName by rememberSaveable { mutableStateOf("") }
+    var fAbout by rememberSaveable { mutableStateOf("") }
+    var fCat by rememberSaveable { mutableStateOf("") }
+    var fDiscord by rememberSaveable { mutableStateOf("") }
+    var fWeb by rememberSaveable { mutableStateOf("") }
+    var fSched by rememberSaveable { mutableStateOf("") }
+    var fCars by rememberSaveable { mutableStateOf("") }
+    var fLang by rememberSaveable { mutableStateOf("") }
+    var fErr by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(sec, acc.admin) { if (sec == 1 && acc.admin && lg.data == null && !lg.loading) vm.loadLeagues() }
     Screen(t("community"), t("shared_by")) {
         item { Tabs(listOf(t("leaderboards"), t("leagues")), sec) { sec = it } }
         if (sec == 1) {
@@ -1148,6 +1171,64 @@ private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
                 Panel {
                     Row(verticalAlignment = Alignment.CenterVertically) { Text(t("leagues"), fontWeight = FontWeight.Black, modifier = Modifier.weight(1f)); Status(t("in_development"), Accent) }
                     Text(if (acc.admin) t("leagues_admin") else t("leagues_wip"), color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+                }
+            }
+            if (!acc.admin) return@Screen
+            item { Tabs(listOf(t("leagues_explore"), if (editId != null) t("leagues_edit") else t("leagues_post"), t("leagues_mine")), lsec) { lsec = it; if (it != 1) editId = null } }
+            val all = lg.data ?: emptyList()
+            when (lsec) {
+                1 -> item {
+                    Panel {
+                        OutlinedTextField(fName, { fName = it }, label = { Text(t("league_name")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            DISCS.forEach { k -> Chip(discName(k), fCat == k) { fCat = if (fCat == k) "" else k } }
+                        }
+                        OutlinedTextField(fDiscord, { fDiscord = it }, label = { Text(t("league_discord")) }, placeholder = { Text("https://discord.gg/…") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(fWeb, { fWeb = it }, label = { Text(t("league_web")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(fSched, { fSched = it }, label = { Text(t("league_when")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(fCars, { fCars = it }, label = { Text(t("league_cars")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(fLang, { fLang = it }, label = { Text(t("league_lang")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(fAbout, { fAbout = it }, label = { Text(t("league_about")) }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                        fErr?.let { Text(t(it), color = Bad, fontSize = 12.sp) }
+                        Button({
+                            fErr = when {
+                                fName.trim().length < 3 -> "league_need_name"
+                                !Regex("^https://(discord\\.gg|(www\\.)?discord\\.com/invite)/[A-Za-z0-9-]{2,40}/?$").matches(fDiscord.trim()) -> "league_need_discord"
+                                else -> null
+                            }
+                            if (fErr == null) vm.saveLeague(editId, League("", fName.trim(), fAbout.trim(), fCat.ifBlank { null }, fDiscord.trim(), fWeb.trim(), fSched.trim(), fCars.trim(), fLang.trim())) { e ->
+                                if (e == null) { editId = null; fName = ""; fAbout = ""; fCat = ""; fDiscord = ""; fWeb = ""; fSched = ""; fCars = ""; fLang = ""; lsec = 2 } else fErr = e
+                            }
+                        }, modifier = Modifier.padding(top = 8.dp), colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) { Text(if (editId != null) t("save") else t("league_publish")) }
+                        Text(t("league_note"), color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
+                    }
+                }
+                else -> {
+                    state(lg) { vm.loadLeagues() }
+                    if (lsec == 0) item {
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Chip(t("disc_all") + " (" + all.size + ")", lcat.isEmpty()) { lcat = "" }
+                            DISCS.forEach { k -> Chip(discName(k) + " (" + all.count { it.cat == k } + ")", lcat == k) { lcat = if (lcat == k) "" else k } }
+                        }
+                    }
+                    val shown = if (lsec == 2) all.filter { it.mine } else all.filter { lcat.isEmpty() || it.cat == lcat }
+                    if (lg.data != null && shown.isEmpty()) item { Empty(t(if (lsec == 2) "leagues_none_mine" else "leagues_none")) }
+                    items(shown, key = { it.id }) { x ->
+                        Panel {
+                            Text(x.name, fontWeight = FontWeight.Black)
+                            Text(listOf(discName(x.cat), x.lang, t("by_name", x.by)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
+                            if (x.about.isNotBlank()) Text(x.about, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+                            if (x.schedule.isNotBlank() || x.cars.isNotBlank()) Text(listOf(x.schedule, x.cars).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                            Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Button({ uri.openUri(x.discord) }, colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) { Text(t("join_discord")) }
+                                if (x.web.isNotBlank()) TextButton({ uri.openUri(x.web) }) { Text(t("league_site"), color = Accent) }
+                            }
+                            if (x.mine || acc.admin) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                TextButton({ editId = x.id; fName = x.name; fAbout = x.about; fCat = x.cat ?: ""; fDiscord = x.discord; fWeb = x.web; fSched = x.schedule; fCars = x.cars; fLang = x.lang; fErr = null; lsec = 1 }) { Text(t("edit"), color = Accent) }
+                                TextButton({ vm.deleteLeague(x.id) }) { Text(t("remove"), color = Bad) }
+                            }
+                        }
+                    }
                 }
             }
             return@Screen
@@ -1220,8 +1301,7 @@ private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
     val b by vm.board.collectAsState()
     val a by vm.account.collectAsState()
     val all = b.data ?: emptyList()
-    var lic by rememberSaveable { mutableStateOf("") }
-    val list = if (lic.isEmpty()) all else all.filter { it.lic == lic }
+    val list = all
     val top = all.firstOrNull()?.time
     // the server marks the signed-in driver's own lap (anonymous ones too); older servers: by the public name
     val mineAll = all.indexOfFirst { it.mine }.let { i -> if (i >= 0) i else all.indexOfFirst { a.display.isNotBlank() && it.alias.equals(a.display, true) } }
@@ -1237,13 +1317,6 @@ private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
                 Text(listOf(discName(x.cat), t("drivers", all.size)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 11.sp)
             }
         }
-        // one license class: its drivers only, with their place in the whole leaderboard
-        if (all.any { it.lic != null }) item {
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Chip(t("lic_all"), lic.isEmpty()) { lic = "" }
-                LICS.filter { k -> all.any { it.lic == k } }.forEach { k -> Chip((if (k == "P") "Pro" else k) + " (" + all.count { it.lic == k } + ")", lic == k) { lic = if (lic == k) "" else k } }
-            }
-        }
         item { Section(t("fastest_drivers")) }
         items(list.size) { j ->
             val lap = list[j]
@@ -1254,7 +1327,6 @@ private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
                     Text("${i + 1}", color = if (i == 0) Purple else if (me) Accent else Muted, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, modifier = Modifier.width(32.dp))
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            LicBadge(lap.lic)
                             Text(if (lap.alias == "Anonymous") t("anonymous") else lap.alias, fontWeight = FontWeight.Bold, color = if (me) Accent else Fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
                                 textDecoration = if (lap.prof) TextDecoration.Underline else TextDecoration.None)
                             if (lap.sup) SupBadge()
@@ -1299,6 +1371,8 @@ private fun ProfileScreen(vm: PitlaneViewModel, nav: NavHostController) {
                 if (p.mine && p.supporter) TextButton({ vm.setBadgeHidden(!p.supporterHidden) }) { Text(t(if (p.supporterHidden) "show_badge" else "hide_badge"), color = Accent) }
             }
         }
+        item { Section(t("days_driven").uppercase() + " · " + t("days_in_6m", p.days.size)) }
+        item { Panel { DayGrid(p.days) } }
         item { Section(t("recent_races").uppercase()) }
         if (p.races.isEmpty()) item { Empty(t("no_races_yet")) }
         items(p.races.size) { i ->
@@ -1323,15 +1397,38 @@ private fun ProfileScreen(vm: PitlaneViewModel, nav: NavHostController) {
         if (p.laps.isEmpty()) item { Empty(t("no_laps_yet")) }
         items(p.laps.size) { i ->
             val l = p.laps[i]
-            Panel {
+            Panel(if (l.trackId > 0 && l.carId > 0) Modifier.clickable { val c = Combo(l.trackId, l.track, l.carId, l.car, 0, l.time, l.cat); vm.combo = c; vm.loadBoard(c); nav.navigate("combo") } else Modifier) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     LicBadge(l.lic)
                     Column(Modifier.weight(1f)) {
                         Text(l.track, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(listOf(l.car, discName(l.cat)).filter { it.isNotBlank() }.joinToString(" · ") + if (l.anon) " · 🔒 " + t(if (p.mine) "anon_lap_mine" else "anon_lap_admins") else "", color = Muted, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
-                    Text(lapTime(l.time), fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(lapTime(l.time), fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        if (l.pos > 0) Text("P${l.pos}" + if (l.of > 0) "/${l.of}" else "", color = if (l.pos == 1) Purple else Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    }
                 }
+            }
+        }
+    }
+}
+
+/** The last 26 weeks in squares, brighter the more sessions that day (keys "y-m-d" like the web). */
+@Composable
+private fun DayGrid(days: Map<String, Int>) {
+    val zone = java.time.ZoneId.systemDefault()
+    val today = java.time.LocalDate.now(zone)
+    val start = today.minusDays(((today.dayOfWeek.value - 1) + 25 * 7).toLong())
+    val key = { d: java.time.LocalDate -> "${d.year}-${d.monthValue}-${d.dayOfMonth}" }
+    val max = (days.values.maxOrNull() ?: 1).coerceAtLeast(1)
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        for (w in 0 until 26) Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            for (d in 0 until 7) {
+                val day = start.plusDays((w * 7 + d).toLong())
+                val n = if (day.isAfter(today)) -1 else days[key(day)] ?: 0
+                val lv = if (n > 0) ((n.toFloat() / max) * 4).toInt().coerceIn(1, 4) else 0
+                Box(Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(if (n < 0) Color.Transparent else if (lv == 0) Surface2 else Accent.copy(alpha = 0.25f + lv * 0.18f)))
             }
         }
     }
@@ -1351,11 +1448,66 @@ private fun Live(vm: PitlaneViewModel) {
         !s.simConnected -> t("pc_no_sim") to Accent
         else -> t("live_s") to Good
     }
+    val uri = LocalUriHandler.current
+    var codeIn by rememberSaveable { mutableStateOf("") }
+    var codeErr by remember { mutableStateOf(false) }
     Screen(t("live_title"), t("live_sub")) {
+        // your PC, from anywhere: Connect when it is online, Disconnect to stop the live data on this phone
+        item {
+            Panel {
+                Text(t("your_pc_anywhere"), fontWeight = FontWeight.Black)
+                when (s.mode) {
+                    LiveMode.OWN -> {
+                        Text(if (s.pcOnline) t("watching_pc") else t("waiting_pc"), color = if (s.pcOnline) Good else Muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 6.dp))
+                        OutlinedButton({ vm.liveWatch(LiveMode.IDLE) }) { Text(t("disconnect"), color = Bad) }
+                        if (s.pcOnline) {
+                            HorizontalDivider(Modifier.padding(vertical = 10.dp), color = Line)
+                            Text(t("your_code"), fontWeight = FontWeight.Bold)
+                            if (s.myCode.isNotBlank()) {
+                                Text(s.myCode, color = Accent, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Black, fontSize = 22.sp, letterSpacing = 2.sp, modifier = Modifier.padding(vertical = 4.dp))
+                                Text(t("your_code_sub"), color = Muted, fontSize = 12.sp)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TextButton({ vm.liveShare(true, true) }) { Text(t("new_code"), color = Accent) }
+                                    TextButton({ vm.liveShare(false) }) { Text(t("stop_sharing"), color = Bad) }
+                                }
+                            } else {
+                                Text(t("get_code_sub"), color = Muted, fontSize = 12.sp)
+                                TextButton({ vm.liveShare(true) }) { Text(t("get_code"), color = Accent) }
+                            }
+                        }
+                    }
+                    LiveMode.CODE -> {
+                        Text(t("watching_other_back"), color = Muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 6.dp))
+                        Button({ vm.liveWatch(LiveMode.OWN) }, colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) { Text(t("connect")) }
+                    }
+                    else -> {
+                        Text(if (s.pcOnline) t("pc_is_online") else t("open_pc"), color = if (s.pcOnline) Good else Muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 6.dp))
+                        Button({ vm.liveWatch(LiveMode.OWN) }, enabled = s.pcOnline, colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) { Text(t("connect")) }
+                    }
+                }
+            }
+        }
+        // the PC app, right under it: it is what sends the telemetry
+        item { Action(t("download_pc").uppercase(), t("download_pc_sub"), Icons.Default.Computer) { uri.openUri("https://pitlanehq.app/dl/PitlaneHQ-Setup.exe") } }
+        // someone else's telemetry with the code they give you
+        item {
+            Panel {
+                Text(t("watch_other"), fontWeight = FontWeight.Black)
+                if (s.mode == LiveMode.CODE) {
+                    Text((if (s.pcOnline) t("watching") else t("waiting_their_pc")) + " · " + s.code.chunked(4).joinToString("-"), color = if (s.pcOnline) Good else Muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 6.dp))
+                    OutlinedButton({ vm.liveWatch(LiveMode.IDLE) }) { Text(t("disconnect"), color = Bad) }
+                } else {
+                    Text(t("watch_other_sub"), color = Muted, fontSize = 12.sp, modifier = Modifier.padding(vertical = 6.dp))
+                    OutlinedTextField(codeIn, { codeIn = it; codeErr = false }, label = { Text("ABCD-EFGH-JK") }, singleLine = true, modifier = Modifier.fillMaxWidth(), isError = codeErr)
+                    if (codeErr) Text(t("code_bad"), color = Bad, fontSize = 12.sp)
+                    Button({ val c = com.pitlanehq.android.data.Crypto.codeNorm(codeIn); if (com.pitlanehq.android.data.Crypto.codeOk(c)) vm.liveWatch(LiveMode.CODE, c) else codeErr = true },
+                        modifier = Modifier.padding(top = 6.dp), colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) { Text(t("watch")) }
+                }
+            }
+        }
+        if (s.mode == LiveMode.IDLE) { item { Text(t("e2e"), color = Muted, fontSize = 11.sp) }; return@Screen }
         item { Status(label, color) }
-        item { WebNote(t("live_web")) }
         s.message?.let { item { Text(t(it), color = Bad, fontSize = 12.sp) } }
-        if (s.link == LinkState.OPEN && !s.pcOnline) item { Empty(t("open_pc")) }
         item {
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Metric(t("speed"), s.num("Speed")?.let { "%.0f".format(it * 3.6) } ?: "—", Modifier.weight(1f).fillMaxHeight())
@@ -1538,8 +1690,15 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
         item { Section(t("account")) }
         item {
             Panel {
-                Text(a.display.ifBlank { t("driver") }, fontWeight = FontWeight.Black, fontSize = 20.sp)
-                Text(a.email, color = Muted, fontSize = 12.sp)
+                var showMail by remember { mutableStateOf(false) }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(a.display.ifBlank { t("driver") }, fontWeight = FontWeight.Black, fontSize = 20.sp, modifier = Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    MyBadges(a)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (showMail) a.email else "•".repeat(a.email.length.coerceIn(8, 14)), color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f, fill = false))
+                    TextButton({ showMail = !showMail }) { Text(t(if (showMail) "hide" else "show"), color = Accent, fontSize = 12.sp) }
+                }
                 Text(if (a.verified) t("verified") else t("not_verified"), color = if (a.verified) Good else Accent, fontSize = 11.sp)
             }
         }

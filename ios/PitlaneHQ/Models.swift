@@ -99,6 +99,22 @@ struct DriverProfile {
     let lics: [String: String]
     let races: [ProfileRace]
     let laps: [ProfileLap]
+    var days: [String: Int] = [:]
+}
+
+/// A league posted on Pitlane HQ, with a direct link to its Discord.
+struct League: Identifiable {
+    var id: String
+    var name: String
+    var about: String
+    var cat: String?
+    var discord: String
+    var web: String
+    var schedule: String
+    var cars: String
+    var lang: String
+    var mine: Bool = false
+    var by: String = ""
 }
 
 struct ProfileRace: Identifiable {
@@ -127,6 +143,10 @@ struct ProfileLap: Identifiable {
     let cat: String?
     let lic: String?
     let anon: Bool
+    var trackId: Int64 = 0
+    var carId: Int64 = 0
+    var pos: Int = 0
+    var of: Int = 0
 }
 
 struct SharedReport: Identifiable, Hashable {

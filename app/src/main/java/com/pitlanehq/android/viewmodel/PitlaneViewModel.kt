@@ -230,6 +230,14 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     fun loadDevices() = load(devices) { Got(repo.devices()) }
     /** A driver's profile, from one of their laps (null: yours). */
     fun loadProfile(lapId: String?) { profileLap = lapId; profile.value = Loadable(); load(profile) { Got(repo.profile(lapId)) } }
+    val leagues = MutableStateFlow(Loadable<List<League>>())
+    fun loadLeagues() = load(leagues) { Got(repo.leagues()) }
+    fun saveLeague(id: String?, l: League, done: (String?) -> Unit) = viewModelScope.launch(Dispatchers.IO) {
+        val e = runCatching { repo.saveLeague(id, l) }.exceptionOrNull()
+        kotlinx.coroutines.withContext(Dispatchers.Main) { done(e?.let { errKey(it) }) }
+        if (e == null) loadLeagues()
+    }
+    fun deleteLeague(id: String) = viewModelScope.launch(Dispatchers.IO) { runCatching { repo.deleteLeague(id) }; loadLeagues() }
     fun setBadgeHidden(hidden: Boolean) = viewModelScope.launch(Dispatchers.IO) { runCatching { repo.setBadgeHidden(hidden) }; loadProfile(profileLap) }
     fun adminSupporter(id: String, on: Boolean) = viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminSupporter(id, on) }; loadAdmin("users") }
 
@@ -276,6 +284,8 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     // only while the live screen is open: the PC streams only while somebody watches
     fun startLive() { if (_account.value.signedIn) live.start() }
     fun stopLive() = live.stop()
+    fun liveWatch(m: LiveMode, code: String = "") = live.watch(m, code)
+    fun liveShare(on: Boolean, new: Boolean = false) = live.share(on, new)
     fun setDrinks(on: Boolean, guest: String, guestAuto: Boolean) = live.setDrinks(on, guest, guestAuto)
     // a new DRINKS name is checked first: names used by other people on Pitlane HQ are refused
     val drinksTaken = MutableStateFlow<String?>(null)
