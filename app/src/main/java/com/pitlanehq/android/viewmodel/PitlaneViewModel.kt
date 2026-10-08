@@ -321,8 +321,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
             }
             // the official turn numbers of this track, when an admin has placed them on its map (else the corners are counted)
             val turns = c?.let { runCatching { repo.turns(it.trackId) }.getOrNull() } ?: emptyList()
-            val pit = c?.let { runCatching { repo.pitLane(it.trackId) }.getOrNull() }
-            Got(LapAnalysis(lap, tr, ref, label, refTime, refSec, card, turns, pit))
+            Got(LapAnalysis(lap, tr, ref, label, refTime, refSec, card, turns))
         }
     }
 

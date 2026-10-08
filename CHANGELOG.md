@@ -8,8 +8,8 @@ web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; 
 
 - **The coach reads your racing line**: where you were on the track against the lap you compare with (inside or
   outside at turn-in, apex and exit, in metres), not only where you braked.
-- **The track map like iRacing's**: a road with depth, both lines, the official turn numbers and the pit lane with
-  its entry and exit.
+- **The track map like iRacing's**: a road with depth, both lines, the official turn numbers and the direction of
+  the lap.
 - **Licence summary**: the iRating and licence of each category on its own, in its own colour.
 - **Driver notes**: tap a driver in a race summary to mark them as dangerous, careful, clean or a friend, with a
   note only you see; the same notes as on the PC and the web.

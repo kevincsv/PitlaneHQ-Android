@@ -1177,7 +1177,6 @@ struct LapView: View {
     @State private var pick: Double?
     @State private var car: [String: Any]?
     @State private var turns: [Double] = [] // the official turn numbers of this track, when an admin placed them
-    @State private var pit: PitLane? = nil // its pit lane, from laps through the pits
 
     private func load() async {
         loading = true
@@ -1194,7 +1193,7 @@ struct LapView: View {
                 ?? combos.first { session.track.lowercased().hasPrefix($0.track.lowercased()) && $0.car.caseInsensitiveCompare(session.car) == .orderedSame }
             // the car card needs the car alone: what it does on other tracks, for when nobody known drove it here yet
             if let cc = c ?? combos.first(where: { $0.car.caseInsensitiveCompare(session.car) == .orderedSame }) { car = try? await account.carCard(carId: cc.carId) }
-            if let tc = c { turns = await account.turns(trackId: tc.trackId); pit = await account.pitLane(trackId: tc.trackId) } else { turns = []; pit = nil }
+            if let tc = c { turns = await account.turns(trackId: tc.trackId) } else { turns = [] }
             if !community {
                 if let best = all.filter({ $0.valid && $0.time > 0 && $0.id != lap.id }).min(by: { $0.time < $1.time }) {
                     ref = try? await account.lapTrace(best.id)
@@ -1255,7 +1254,7 @@ struct LapView: View {
                     if ref == nil { Text(t("no_reference")).font(.caption).foregroundColor(Theme.muted) }
                     let refName = refLabel.isEmpty ? t("ref") : refLabel
                     let card: (Int) -> AnyView = { i in AnyView(PointCard(c: c, i: i, refName: refName, sec: lap.sectors, refSec: refSectors)) }
-                    if trace.hasShape { TrackMapView(c: c, trace: trace, pick: $pick, turns: turns, pit: pit) }
+                    if trace.hasShape { TrackMapView(c: c, trace: trace, pick: $pick, turns: turns) }
                     Chart(title: t("speed") + " (km/h)", series: speedSeries(c, refName), step: c.step, fmt: { String(format: "%.0f", $0) },
                           pick: $pick, card: card)
                     if let delta = c.delta {
@@ -1314,11 +1313,9 @@ struct TrackMapView: View {
     private let xs: [Double], ys: [Double]
     private let brkA: [Double], brkB: [Double]
     private let rings: [Corner]
-    private let pit: PitLane?
     private let minX: Double, maxX: Double, minY: Double, maxY: Double
 
-    init(c: Compared, trace: Trace, pick: Binding<Double?>, turns: [Double] = [], pit: PitLane? = nil) {
-        self.pit = pit
+    init(c: Compared, trace: Trace, pick: Binding<Double?>, turns: [Double] = []) {
         self.c = c
         self.trace = trace
         self._pick = pick
@@ -1342,47 +1339,35 @@ struct TrackMapView: View {
         return CGPoint(x: pad + (xs[i] - minX) * k + ox, y: size.height - pad - (ys[i] - minY) * k - oy)
     }
 
-    private func pointXY(_ x: Double, _ y: Double, _ size: CGSize) -> CGPoint {
-        let pad: Double = 18
-        let k: Double = min((size.width - 2 * pad) / max(1e-6, maxX - minX), (size.height - 2 * pad) / max(1e-6, maxY - minY))
-        let ox: Double = (size.width - 2 * pad - (maxX - minX) * k) / 2
-        let oy: Double = (size.height - 2 * pad - (maxY - minY) * k) / 2
-        return CGPoint(x: pad + (x - minX) * k + ox, y: size.height - pad - (y - minY) * k - oy)
+
+    /// The arrow beside the start/finish line: its base, its tip and the side away from the map's centre.
+    private func dirGeom(_ size: CGSize) -> (b: CGPoint, t: CGPoint, ux: Double, uy: Double, nx: Double, ny: Double)? {
+        guard n > 20 else { return nil }
+        let p0 = point(0, size), p1 = point(max(2, n / 60), size)
+        let dx = p1.x - p0.x, dy = p1.y - p0.y, m = max(1e-6, (dx * dx + dy * dy).squareRoot())
+        let ux = dx / m, uy = dy / m
+        var nx = -uy, ny = ux
+        if (p0.x - size.width / 2) * nx + (p0.y - size.height / 2) * ny < 0 { nx = -nx; ny = -ny }
+        let b = CGPoint(x: p0.x + nx * 13, y: p0.y + ny * 13)
+        return (b, CGPoint(x: b.x + ux * 18, y: b.y + uy * 18), ux, uy, nx, ny)
     }
 
-    private struct PitRun { var path: Path; var entry: CGPoint?; var exit: CGPoint? }
+    private func dirArrow(_ size: CGSize) -> Path {
+        var p = Path()
+        guard let g = dirGeom(size) else { return p }
+        p.move(to: g.b)
+        p.addLine(to: CGPoint(x: g.t.x - g.ux * 6, y: g.t.y - g.uy * 6))
+        return p
+    }
 
-    /// The pit lane's stretches on this map: each point is the track's point beside it moved to its left by the metres measured.
-    private func pitRuns(_ size: CGSize) -> [PitRun] {
-        guard let pl = pit, n > 20 else { return [] }
-        func w(_ i: Int) -> Int { ((i % n) + n) % n }
-        var out: [PitRun] = []
-        var cur: [CGPoint] = []
-        var i0 = 0, last = -9
-        // a pit lane 15 m off the track would sit under the drawn road: the lane moves out, same shape, like iRacing's maps
-        let k: Double = min((size.width - 36) / max(1e-6, maxX - minX), (size.height - 36) / max(1e-6, maxY - minY))
-        let far = pl.pts.map { abs($0.1) }.max() ?? 0
-        let minM = 10 / max(k, 1e-6)
-        let gain = far > 0 && minM > far ? minM / far : 1
-        func flush() {
-            guard cur.count > 3 else { cur = []; return }
-            var p = Path()
-            p.move(to: cur[0])
-            for q in cur.dropFirst() { p.addLine(to: q) }
-            out.append(PitRun(path: p, entry: i0 > 3 ? cur.first : nil, exit: last < pl.n - 4 ? cur.last : nil))
-            cur = []
-        }
-        for (i, lat0) in pl.pts {
-            let lat = lat0 * gain
-            let j = w(Int((Double(i) * Double(n) / Double(pl.n)).rounded()))
-            let tx = xs[w(j + 2)] - xs[w(j - 2)], ty = ys[w(j + 2)] - ys[w(j - 2)]
-            let tm = max(1e-6, (tx * tx + ty * ty).squareRoot())
-            if i - last > 4 { flush(); i0 = i }
-            cur.append(pointXY(xs[j] - ty / tm * lat, ys[j] + tx / tm * lat, size))
-            last = i
-        }
-        flush()
-        return out
+    private func dirHead(_ size: CGSize) -> Path {
+        var p = Path()
+        guard let g = dirGeom(size) else { return p }
+        p.move(to: g.t)
+        p.addLine(to: CGPoint(x: g.t.x - g.ux * 6 + g.nx * 3.6, y: g.t.y - g.uy * 6 + g.ny * 3.6))
+        p.addLine(to: CGPoint(x: g.t.x - g.ux * 6 - g.nx * 3.6, y: g.t.y - g.uy * 6 - g.ny * 3.6))
+        p.closeSubpath()
+        return p
     }
 
     private func path(_ from: Int, _ to: Int, _ size: CGSize, close: Bool = false) -> Path {
@@ -1482,12 +1467,9 @@ struct TrackMapView: View {
             path(0, n - 1, size, close: true).stroke(Color.black.opacity(0.38), style: StrokeStyle(lineWidth: 11, lineCap: .round, lineJoin: .round)).offset(x: 1.5, y: 2.5)
             path(0, n - 1, size, close: true).stroke(Theme.line.opacity(0.95), style: StrokeStyle(lineWidth: 10, lineCap: .round, lineJoin: .round)).brightness(0.08)
             path(0, n - 1, size, close: true).stroke(Color(red: 0x15 / 255, green: 0x1A / 255, blue: 0x21 / 255), style: StrokeStyle(lineWidth: 7.5, lineCap: .round, lineJoin: .round))
-            // the pit lane beside the track, dashed, with its entry (red) and exit (blue)
-            ForEach(Array(pitRuns(size).enumerated()), id: \.offset) { _, r in
-                r.path.stroke(Color(red: 0x9F / 255, green: 0xB1 / 255, blue: 0xC8 / 255).opacity(0.85), style: StrokeStyle(lineWidth: 2.4, lineCap: .round, dash: [6, 3.5]))
-                if let a = r.entry { Circle().fill(Theme.bad).frame(width: 6, height: 6).position(a) }
-                if let b = r.exit { Circle().fill(Color(red: 0.35, green: 0.66, blue: 1)).frame(width: 6, height: 6).position(b) }
-            }
+            // the way the cars go, like iRacing's maps: an arrow beside the start/finish line, on the outside
+            dirArrow(size).stroke(Theme.bad, style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+            dirHead(size).fill(Theme.bad)
             ForEach(segments) { s in
                 path(s.from, s.to, size).stroke(s.color, style: StrokeStyle(lineWidth: 6.5, lineCap: .round, lineJoin: .round))
             }
