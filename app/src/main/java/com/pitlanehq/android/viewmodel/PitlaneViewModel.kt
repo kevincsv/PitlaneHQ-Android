@@ -231,6 +231,9 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
 
     fun loadRaces() = load(races) { Got(repo.races()) }
 
+    /** Your iRating of every discipline, as the PC last saw it. */
+    fun ratings(): Map<String, Triple<Int, String, Long>> = runCatching { repo.ratings() }.getOrDefault(emptyMap())
+
     /** Your notes on other drivers (the race summary shows their tag and lets you change it). */
     val driverNotes = MutableStateFlow<Map<String, DriverNote>>(emptyMap())
     fun loadDriverNotes() { driverNotes.value = runCatching { repo.driverNotes() }.getOrDefault(emptyMap()) }

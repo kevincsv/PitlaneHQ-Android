@@ -183,6 +183,7 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "cat_oval" to ("Oval" to "Óvalo"),
     "cat_dirt_road" to ("Dirt Road" to "Tierra (circuito)"),
     "cat_dirt_oval" to ("Dirt Oval" to "Tierra (óvalo)"),
+    "lic_note" to ("iRacing only tells the iRating of the category you are driving, so each one updates every time you open a session of it with Pitlane HQ running on your PC (and from the races it records)." to "iRacing solo da el iRating de la categoría que estás corriendo, así que cada uno se actualiza cada vez que abres una sesión de esa categoría con Pitlane HQ abierto en tu PC (y con las carreras que graba)."),
     "lic_wip" to ("In development: your licence, safety rating and iRating for each category arrive here when iRacing switches its data API back on." to "En desarrollo: tu licencia, safety rating e iRating de cada categoría llegarán aquí cuando iRacing vuelva a activar su API de datos."),
     "agent_note" to ("Your races, laps and settings reach your account through the PC agent: keep PitlaneHQ.exe open and signed in with this account while you drive, and everything syncs to the app and the web by itself." to "Tus carreras, vueltas y ajustes llegan a tu cuenta a través del agente del PC: deja PitlaneHQ.exe abierto y con esta cuenta mientras conduces, y todo se sincroniza solo con la app y la web."),
     "car_card" to ("Car card · what this car does on other tracks" to "Ficha del coche · lo que este coche hace en otros circuitos"),

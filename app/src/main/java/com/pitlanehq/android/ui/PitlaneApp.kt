@@ -382,7 +382,7 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
     Screen(a.display.ifBlank { t("driver") }, t("racing_companion")) {
         if (a.admin || (a.supporter && !a.supporterHidden)) item { Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { MyBadges(a) } }
         state(r) { vm.loadRaces() }
-        item { Licences() }
+        item { Licences(vm) }
         item { DaysDriven(vm, nav, races) }
         item { Section(t("race_summary")) }
         item {
@@ -577,7 +577,12 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
                         Row(Modifier.fillMaxWidth().then(if (me) Modifier else Modifier.clickable { editing = p }).padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("${p.pos}", color = if (me) Accent else Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(30.dp))
                             if (note != null && note.tag.isNotEmpty()) { TagIcon(note.tag, 14.dp); Spacer(Modifier.width(5.dp)) }
-                            Text(p.name + if (note != null && note.note.isNotEmpty()) " ✎" else "", fontSize = 12.sp, fontWeight = if (me) FontWeight.Black else FontWeight.Normal, color = if (me) Accent else Fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            Text(p.name + if (note != null && note.note.isNotEmpty()) " ✎" else "", fontSize = 12.sp, fontWeight = if (me) FontWeight.Black else FontWeight.Normal, color = if (me) Accent else Fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                            // laps more (red) or less (blue) than you, like the relative
+                            val myLaps = x.results.firstOrNull { if (anyMe) it.me else it.pos == x.finish }?.laps ?: 0
+                            val dl = if (!me && p.laps > 0 && myLaps > 0) p.laps - myLaps else 0
+                            if (dl != 0) Text((if (dl > 0) " +" else " −") + kotlin.math.abs(dl) + "L", color = if (dl > 0) Bad else Blue, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            Spacer(Modifier.weight(1f))
                             Text(if (p.ir > 0) "${p.ir}" else "", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
                             Text(lapTime(p.best), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(66.dp))
                             Text("${p.inc}x", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(30.dp))
@@ -2139,23 +2144,26 @@ private fun Grid(items: List<MetricData>, columns: Int) {
     }
 }
 
-/** Licences per category: in development until iRacing switches its data API back on. */
+/** Licences per category: your iRating and licence of each, as the PC last saw them (the game only says the category
+ *  of the session you are in, so each updates when you drive it with Pitlane HQ open). */
 @Composable
-private fun Licences() {
-    val cats = listOf("cat_sports", "cat_formula", "cat_oval", "cat_dirt_road", "cat_dirt_oval")
+private fun Licences(vm: PitlaneViewModel) {
+    val cats = listOf("cat_sports" to "sports_car", "cat_formula" to "formula_car", "cat_oval" to "oval", "cat_dirt_road" to "dirt_road", "cat_dirt_oval" to "dirt_oval")
     var cat by rememberSaveable { mutableIntStateOf(0) }
+    val acc by vm.account.collectAsState()
+    val all = remember(acc) { vm.ratings() }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Section(t("licences"))
-            Spacer(Modifier.weight(1f))
-            Status("WIP", Accent)
-        }
+        Section(t("licences"))
         Panel {
-            Tabs(cats.map { t(it) }, cat) { cat = it }
+            Tabs(cats.map { t(it.first) }, cat) { cat = it }
             Spacer(Modifier.height(8.dp))
-            Grid(listOf(MetricData(t("lic_class"), "—", Muted), MetricData(t("safety"), "—", Muted), MetricData("iRating", "—", Muted)), columns = 3)
+            val r = all[cats[cat].second]
+            val lic = r?.second?.trim()?.uppercase() ?: ""
+            val cls = lic.takeIf { it.isNotEmpty() }?.let { if (it.startsWith("WC") || it.startsWith("PRO")) "P" else it.take(1) } ?: "—"
+            val sr = lic.split(Regex("\\s+")).getOrNull(1) ?: "—"
+            Grid(listOf(MetricData(t("lic_class"), cls, if (r == null) Muted else Fg), MetricData(t("safety"), sr, if (r == null) Muted else Fg), MetricData("iRating", r?.first?.toString() ?: "—", if (r == null) Muted else Fg, r?.let { day(it.third) })), columns = 3)
             Spacer(Modifier.height(8.dp))
-            Text(t("lic_wip"), color = Accent, fontSize = 12.sp)
+            Text(t("lic_note"), color = Muted, fontSize = 12.sp)
         }
     }
 }

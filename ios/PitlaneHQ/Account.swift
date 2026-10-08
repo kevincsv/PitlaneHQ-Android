@@ -117,6 +117,14 @@ final class Account: ObservableObject {
     var token: String? { Vault.get("token").flatMap { String(data: $0, encoding: .utf8) } }
     var dataKey: Data? { Vault.get("dataKey") }
 
+    /// Your iRating of every discipline as the PC last saw it (ratings.json): discipline → (iRating, licence, when ms).
+    func ratings() -> [String: (ir: Int, lic: String, at: Double)] {
+        guard !demo, let d = saved("ratings"), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return [:] }
+        var out: [String: (ir: Int, lic: String, at: Double)] = [:]
+        for (k, v) in o { if let x = v as? [String: Any] { out[k] = (int(x["ir"]), str(x["lic"]), (x["at"] as? NSNumber)?.doubleValue ?? 0) } }
+        return out
+    }
+
     // ---------- driver notes: your marks on other drivers (drivers.json in the account) ----------
 
     @Published var driverNotes: [String: DriverNote] = [:]
@@ -376,6 +384,7 @@ final class Account: ObservableObject {
                     if let d = try? JSONSerialization.data(withJSONObject: slim) { save("races", d) }
                 }
                 save("drivers", (all["drivers.json"] as? String).flatMap { Data(base64Encoded: $0) } ?? Data("{}".utf8))
+                save("ratings", (all["ratings.json"] as? String).flatMap { Data(base64Encoded: $0) } ?? Data("{}".utf8))
             }
             syncedFiles = files
             syncVersion = int(j["version"])

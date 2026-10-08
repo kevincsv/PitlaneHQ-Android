@@ -4,20 +4,21 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`, PATCH for fixes, MINOR for a set of new features, 1.0.0
 when the beta ends. Every version is listed here, newest first, and gets a release on GitHub.
 
-## 0.8.42 beta
+## 0.9.0 beta
 
-- The coach reads your racing line (inside/outside at turn-in, apex and exit against the reference, in metres), and
-  the track map is a road with depth showing the reference's line and yours.
-- Same version as the PC and the web (the game found at once; the overlays open and close at once; +1L / −1L in
-  the relative; a Formula race's real iRating even with a Sports Car race after it).
+- The coach reads your racing line: where you were on the track against the lap you compare with (inside or outside
+  at turn-in, apex and exit, in metres), not only where you braked.
+- The track map is a road with depth showing the other lap's line and yours.
+- Licences: your iRating and licence of every category, as Pitlane HQ on your PC last saw them.
+- "+1L" / "−1L" in the race summary for the drivers who finished laps up or down on you.
+- Fixes and improvements.
 
 ## 0.8.41 beta
 
 - DRINKS: rename a driver on the list (their shared laps take the new name) or take them off it.
 - Driver notes: tap a driver in a race summary to mark them as dangerous, careful, clean or a friend, with a note only
   you see; their icon shows next to their name, and the notes are the same as on the PC and the web.
-- Race rivals on the leaderboards show their first name and the initial of their last name; admins can unlink an
-  account's iRacing driver.
+- Race rivals on the leaderboards show their first name and the initial of their last name.
 - The bottom bar is Home, Analysis, Telemetry, Community and Account: Community sits just before Account.
 - Same version as the PC and the web (Pitlane HQ Desktop with native screens; the real iRating of a race only from
   a session of the same category).

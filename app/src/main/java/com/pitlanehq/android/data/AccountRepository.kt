@@ -255,6 +255,7 @@ class AccountRepository(context: Context) {
             all.optString("races.json").takeIf { it.isNotEmpty() }?.let { b64 ->
                 runCatching { save("races", trimRaces(JSONArray(String(Base64.decode(b64, Base64.DEFAULT))))) }
             }
+            save("ratings", all.optString("ratings.json").takeIf { it.isNotEmpty() }?.let { runCatching { String(Base64.decode(it, Base64.DEFAULT)) }.getOrNull() } ?: "{}")
             save("drivers", all.optString("drivers.json").takeIf { it.isNotEmpty() }?.let { runCatching { String(Base64.decode(it, Base64.DEFAULT)) }.getOrNull() } ?: "{}")
         }
         prefs.edit()
@@ -269,6 +270,12 @@ class AccountRepository(context: Context) {
                 .putBoolean("supporter", me.optBoolean("supporter", false)).putBoolean("supporterHidden", me.optBoolean("supporterHidden", false)).apply()
         }
         return storedState()
+    }
+
+    /** Your iRating of every discipline as the PC last saw it (ratings.json): discipline → (iRating, licence, when). */
+    fun ratings(): Map<String, Triple<Int, String, Long>> {
+        val o = (if (demo) null else saved("ratings"))?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return emptyMap()
+        return o.keys().asSequence().mapNotNull { k -> o.optJSONObject(k)?.let { k to Triple(it.optInt("ir"), it.optString("lic"), it.optLong("at")) } }.toMap()
     }
 
     /** Your notes on other drivers, by their key (or "n:" and their name for older races). */

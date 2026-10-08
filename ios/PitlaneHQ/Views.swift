@@ -106,25 +106,30 @@ struct MetricGrid: View {
 }
 
 /// Licences per category: in development until iRacing switches its data API back on.
+/// Licences per category: your iRating and licence of each, as the PC last saw them (the game only says the category
+/// of the session you are in, so each updates when you drive it with Pitlane HQ open).
 struct Licences: View {
+    @EnvironmentObject var account: Account
     @State private var cat = 0
-    private let cats = ["cat_sports", "cat_formula", "cat_oval", "cat_dirt_road", "cat_dirt_oval"]
+    private let cats = [("cat_sports", "sports_car"), ("cat_formula", "formula_car"), ("cat_oval", "oval"), ("cat_dirt_road", "dirt_road"), ("cat_dirt_oval", "dirt_oval")]
     var body: some View {
+        let r = account.ratings()[cats[cat].1]
+        let lic = (r?.lic ?? "").trimmingCharacters(in: .whitespaces).uppercased()
+        let cls = lic.isEmpty ? "—" : (lic.hasPrefix("WC") || lic.hasPrefix("PRO") ? "P" : String(lic.prefix(1)))
+        let parts = lic.split(separator: " ")
+        let sr = parts.count > 1 ? String(parts[1]) : "—"
+        let col = r == nil ? Theme.muted : Theme.fg
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                SectionLabel(text: t("licences"))
-                Spacer()
-                StatusPill(text: "WIP", color: Theme.accent)
-            }
+            SectionLabel(text: t("licences"))
             Panel {
-                Tabs(labels: cats.map { t($0) }, selected: $cat)
+                Tabs(labels: cats.map { t($0.0) }, selected: $cat)
                 MetricGrid(items: [
-                    MetricData(label: t("lic_class"), value: "—", color: Theme.muted),
-                    MetricData(label: t("safety"), value: "—", color: Theme.muted),
-                    MetricData(label: "iRating", value: "—", color: Theme.muted),
+                    MetricData(label: t("lic_class"), value: cls, color: col),
+                    MetricData(label: t("safety"), value: sr, color: col),
+                    MetricData(label: "iRating", value: r.map { "\($0.ir)" } ?? "—", color: col, sub: r.map { day($0.at) }),
                 ], columns: 3)
                 .padding(.vertical, 6)
-                Text(t("lic_wip")).font(.caption).foregroundColor(Theme.accent)
+                Text(t("lic_note")).font(.caption).foregroundColor(Theme.muted)
             }
         }
     }
@@ -836,6 +841,10 @@ struct RaceView: View {
                             Text("\(p.pos)").foregroundColor(me ? Theme.accent : Theme.muted).frame(width: 28, alignment: .leading)
                             if let n = note, !n.tag.isEmpty { TagIcon(tag: n.tag).frame(width: 14, height: 14) }
                             Text(p.name + ((note?.note.isEmpty ?? true) ? "" : " ✎")).fontWeight(me ? .black : .regular).foregroundColor(me ? Theme.accent : Theme.fg).lineLimit(1)
+                            // laps more (red) or less (blue) than you, like the relative
+                            let myLaps = x.results.first(where: { x.results.contains(where: { $0.me }) ? $0.me : $0.pos == x.finish })?.laps ?? 0
+                            let dl = !me && p.laps > 0 && myLaps > 0 ? p.laps - myLaps : 0
+                            if dl != 0 { Text((dl > 0 ? "+" : "−") + "\(abs(dl))L").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(dl > 0 ? Theme.bad : Theme.blue) }
                             Spacer()
                             Text(p.ir > 0 ? "\(p.ir)" : "").foregroundColor(Theme.muted).frame(width: 44, alignment: .trailing)
                             Text(lapTime(p.best)).frame(width: 66, alignment: .trailing)
