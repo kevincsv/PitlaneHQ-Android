@@ -4,6 +4,11 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; fixes ride along as
 "Fixes and improvements". 1.0.0 comes when the beta ends. Newest first.
 
+## 0.9.1 beta
+
+- The licence summary shows each category's licence class in its colour.
+- Fixes and improvements.
+
 ## 0.9.0 beta
 
 - **The coach reads your racing line**: where you were on the track against the lap you compare with (inside or
