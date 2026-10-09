@@ -124,7 +124,7 @@ struct Licences: View {
             Panel {
                 Tabs(labels: cats.map { t($0.0) }, selected: $cat)
                 MetricGrid(items: [
-                    MetricData(label: t("lic_class"), value: cls, color: col),
+                    MetricData(label: t("lic_class"), value: cls, color: cls == "—" ? Theme.muted : licColor(cls)),
                     MetricData(label: t("safety"), value: sr, color: col),
                     MetricData(label: "iRating", value: r.map { "\($0.ir)" } ?? "—", color: r == nil ? Theme.muted : discColor(cats[cat].1), sub: r.map { day($0.at) }),
                 ], columns: 3)

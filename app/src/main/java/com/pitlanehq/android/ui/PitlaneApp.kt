@@ -2171,7 +2171,7 @@ private fun Licences(vm: PitlaneViewModel) {
             val lic = r?.second?.trim()?.uppercase() ?: ""
             val cls = lic.takeIf { it.isNotEmpty() }?.let { if (it.startsWith("WC") || it.startsWith("PRO")) "P" else it.take(1) } ?: "—"
             val sr = lic.split(Regex("\\s+")).getOrNull(1) ?: "—"
-            Grid(listOf(MetricData(t("lic_class"), cls, if (r == null) Muted else Fg), MetricData(t("safety"), sr, if (r == null) Muted else Fg), MetricData("iRating", r?.first?.toString() ?: "—", if (r == null) Muted else discColor(cats[cat].second), r?.let { day(it.third) })), columns = 3)
+            Grid(listOf(MetricData(t("lic_class"), cls, if (r == null || cls == "—") Muted else licColor(cls)), MetricData(t("safety"), sr, if (r == null) Muted else Fg), MetricData("iRating", r?.first?.toString() ?: "—", if (r == null) Muted else discColor(cats[cat].second), r?.let { day(it.third) })), columns = 3)
             Spacer(Modifier.height(6.dp))
             Text(t("lic_note"), color = Muted, fontSize = 11.sp)
         }
