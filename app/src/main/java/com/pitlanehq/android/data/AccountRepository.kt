@@ -532,14 +532,26 @@ class AccountRepository(context: Context) {
     fun leagues(): List<League> {
         val a = JSONObject(call("GET", "/community/leagues")).optJSONArray("leagues") ?: JSONArray()
         return (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { x ->
-            League(x.optString("id"), fixTxt(x.optString("name")), fixTxt(x.optString("about")), x.optStr("cat"), x.optString("discord"), x.optString("web"), x.optString("schedule"), fixTxt(x.optString("cars")), x.optString("lang"), x.optBoolean("mine"), x.optString("by"))
+            val ints = { k: String -> x.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.optInt(it) } } ?: emptyList() }
+            val strs = { k: String -> x.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList() }
+            League(x.optString("id"), fixTxt(x.optString("name")), fixTxt(x.optString("about")), x.optStr("cat"), x.optString("discord"), x.optString("web"), x.optString("schedule"), fixTxt(x.optString("cars")), x.optString("lang"), x.optBoolean("mine"), x.optString("by"),
+                cats = strs("cats"), days = ints("days"), time = x.optString("time"), tz = x.optString("tz"), open = x.optBoolean("open", true), views = if (x.has("views")) x.optInt("views") else -1, clicks = if (x.has("clicks")) x.optInt("clicks") else -1,
+                created = x.optLong("created"), updated = x.optLong("updated"))
         }
     }
     fun saveLeague(id: String?, l: League) {
-        call("POST", "/community/leagues" + (id?.let { "/" + URLEncoder.encode(it, "UTF-8") } ?: ""), JSONObject().put("name", l.name).put("about", l.about).put("cat", l.cat ?: JSONObject.NULL)
+        call("POST", "/community/leagues" + (id?.let { "/" + URLEncoder.encode(it, "UTF-8") } ?: ""), JSONObject().put("name", l.name).put("about", l.about).put("cats", JSONArray(l.cats))
+            .put("days", JSONArray(l.days)).put("time", l.time).put("tz", l.tz).put("open", l.open)
             .put("discord", l.discord).put("web", l.web).put("schedule", l.schedule).put("cars", l.cars).put("lang", l.lang))
     }
     fun deleteLeague(id: String) { call("POST", "/community/leagues/" + URLEncoder.encode(id, "UTF-8"), JSONObject().put("delete", true)) }
+    /** A post opened (view) or one of its links pressed (discord, web): the server counts it once per driver and day. */
+    fun leagueHit(id: String, kind: String) { call("POST", "/community/leagues/" + URLEncoder.encode(id, "UTF-8") + "/hit", JSONObject().put("kind", kind)) }
+    /** The creator's last 14 days of views and clicks of a post. */
+    fun leagueDays(id: String): List<LeagueDay> {
+        val a = JSONObject(call("GET", "/community/leagues/" + URLEncoder.encode(id, "UTF-8"))).optJSONArray("days") ?: JSONArray()
+        return (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { LeagueDay(it.optString("day"), it.optInt("views"), it.optInt("clicks")) }
+    }
 
     /** A supporter hides (or shows again) their own badge. */
     fun setBadgeHidden(hidden: Boolean) { call("POST", "/community/profile/badge", JSONObject().put("hidden", hidden)) }

@@ -1299,6 +1299,269 @@ private fun PointRow(name: String, color: Color, spd: Double?, thr: Double?, brk
     }
 }
 
+// ---------- Leagues: the hub ----------
+/** The league hub (Community → Leagues), the web's on the phone: every league is a post with its disciplines (or
+ *  Mixed), the days it races on a week strip, the usual start in its zone and in yours, its next race, whether it is
+ *  looking for drivers, the cars, the language and who posted it. Opening a post counts a view and its Discord or
+ *  website a click, once per driver and day: only the creator sees them, with the last 14 days. The server opens the
+ *  hub to everyone with LEAGUES_OPEN=1; until then it answers "in development" and everyone but the admins reads
+ *  that we are working on it. */
+@Composable
+private fun LeagueHub(vm: PitlaneViewModel, acc: AccountState) {
+    val lg by vm.leagues.collectAsState()
+    LaunchedEffect(Unit) { if (lg.data == null && !lg.loading) vm.loadLeagues() }
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var cat by rememberSaveable { mutableStateOf("") }
+    var day by rememberSaveable { mutableIntStateOf(-1) }
+    var onlyOpen by rememberSaveable { mutableStateOf(false) }
+    var sortNext by rememberSaveable { mutableStateOf(true) }
+    var q by rememberSaveable { mutableStateOf("") }
+    var openId by rememberSaveable { mutableStateOf<String?>(null) }
+    var edit by remember { mutableStateOf<League?>(null) }
+    val closed = lg.error == "leagues are in development"
+    val all = lg.data ?: emptyList()
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (closed || acc.admin) Panel {
+            Row(verticalAlignment = Alignment.CenterVertically) { Text(t("leagues"), fontWeight = FontWeight.Black, modifier = Modifier.weight(1f)); Status(t("in_development"), Accent) }
+            Text(if (closed) t("leagues_wip") else t("leagues_admin_hub"), color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+        }
+        if (!closed) {
+            Text(t("leagues_hub_sub"), color = Muted, fontSize = 12.sp)
+            Tabs(listOf(t("leagues_explore"), if (edit != null) t("leagues_edit") else t("leagues_post"), t("leagues_mine")), tab) { tab = it; if (it != 1) edit = null }
+            if (tab == 1) LeagueForm(vm, edit) { edit = null; tab = 2 }
+            else {
+                if (lg.loading && lg.data == null) Text("…", color = Muted)
+                lg.error?.let { Text(t(it), color = Bad, fontSize = 12.sp) }
+                if (tab == 0) {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Chip(t("disc_all") + " (" + all.size + ")", cat.isEmpty()) { cat = "" }
+                        DISCS.forEach { k -> Chip(discName(k) + " (" + all.count { k in leagueDiscs(it) } + ")", cat == k) { cat = if (cat == k) "" else k } }
+                    }
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Chip(t("league_any_day"), day < 0) { day = -1 }
+                        (0..6).forEach { d -> Chip(t("wd_$d"), day == d) { day = if (day == d) -1 else d } }
+                    }
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Chip(t("league_open"), onlyOpen) { onlyOpen = !onlyOpen }
+                        Spacer(Modifier.width(6.dp))
+                        Chip(t("league_sort_next"), sortNext) { sortNext = true }
+                        Chip(t("league_sort_new"), !sortNext) { sortNext = false }
+                    }
+                    OutlinedTextField(q, { q = it }, label = { Text(t("league_search")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
+                val shown = run {
+                    val l = if (tab == 2) all.filter { it.mine } else all.filter { x -> (cat.isEmpty() || cat in leagueDiscs(x)) && (day < 0 || day in x.days) && (!onlyOpen || x.open) && (q.isBlank() || listOf(x.name, x.about, x.cars, x.lang, x.by).any { it.contains(q, true) }) }
+                    if (tab == 0 && sortNext) l.map { it to leagueNext(it)?.toInstant()?.toEpochMilli() }.sortedWith(compareBy<Pair<League, Long?>> { it.second == null }.thenBy { it.second ?: 0L }.thenByDescending { it.first.updated }).map { it.first }
+                    else l.sortedByDescending { it.created }
+                }
+                if (lg.data != null && shown.isEmpty()) Empty(t(if (tab == 2) "leagues_none_mine" else "leagues_none"))
+                shown.forEach { x -> LeagueCard(x) { openId = x.id } }
+                if (tab == 2 && shown.isNotEmpty()) Text(t("league_stats_note"), color = Muted, fontSize = 11.sp)
+            }
+        }
+    }
+    val opened = openId?.let { id -> all.find { it.id == id } }
+    if (opened != null) LeagueDetail(vm, opened, acc, onClose = { openId = null }, onEdit = { edit = opened; tab = 1; openId = null })
+}
+
+/** The days it races as a week strip, the raced ones lit. */
+@Composable
+private fun WeekStrip(days: List<Int>) {
+    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        (0..6).forEach { d ->
+            val on = d in days
+            Box(Modifier.size(22.dp, 20.dp).clip(RoundedCornerShape(5.dp)).background(if (on) Accent else Surface2), contentAlignment = Alignment.Center) {
+                Text(t("wd_$d").take(2), fontSize = 9.sp, fontWeight = FontWeight.Bold, color = if (on) Ink else Muted, fontFamily = FontFamily.Monospace)
+            }
+        }
+    }
+}
+
+/** "20:30 CEST · 18:30 your time", or just the time; null without one. */
+private fun leagueTimeText(x: League): String? {
+    if (x.time.isBlank()) return null
+    val next = leagueNext(x) ?: return x.time
+    var s = x.time + " " + next.format(java.time.format.DateTimeFormatter.ofPattern("zzz", java.util.Locale.getDefault()))
+    val lt = next.withZoneSameInstant(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+    if (lt != x.time) s += " · " + t("league_your_time", lt)
+    return s
+}
+
+/** "Next: Thu 21:00 · in 2 d 3 h" in your time (true within a day), or "Racing now"; null without a schedule. */
+private fun leagueNextText(x: League): Pair<String, Boolean>? {
+    val next = leagueNext(x) ?: return null
+    val dt = next.toInstant().toEpochMilli() - System.currentTimeMillis()
+    if (dt <= 0) return t("league_now") to true
+    val h = Math.round(dt / 3.6e6).toInt()
+    val d = h / 24
+    val hs = h % 24
+    val ins = if (d > 0) "$d d" + (if (hs > 0) " $hs h" else "") else if (h > 0) "$h h" else "${maxOf(1, Math.round(dt / 6e4).toInt())} min"
+    val local = next.withZoneSameInstant(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("EEE HH:mm", java.util.Locale.getDefault()))
+    return (t("league_next") + ": " + local + " · " + t("league_in", ins)) to (dt < 864e5)
+}
+
+/** One post in the hub; a tap opens it. */
+@Composable
+private fun LeagueCard(x: League, onOpen: () -> Unit) {
+    val cs = leagueDiscs(x)
+    Card(
+        Modifier.fillMaxWidth().clickable(onClick = onOpen), colors = CardDefaults.cardColors(containerColor = Surface),
+        border = BorderStroke(1.dp, if (x.open) Good.copy(alpha = .5f) else Line), shape = MaterialTheme.shapes.small
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                cs.forEach { DiscIcon(it, 26.dp) }
+                Column(Modifier.weight(1f)) {
+                    Text(x.name, fontWeight = FontWeight.Black)
+                    Text(listOf(if (cs.size > 1) t("league_mixed") else "", x.lang, t("by_name", x.by)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
+                }
+            }
+            if (x.open) Status(t("league_open"), Good)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                WeekStrip(x.days)
+                Text(leagueTimeText(x) ?: t("league_no_schedule"), color = Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+            }
+            leagueNextText(x)?.let { (s, soon) -> Text(s, color = if (soon) Good else Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold) }
+            if (x.about.isNotBlank()) Text(x.about, fontSize = 13.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            if (x.cars.isNotBlank()) Text("🏁 " + x.cars, color = Muted, fontSize = 12.sp)
+            if (x.views >= 0) Text("👁 ${x.views} · ↗ ${x.clicks}", color = Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+/** A post opened: everything it says, its links (each counts a click), the link to share; the creator's numbers with
+ *  the last 14 days, edit and remove. Opening it counts a view. */
+@Composable
+private fun LeagueDetail(vm: PitlaneViewModel, x: League, acc: AccountState, onClose: () -> Unit, onEdit: () -> Unit) {
+    val uri = LocalUriHandler.current
+    val clip = LocalClipboardManager.current
+    var days by remember(x.id) { mutableStateOf<List<LeagueDay>?>(null) }
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(x.id) { if (!x.mine) vm.hitLeague(x.id, "view"); if (x.views >= 0) vm.leagueDays(x.id) { days = it } }
+    val cs = leagueDiscs(x)
+    AlertDialog(
+        onDismissRequest = onClose,
+        confirmButton = { TextButton(onClose) { Text(t("close"), color = Accent) } },
+        title = { Text(x.name, fontWeight = FontWeight.Black) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    cs.forEach { DiscIcon(it, 24.dp) }
+                    Text(listOf(cs.joinToString(" + ") { discName(it) }, x.lang, t("by_name", x.by)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
+                }
+                if (x.open) Status(t("league_open"), Good)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    WeekStrip(x.days)
+                    Text(leagueTimeText(x) ?: t("league_no_schedule"), color = Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                }
+                leagueNextText(x)?.let { (s, soon) -> Text(s, color = if (soon) Good else Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold) }
+                if (x.about.isNotBlank()) Text(x.about, fontSize = 13.sp)
+                if (x.cars.isNotBlank()) Text("🏁 " + x.cars, color = Muted, fontSize = 12.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (x.discord.isNotBlank()) Button({ if (!x.mine) vm.hitLeague(x.id, "discord"); uri.openUri(x.discord) }, colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) { Text(t("join_discord")) }
+                    if (x.web.isNotBlank()) TextButton({ if (!x.mine) vm.hitLeague(x.id, "web"); uri.openUri(x.web) }) { Text(t("league_site"), color = Accent) }
+                }
+                TextButton({ clip.setText(AnnotatedString("https://pitlanehq.app/app?league=" + x.id)); copied = true }) { Text(if (copied) t("league_link_copied") else t("league_copy_link"), color = Accent) }
+                if (x.views >= 0) {
+                    Section(t("league_your_numbers"))
+                    Text("👁 ${x.views} ${t("league_views")} · ↗ ${x.clicks} ${t("league_clicks")}", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    LeagueBars(days)
+                    Text(t("league_last14"), color = Muted, fontSize = 11.sp)
+                }
+                if (x.mine || acc.admin) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TextButton(onEdit) { Text(t("edit"), color = Accent) }
+                    TextButton({ vm.deleteLeague(x.id); onClose() }) { Text(t("remove"), color = Bad) }
+                }
+            }
+        }
+    )
+}
+
+/** The creator's last 14 days: views (amber) and clicks (blue) per day. */
+@Composable
+private fun LeagueBars(days: List<LeagueDay>?) {
+    val by = days?.associateBy { it.day } ?: emptyMap()
+    val keys = (13 downTo 0).map { java.time.LocalDate.now(java.time.ZoneOffset.UTC).minusDays(it.toLong()).toString() }
+    val mx = maxOf(1, keys.maxOf { k -> maxOf(by[k]?.views ?: 0, by[k]?.clicks ?: 0) })
+    Row(Modifier.fillMaxWidth().height(56.dp), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.Bottom) {
+        keys.forEach { k ->
+            val v = by[k]?.views ?: 0
+            val c = by[k]?.clicks ?: 0
+            Row(Modifier.weight(1f).fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(1.dp), verticalAlignment = Alignment.Bottom) {
+                Box(Modifier.weight(1f).fillMaxHeight(maxOf(0.04f, v.toFloat() / mx)).clip(RoundedCornerShape(2.dp)).background(Accent))
+                Box(Modifier.weight(1f).fillMaxHeight(maxOf(0.04f, c.toFloat() / mx)).clip(RoundedCornerShape(2.dp)).background(Blue))
+            }
+        }
+    }
+}
+
+/** Post a league, or edit yours: the days it races, the usual start (this phone's time zone), its disciplines, an
+ *  optional Discord invite and website (one at least), the cars, the language, whether it is looking for drivers. */
+@Composable
+private fun LeagueForm(vm: PitlaneViewModel, edit: League?, onDone: () -> Unit) {
+    var name by rememberSaveable(edit) { mutableStateOf(edit?.name ?: "") }
+    var about by rememberSaveable(edit) { mutableStateOf(edit?.about ?: "") }
+    var cats by rememberSaveable(edit) { mutableStateOf((edit?.let { leagueDiscs(it) } ?: emptyList()).joinToString(",")) }
+    var days by rememberSaveable(edit) { mutableStateOf((edit?.days ?: emptyList()).joinToString(",")) }
+    var time by rememberSaveable(edit) { mutableStateOf(edit?.time ?: "") }
+    val tz = edit?.tz?.ifBlank { null } ?: java.util.TimeZone.getDefault().id
+    var discord by rememberSaveable(edit) { mutableStateOf(edit?.discord ?: "") }
+    var web by rememberSaveable(edit) { mutableStateOf(edit?.web ?: "") }
+    var cars by rememberSaveable(edit) { mutableStateOf(edit?.cars ?: "") }
+    var lang by rememberSaveable(edit) { mutableStateOf(edit?.lang ?: "") }
+    var open by rememberSaveable(edit) { mutableStateOf(edit?.open ?: true) }
+    var err by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    val catList = cats.split(",").filter { it.isNotBlank() }
+    val dayList = days.split(",").filter { it.isNotBlank() }.map { it.toInt() }
+    Panel {
+        OutlinedTextField(name, { name = it }, label = { Text(t("league_name")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Text(t("league_discs"), color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            DISCS.forEach { k -> Chip(discName(k), k in catList) { cats = (if (k in catList) catList - k else catList + k).joinToString(",") } }
+        }
+        Text(t("league_days"), color = Muted, fontSize = 11.sp)
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            (0..6).forEach { d -> Chip(t("wd_$d"), d in dayList) { days = (if (d in dayList) dayList - d else dayList + d).sorted().joinToString(",") } }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(time, { time = it }, label = { Text(t("league_time")) }, placeholder = { Text("20:30") }, singleLine = true, modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1.4f)) {
+                Text(t("league_tz"), color = Muted, fontSize = 11.sp)
+                Text(tz.replace("_", " "), fontSize = 13.sp)
+            }
+        }
+        OutlinedTextField(discord, { discord = it }, label = { Text(t("league_discord")) }, placeholder = { Text("https://discord.gg/…") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(web, { web = it }, label = { Text(t("league_web")) }, placeholder = { Text("https://…") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Text(t("league_need_link_note"), color = Muted, fontSize = 11.sp)
+        OutlinedTextField(cars, { cars = it }, label = { Text(t("league_cars")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(lang, { lang = it }, label = { Text(t("league_lang")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+            Switch(open, { open = it }, colors = SwitchDefaults.colors(checkedTrackColor = Accent))
+            Text(t("league_open_f"), fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
+        }
+        OutlinedTextField(about, { about = it }, label = { Text(t("league_about")) }, minLines = 3, modifier = Modifier.fillMaxWidth())
+        err?.let { Text(t(it), color = Bad, fontSize = 12.sp) }
+        Button({
+            err = when {
+                name.trim().length < 3 -> "league_need_name"
+                discord.isNotBlank() && !Regex("^https://(discord\\.gg|(www\\.)?discord\\.com/invite)/[A-Za-z0-9-]{2,40}/?$").matches(discord.trim()) -> "league_need_discord"
+                web.isNotBlank() && !Regex("^https://[^\\s\"'<>]{4,190}$").matches(web.trim()) -> "league_need_web"
+                discord.isBlank() && web.isBlank() -> "league_need_link"
+                time.isNotBlank() && !Regex("^([01]\\d|2[0-3]):[0-5]\\d$").matches(time.trim()) -> "league_bad_time"
+                else -> null
+            }
+            if (err == null) {
+                busy = true
+                vm.saveLeague(edit?.id, League(edit?.id ?: "", name.trim(), about.trim(), null, discord.trim(), web.trim(), "", cars.trim(), lang.trim(), cats = catList, days = dayList, time = time.trim(), tz = tz, open = open)) { e ->
+                    busy = false
+                    if (e == null) onDone() else err = e
+                }
+            }
+        }, enabled = !busy, modifier = Modifier.padding(top = 8.dp), colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) { Text(if (edit != null) t("save") else t("league_publish")) }
+        Text(t("league_note"), color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
+    }
+}
 // ---------- Community ----------
 @Composable
 private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
@@ -1319,89 +1582,11 @@ private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
     var sec by rememberSaveable { mutableIntStateOf(0) }
     var cat by rememberSaveable { mutableStateOf("") }
     val acc by vm.account.collectAsState()
-    val lg by vm.leagues.collectAsState()
     val uri = LocalUriHandler.current
-    var lsec by rememberSaveable { mutableIntStateOf(0) }
-    var lcat by rememberSaveable { mutableStateOf("") }
-    var editId by rememberSaveable { mutableStateOf<String?>(null) }
-    var fName by rememberSaveable { mutableStateOf("") }
-    var fAbout by rememberSaveable { mutableStateOf("") }
-    var fCat by rememberSaveable { mutableStateOf("") }
-    var fDiscord by rememberSaveable { mutableStateOf("") }
-    var fWeb by rememberSaveable { mutableStateOf("") }
-    var fSched by rememberSaveable { mutableStateOf("") }
-    var fCars by rememberSaveable { mutableStateOf("") }
-    var fLang by rememberSaveable { mutableStateOf("") }
-    var fErr by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(sec, acc.admin) { if (sec == 1 && acc.admin && lg.data == null && !lg.loading) vm.loadLeagues() }
     Screen(t("community"), t("shared_by")) {
         item { Tabs(listOf(t("leaderboards"), t("leagues")), sec) { sec = it } }
         if (sec == 1) {
-            // leagues: in development, only the admins get in; everyone else reads that we are working on it
-            item {
-                Panel {
-                    Row(verticalAlignment = Alignment.CenterVertically) { Text(t("leagues"), fontWeight = FontWeight.Black, modifier = Modifier.weight(1f)); Status(t("in_development"), Accent) }
-                    Text(if (acc.admin) t("leagues_admin") else t("leagues_wip"), color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
-                }
-            }
-            if (!acc.admin) return@Screen
-            item { Tabs(listOf(t("leagues_explore"), if (editId != null) t("leagues_edit") else t("leagues_post"), t("leagues_mine")), lsec) { lsec = it; if (it != 1) editId = null } }
-            val all = lg.data ?: emptyList()
-            when (lsec) {
-                1 -> item {
-                    Panel {
-                        OutlinedTextField(fName, { fName = it }, label = { Text(t("league_name")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            DISCS.forEach { k -> Chip(discName(k), fCat == k) { fCat = if (fCat == k) "" else k } }
-                        }
-                        OutlinedTextField(fDiscord, { fDiscord = it }, label = { Text(t("league_discord")) }, placeholder = { Text("https://discord.gg/…") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(fWeb, { fWeb = it }, label = { Text(t("league_web")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(fSched, { fSched = it }, label = { Text(t("league_when")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(fCars, { fCars = it }, label = { Text(t("league_cars")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(fLang, { fLang = it }, label = { Text(t("league_lang")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(fAbout, { fAbout = it }, label = { Text(t("league_about")) }, minLines = 3, modifier = Modifier.fillMaxWidth())
-                        fErr?.let { Text(t(it), color = Bad, fontSize = 12.sp) }
-                        Button({
-                            fErr = when {
-                                fName.trim().length < 3 -> "league_need_name"
-                                !Regex("^https://(discord\\.gg|(www\\.)?discord\\.com/invite)/[A-Za-z0-9-]{2,40}/?$").matches(fDiscord.trim()) -> "league_need_discord"
-                                else -> null
-                            }
-                            if (fErr == null) vm.saveLeague(editId, League("", fName.trim(), fAbout.trim(), fCat.ifBlank { null }, fDiscord.trim(), fWeb.trim(), fSched.trim(), fCars.trim(), fLang.trim())) { e ->
-                                if (e == null) { editId = null; fName = ""; fAbout = ""; fCat = ""; fDiscord = ""; fWeb = ""; fSched = ""; fCars = ""; fLang = ""; lsec = 2 } else fErr = e
-                            }
-                        }, modifier = Modifier.padding(top = 8.dp), colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) { Text(if (editId != null) t("save") else t("league_publish")) }
-                        Text(t("league_note"), color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
-                    }
-                }
-                else -> {
-                    state(lg) { vm.loadLeagues() }
-                    if (lsec == 0) item {
-                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Chip(t("disc_all") + " (" + all.size + ")", lcat.isEmpty()) { lcat = "" }
-                            DISCS.forEach { k -> Chip(discName(k) + " (" + all.count { it.cat == k } + ")", lcat == k) { lcat = if (lcat == k) "" else k } }
-                        }
-                    }
-                    val shown = if (lsec == 2) all.filter { it.mine } else all.filter { lcat.isEmpty() || it.cat == lcat }
-                    if (lg.data != null && shown.isEmpty()) item { Empty(t(if (lsec == 2) "leagues_none_mine" else "leagues_none")) }
-                    items(shown, key = { it.id }) { x ->
-                        Panel {
-                            Text(x.name, fontWeight = FontWeight.Black)
-                            Text(listOf(discName(x.cat), x.lang, t("by_name", x.by)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
-                            if (x.about.isNotBlank()) Text(x.about, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
-                            if (x.schedule.isNotBlank() || x.cars.isNotBlank()) Text(listOf(x.schedule, x.cars).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
-                            Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Button({ uri.openUri(x.discord) }, colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) { Text(t("join_discord")) }
-                                if (x.web.isNotBlank()) TextButton({ uri.openUri(x.web) }) { Text(t("league_site"), color = Accent) }
-                            }
-                            if (x.mine || acc.admin) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                TextButton({ editId = x.id; fName = x.name; fAbout = x.about; fCat = x.cat ?: ""; fDiscord = x.discord; fWeb = x.web; fSched = x.schedule; fCars = x.cars; fLang = x.lang; fErr = null; lsec = 1 }) { Text(t("edit"), color = Accent) }
-                                TextButton({ vm.deleteLeague(x.id) }) { Text(t("remove"), color = Bad) }
-                            }
-                        }
-                    }
-                }
-            }
+            item { LeagueHub(vm, acc) }
             return@Screen
         }
         item { WebNote(t("community_web")) }

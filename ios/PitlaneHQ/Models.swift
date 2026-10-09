@@ -102,7 +102,9 @@ struct DriverProfile {
     var days: [String: Int] = [:]
 }
 
-/// A league posted on Pitlane HQ, with a direct link to its Discord.
+/// A league posted on the hub: the days it races (0 Monday … 6 Sunday), the usual start in its time zone, one or
+/// several disciplines (mixed), an optional Discord invite and website, whether it is looking for drivers; the views
+/// and clicks only for its creator (−1 for everyone else).
 struct League: Identifiable {
     var id: String
     var name: String
@@ -115,6 +117,42 @@ struct League: Identifiable {
     var lang: String
     var mine: Bool = false
     var by: String = ""
+    var cats: [String] = []
+    var days: [Int] = []
+    var time: String = ""
+    var tz: String = ""
+    var open: Bool = true
+    var views: Int = -1
+    var clicks: Int = -1
+    var created: Double = 0
+    var updated: Double = 0
+}
+
+/// One day of a league post's views and clicks, for its creator's chart.
+struct LeagueDay {
+    let day: String
+    let views: Int
+    let clicks: Int
+}
+
+/// The disciplines of a league: the new list, or the one discipline older posts carry.
+func leagueDiscs(_ x: League) -> [String] { x.cats.isEmpty ? (x.cat.map { [$0] } ?? []) : x.cats }
+
+/// The next race of a league: the first of its days at its time, in its zone, from an hour ago on (a race under way
+/// counts); nil without a schedule.
+func leagueNext(_ x: League, now: Date = Date()) -> Date? {
+    let p = x.time.split(separator: ":").compactMap { Int($0) }
+    guard !x.days.isEmpty, p.count == 2, (0...23).contains(p[0]), (0...59).contains(p[1]), let tz = TimeZone(identifier: x.tz.isEmpty ? "UTC" : x.tz) else { return nil }
+    var cal = Calendar(identifier: .gregorian)
+    cal.timeZone = tz
+    let start = cal.startOfDay(for: now)
+    for i in 0..<8 {
+        guard let d = cal.date(byAdding: .day, value: i, to: start) else { continue }
+        let wd = (cal.component(.weekday, from: d) + 5) % 7 // 0 Monday … 6 Sunday
+        guard x.days.contains(wd), let at = cal.date(bySettingHour: p[0], minute: p[1], second: 0, of: d) else { continue }
+        if at.timeIntervalSince(now) >= -3600 { return at }
+    }
+    return nil
 }
 
 struct ProfileRace: Identifiable {

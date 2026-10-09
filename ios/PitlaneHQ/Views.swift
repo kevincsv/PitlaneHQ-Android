@@ -2099,78 +2099,349 @@ struct Pills: View {
     }
 }
 
-/// Leagues (in development, admins only): explore by discipline, post one with its Discord invite, edit or remove yours.
-struct LeaguesAdmin: View {
+// ---------- Leagues: the hub ----------
+/// The league hub (Community → Leagues), the web's on the phone: every league is a post with its disciplines (or
+/// Mixed), the days it races on a week strip, the usual start in its zone and in yours, its next race, whether it is
+/// looking for drivers, the cars, the language and who posted it. Opening a post counts a view and its Discord or
+/// website a click, once per driver and day: only the creator sees them, with the last 14 days. The server opens the
+/// hub to everyone with LEAGUES_OPEN=1; until then it answers "in development" and everyone but the admins reads
+/// that we are working on it.
+struct LeagueHub: View {
     @EnvironmentObject var account: Account
-    @Environment(\.openURL) private var openURL
     @State private var list: [League]?
     @State private var err: String?
     @State private var tab = 0
     @State private var cat = ""
-    @State private var editId: String?
-    @State private var f = League(id: "", name: "", about: "", cat: nil, discord: "", web: "", schedule: "", cars: "", lang: "")
-    @State private var fCat = ""
-    @State private var fErr: String?
+    @State private var day = -1
+    @State private var onlyOpen = false
+    @State private var sortNext = true
+    @State private var q = ""
+    @State private var openId: String?
+    @State private var edit: League?
 
-    private func load() async { do { list = try await account.leagues(); err = nil } catch { err = (error as? AppError)?.key ?? error.localizedDescription; list = list ?? [] } }
-    private func field(_ label: String, _ v: Binding<String>) -> some View {
-        TextField(label, text: v).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
+    private func load() async {
+        do { list = try await account.leagues(); err = nil }
+        catch { err = (error as? AppError)?.key ?? error.localizedDescription; list = list ?? [] }
     }
-    private func bind(_ k: WritableKeyPath<League, String>) -> Binding<String> { Binding(get: { f[keyPath: k] }, set: { f[keyPath: k] = $0 }) }
+    private var closed: Bool { err == "leagues are in development" }
+    private var shown: [League] {
+        let all = list ?? []
+        var l = tab == 2 ? all.filter { $0.mine } : all.filter { x in
+            (cat.isEmpty || leagueDiscs(x).contains(cat)) && (day < 0 || x.days.contains(day)) && (!onlyOpen || x.open)
+                && (q.isEmpty || [x.name, x.about, x.cars, x.lang, x.by].contains { $0.localizedCaseInsensitiveContains(q) })
+        }
+        if tab == 0 && sortNext {
+            l.sort { a, b in
+                let na = leagueNext(a), nb = leagueNext(b)
+                if (na == nil) != (nb == nil) { return na != nil }
+                if let na, let nb, na != nb { return na < nb }
+                return a.updated > b.updated
+            }
+        } else {
+            l.sort { $0.created > $1.created }
+        }
+        return l
+    }
+    private var opened: Binding<League?> {
+        Binding(get: { openId.flatMap { id in (list ?? []).first { $0.id == id } } }, set: { openId = $0?.id })
+    }
 
     var body: some View {
         let all = list ?? []
         VStack(alignment: .leading, spacing: 10) {
-            Tabs(labels: [t("leagues_explore"), editId != nil ? t("leagues_edit") : t("leagues_post"), t("leagues_mine")], selected: $tab)
-            if let err { Text(t(err)).font(.caption).foregroundColor(Theme.bad) }
-            if tab == 1 {
+            if closed || account.admin {
                 Panel {
-                    field(t("league_name"), bind(\.name))
-                    Pills(items: DISCS.map { ($0, discName($0)) }, selected: $fCat)
-                    field("https://discord.gg/…", bind(\.discord))
-                    field(t("league_web"), bind(\.web))
-                    field(t("league_when"), bind(\.schedule))
-                    field(t("league_cars"), bind(\.cars))
-                    field(t("league_lang"), bind(\.lang))
-                    field(t("league_about"), bind(\.about))
-                    if let fErr { Text(t(fErr)).font(.caption).foregroundColor(Theme.bad) }
-                    Button(editId != nil ? t("save") : t("league_publish")) {
-                        let ok = f.discord.range(of: "^https://(discord\\.gg|(www\\.)?discord\\.com/invite)/[A-Za-z0-9-]{2,40}/?$", options: .regularExpression) != nil
-                        if f.name.trimmingCharacters(in: .whitespaces).count < 3 { fErr = "league_need_name"; return }
-                        if !ok { fErr = "league_need_discord"; return }
-                        let l = League(id: "", name: f.name.trimmingCharacters(in: .whitespaces), about: f.about, cat: fCat.isEmpty ? nil : fCat, discord: f.discord.trimmingCharacters(in: .whitespaces), web: f.web, schedule: f.schedule, cars: f.cars, lang: f.lang)
-                        Task {
-                            do { try await account.saveLeague(editId, l); editId = nil; fErr = nil; f = League(id: "", name: "", about: "", cat: nil, discord: "", web: "", schedule: "", cars: "", lang: ""); fCat = ""; tab = 2; await load() }
-                            catch { fErr = (error as? AppError)?.key ?? error.localizedDescription }
-                        }
-                    }.buttonStyle(.borderedProminent).tint(Theme.accent)
-                    Text(t("league_note")).font(.caption2).foregroundColor(Theme.muted)
+                    HStack { Text(t("leagues")).font(.headline.weight(.black)).foregroundColor(Theme.fg); Spacer(); StatusPill(text: t("in_development"), color: Theme.accent) }
+                    Text(closed ? t("leagues_wip") : t("leagues_admin_hub")).font(.subheadline).foregroundColor(Theme.muted).padding(.top, 4)
                 }
-            } else {
-                if tab == 0 { Pills(items: [("", t("disc_all") + " (\(all.count))")] + DISCS.map { k in (k, discName(k) + " (\(all.filter { $0.cat == k }.count))") }, selected: $cat) }
-                let shown = tab == 2 ? all.filter { $0.mine } : all.filter { cat.isEmpty || $0.cat == cat }
-                if list != nil && shown.isEmpty { EmptyNote(text: t(tab == 2 ? "leagues_none_mine" : "leagues_none")) }
-                ForEach(shown) { x in
-                    Panel {
-                        Text(x.name).font(.headline.weight(.black))
-                        Text([discName(x.cat), x.lang, t("by_name", x.by)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
-                        if !x.about.isEmpty { Text(x.about).font(.subheadline) }
-                        if !x.schedule.isEmpty || !x.cars.isEmpty { Text([x.schedule, x.cars].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted) }
-                        HStack(spacing: 10) {
-                            Button(t("join_discord")) { if let u = URL(string: x.discord) { openURL(u) } }.buttonStyle(.borderedProminent).tint(Theme.accent)
-                            if let u = URL(string: x.web), !x.web.isEmpty { Button(t("league_site")) { openURL(u) }.foregroundColor(Theme.accent) }
+            }
+            if !closed {
+                Text(t("leagues_hub_sub")).font(.caption).foregroundColor(Theme.muted)
+                Tabs(labels: [t("leagues_explore"), edit != nil ? t("leagues_edit") : t("leagues_post"), t("leagues_mine")], selected: $tab)
+                if let err { Text(t(err)).font(.caption).foregroundColor(Theme.bad) }
+                if tab == 1 {
+                    LeagueForm(edit: edit) { edit = nil; tab = 2; Task { await load() } }
+                } else {
+                    if tab == 0 {
+                        Pills(items: [("", t("disc_all") + " (\(all.count))")] + DISCS.map { k in (k, discName(k) + " (\(all.filter { leagueDiscs($0).contains(k) }.count))") }, selected: $cat)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                TogglePill(text: t("league_any_day"), on: day < 0) { day = -1 }
+                                ForEach(0..<7, id: \.self) { d in TogglePill(text: t("wd_\(d)"), on: day == d) { day = day == d ? -1 : d } }
+                            }
                         }
-                        if x.mine || account.admin {
-                            HStack(spacing: 14) {
-                                Button(t("edit")) { editId = x.id; f = x; fCat = x.cat ?? ""; fErr = nil; tab = 1 }.foregroundColor(Theme.accent)
-                                Button(t("remove")) { Task { try? await account.deleteLeague(x.id); await load() } }.foregroundColor(Theme.bad)
-                            }.font(.caption.bold())
+                        HStack(spacing: 6) {
+                            TogglePill(text: t("league_open"), on: onlyOpen) { onlyOpen.toggle() }
+                            Spacer()
+                            TogglePill(text: t("league_sort_next"), on: sortNext) { sortNext = true }
+                            TogglePill(text: t("league_sort_new"), on: !sortNext) { sortNext = false }
                         }
+                        TextField(t("league_search"), text: $q).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
                     }
+                    if list != nil && shown.isEmpty { EmptyNote(text: t(tab == 2 ? "leagues_none_mine" : "leagues_none")) }
+                    ForEach(shown) { x in LeagueCard(x: x).onTapGesture { openId = x.id } }
+                    if tab == 2 && !shown.isEmpty { Text(t("league_stats_note")).font(.caption2).foregroundColor(Theme.muted) }
                 }
             }
         }
         .task { if list == nil { await load() } }
+        .onChange(of: tab) { v in if v != 1 { edit = nil } }
+        .sheet(item: opened) { x in
+            LeagueDetail(x: x, onEdit: { edit = x; tab = 1; openId = nil }, onChanged: { openId = nil; Task { await load() } })
+        }
+    }
+}
+
+/// A small filter you switch on and off.
+struct TogglePill: View {
+    let text: String
+    let on: Bool
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            Text(text).font(.caption.bold()).padding(.horizontal, 10).padding(.vertical, 5)
+                .background(on ? Theme.accent : Theme.surface2).foregroundColor(on ? Theme.ink : Theme.muted).clipShape(Capsule())
+        }
+    }
+}
+
+/// The days it races as a week strip, the raced ones lit.
+struct WeekStrip: View {
+    let days: [Int]
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<7, id: \.self) { d in
+                let on = days.contains(d)
+                Text(String(t("wd_\(d)").prefix(2))).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(on ? Theme.ink : Theme.muted)
+                    .frame(width: 22, height: 20).background(on ? Theme.accent : Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 5))
+            }
+        }
+    }
+}
+
+/// "20:30 CEST · 18:30 your time", or just the time; nil without one.
+func leagueTimeText(_ x: League) -> String? {
+    if x.time.isEmpty { return nil }
+    guard let next = leagueNext(x), let tz = TimeZone(identifier: x.tz.isEmpty ? "UTC" : x.tz) else { return x.time }
+    let f = DateFormatter()
+    f.timeZone = tz
+    f.dateFormat = "zzz"
+    var s = x.time + " " + f.string(from: next)
+    let l = DateFormatter()
+    l.dateFormat = "HH:mm"
+    let lt = l.string(from: next)
+    if lt != x.time { s += " · " + t("league_your_time", lt) }
+    return s
+}
+
+/// "Next: Thu 21:00 · in 2 d 3 h" in your time (true within a day), or "Racing now"; nil without a schedule.
+func leagueNextText(_ x: League) -> (String, Bool)? {
+    guard let next = leagueNext(x) else { return nil }
+    let dt = next.timeIntervalSinceNow
+    if dt <= 0 { return (t("league_now"), true) }
+    let h = Int((dt / 3600).rounded()), d = h / 24, hs = h % 24
+    let ins = d > 0 ? "\(d) d" + (hs > 0 ? " \(hs) h" : "") : h > 0 ? "\(h) h" : "\(max(1, Int((dt / 60).rounded()))) min"
+    let f = DateFormatter()
+    f.dateFormat = "EEE HH:mm"
+    return (t("league_next") + ": " + f.string(from: next) + " · " + t("league_in", ins), dt < 86400)
+}
+
+/// One post in the hub; a tap opens it.
+struct LeagueCard: View {
+    let x: League
+    var body: some View {
+        let cs = leagueDiscs(x)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                ForEach(cs, id: \.self) { DiscIcon(k: $0, size: 26) }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(x.name).font(.headline.weight(.black)).foregroundColor(Theme.fg)
+                    Text([cs.count > 1 ? t("league_mixed") : "", x.lang, t("by_name", x.by)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
+                }
+                Spacer(minLength: 0)
+            }
+            if x.open { StatusPill(text: t("league_open"), color: Theme.good) }
+            HStack(spacing: 8) {
+                WeekStrip(days: x.days)
+                Text(leagueTimeText(x) ?? t("league_no_schedule")).font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.muted)
+            }
+            if let n = leagueNextText(x) { Text(n.0).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(n.1 ? Theme.good : Theme.muted) }
+            if !x.about.isEmpty { Text(x.about).font(.subheadline).foregroundColor(Theme.fg).lineLimit(3) }
+            if !x.cars.isEmpty { Text("🏁 " + x.cars).font(.caption).foregroundColor(Theme.muted) }
+            if x.views >= 0 { Text("👁 \(x.views) · ↗ \(x.clicks)").font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(Theme.muted) }
+        }
+        .padding(12).frame(maxWidth: .infinity, alignment: .leading).background(Theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(x.open ? Theme.good.opacity(0.5) : Theme.line, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 8))
+        .contentShape(Rectangle())
+    }
+}
+
+/// A post opened: everything it says, its links (each counts a click), the link to share; the creator's numbers with
+/// the last 14 days, edit and remove. Opening it counts a view.
+struct LeagueDetail: View {
+    @EnvironmentObject var account: Account
+    @Environment(\.openURL) private var openURL
+    @Environment(\.dismiss) private var dismiss
+    let x: League
+    let onEdit: () -> Void
+    let onChanged: () -> Void
+    @State private var days: [LeagueDay]?
+    @State private var copied = false
+    var body: some View {
+        let cs = leagueDiscs(x)
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    Group {
+                        HStack(spacing: 6) {
+                            ForEach(cs, id: \.self) { DiscIcon(k: $0, size: 24) }
+                            Text([cs.map { discName($0) }.joined(separator: " + "), x.lang, t("by_name", x.by)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
+                        }
+                        if x.open { StatusPill(text: t("league_open"), color: Theme.good) }
+                        HStack(spacing: 8) {
+                            WeekStrip(days: x.days)
+                            Text(leagueTimeText(x) ?? t("league_no_schedule")).font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.muted)
+                        }
+                        if let n = leagueNextText(x) { Text(n.0).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(n.1 ? Theme.good : Theme.muted) }
+                        if !x.about.isEmpty { Text(x.about).font(.subheadline).foregroundColor(Theme.fg) }
+                        if !x.cars.isEmpty { Text("🏁 " + x.cars).font(.caption).foregroundColor(Theme.muted) }
+                    }
+                    HStack(spacing: 10) {
+                        if let u = URL(string: x.discord), !x.discord.isEmpty { Button(t("join_discord")) { account.leagueHit(x.id, "discord", mine: x.mine); openURL(u) }.buttonStyle(.borderedProminent).tint(Theme.accent) }
+                        if let u = URL(string: x.web), !x.web.isEmpty { Button(t("league_site")) { account.leagueHit(x.id, "web", mine: x.mine); openURL(u) }.foregroundColor(Theme.accent) }
+                    }
+                    Button(copied ? t("league_link_copied") : t("league_copy_link")) { UIPasteboard.general.string = "https://pitlanehq.app/app?league=" + x.id; copied = true }
+                        .font(.caption.bold()).foregroundColor(Theme.accent)
+                    if x.views >= 0 {
+                        SectionLabel(text: t("league_your_numbers"))
+                        Text("👁 \(x.views) \(t("league_views")) · ↗ \(x.clicks) \(t("league_clicks"))").font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.fg)
+                        LeagueBars(days: days)
+                        Text(t("league_last14")).font(.caption2).foregroundColor(Theme.muted)
+                    }
+                    if x.mine || account.admin {
+                        HStack(spacing: 14) {
+                            Button(t("edit")) { onEdit() }.foregroundColor(Theme.accent)
+                            Button(t("remove")) { Task { try? await account.deleteLeague(x.id); onChanged() } }.foregroundColor(Theme.bad)
+                        }
+                        .font(.caption.bold())
+                    }
+                }
+                .padding(16)
+            }
+            .background(Theme.bg)
+            .navigationTitle(x.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { Button(t("close")) { dismiss() } }
+        }
+        .task { account.leagueHit(x.id, "view", mine: x.mine); if x.views >= 0 { days = (try? await account.leagueDays(x.id)) ?? [] } }
+    }
+}
+
+/// The creator's last 14 days: views (amber) and clicks (blue) per day.
+struct LeagueBars: View {
+    let days: [LeagueDay]?
+    private var rows: [(String, Int, Int)] {
+        let by = Dictionary((days ?? []).map { ($0.day, $0) }, uniquingKeysWith: { a, _ in a })
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(identifier: "UTC")
+        return (0..<14).reversed().map { i -> (String, Int, Int) in
+            let k = f.string(from: Date().addingTimeInterval(-Double(i) * 86400))
+            return (k, by[k]?.views ?? 0, by[k]?.clicks ?? 0)
+        }
+    }
+    var body: some View {
+        let r = rows
+        let mx = max(1, r.map { max($0.1, $0.2) }.max() ?? 1)
+        HStack(alignment: .bottom, spacing: 3) {
+            ForEach(Array(r.enumerated()), id: \.offset) { _, d in
+                HStack(alignment: .bottom, spacing: 1) {
+                    RoundedRectangle(cornerRadius: 2).fill(Theme.accent).frame(height: max(2, 56 * CGFloat(d.1) / CGFloat(mx)))
+                    RoundedRectangle(cornerRadius: 2).fill(Theme.blue).frame(height: max(2, 56 * CGFloat(d.2) / CGFloat(mx)))
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .frame(height: 56)
+    }
+}
+
+/// Post a league, or edit yours: the days it races, the usual start (this phone's time zone), its disciplines, an
+/// optional Discord invite and website (one at least), the cars, the language, whether it is looking for drivers.
+struct LeagueForm: View {
+    @EnvironmentObject var account: Account
+    let edit: League?
+    let onDone: () -> Void
+    @State private var name = ""
+    @State private var about = ""
+    @State private var discord = ""
+    @State private var web = ""
+    @State private var cars = ""
+    @State private var lang = ""
+    @State private var time = ""
+    @State private var cats: [String] = []
+    @State private var days: [Int] = []
+    @State private var open = true
+    @State private var err: String?
+    @State private var busy = false
+    private var tz: String { edit.flatMap { $0.tz.isEmpty ? nil : $0.tz } ?? TimeZone.current.identifier }
+    private func field(_ label: String, _ v: Binding<String>) -> some View {
+        TextField(label, text: v).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+    private func save() {
+        let n = name.trimmingCharacters(in: .whitespaces), d = discord.trimmingCharacters(in: .whitespaces), w = web.trimmingCharacters(in: .whitespaces), tm = time.trimmingCharacters(in: .whitespaces)
+        if n.count < 3 { err = "league_need_name"; return }
+        if !d.isEmpty && d.range(of: "^https://(discord\\.gg|(www\\.)?discord\\.com/invite)/[A-Za-z0-9-]{2,40}/?$", options: .regularExpression) == nil { err = "league_need_discord"; return }
+        if !w.isEmpty && w.range(of: "^https://[^\\s\"'<>]{4,190}$", options: .regularExpression) == nil { err = "league_need_web"; return }
+        if d.isEmpty && w.isEmpty { err = "league_need_link"; return }
+        if !tm.isEmpty && tm.range(of: "^([01]\\d|2[0-3]):[0-5]\\d$", options: .regularExpression) == nil { err = "league_bad_time"; return }
+        let l = League(id: edit?.id ?? "", name: n, about: about, cat: nil, discord: d, web: w, schedule: "", cars: cars, lang: lang, cats: cats, days: days, time: tm, tz: tz, open: open)
+        busy = true
+        Task {
+            do { try await account.saveLeague(edit?.id, l); busy = false; err = nil; onDone() }
+            catch { busy = false; err = (error as? AppError)?.key ?? error.localizedDescription }
+        }
+    }
+    var body: some View {
+        Panel {
+            Group {
+                field(t("league_name"), $name)
+                Text(t("league_discs")).font(.caption2).foregroundColor(Theme.muted)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(DISCS, id: \.self) { k in TogglePill(text: discName(k), on: cats.contains(k)) { if let i = cats.firstIndex(of: k) { cats.remove(at: i) } else { cats.append(k) } } }
+                    }
+                }
+                Text(t("league_days")).font(.caption2).foregroundColor(Theme.muted)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(0..<7, id: \.self) { d in TogglePill(text: t("wd_\(d)"), on: days.contains(d)) { if let i = days.firstIndex(of: d) { days.remove(at: i) } else { days.append(d); days.sort() } } }
+                    }
+                }
+                HStack(spacing: 8) {
+                    field(t("league_time") + " (20:30)", $time)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(t("league_tz")).font(.caption2).foregroundColor(Theme.muted)
+                        Text(tz.replacingOccurrences(of: "_", with: " ")).font(.caption).foregroundColor(Theme.fg)
+                    }
+                }
+            }
+            Group {
+                field(t("league_discord"), $discord)
+                field(t("league_web"), $web)
+                Text(t("league_need_link_note")).font(.caption2).foregroundColor(Theme.muted)
+                field(t("league_cars"), $cars)
+                field(t("league_lang"), $lang)
+                Toggle(t("league_open_f"), isOn: $open).font(.subheadline).tint(Theme.accent)
+                field(t("league_about"), $about)
+            }
+            if let err { Text(t(err)).font(.caption).foregroundColor(Theme.bad) }
+            Button(edit != nil ? t("save") : t("league_publish")) { save() }.buttonStyle(.borderedProminent).tint(Theme.accent).disabled(busy)
+            Text(t("league_note")).font(.caption2).foregroundColor(Theme.muted)
+        }
+        .onAppear {
+            if let e = edit { name = e.name; about = e.about; discord = e.discord; web = e.web; cars = e.cars; lang = e.lang; time = e.time; cats = leagueDiscs(e); days = e.days; open = e.open }
+        }
     }
 }
 
@@ -2202,12 +2473,7 @@ struct CommunityView: View {
         Screen(title: t("community"), sub: t("shared_by")) {
             Tabs(labels: [t("leaderboards"), t("leagues")], selected: $sec)
             if sec == 1 {
-                // leagues: in development, only the admins get in; everyone else reads that we are working on it
-                Panel {
-                    HStack { Text(t("leagues")).font(.headline.weight(.black)); Spacer(); StatusPill(text: t("in_development"), color: Theme.accent) }
-                    Text(account.admin ? t("leagues_admin") : t("leagues_wip")).font(.subheadline).foregroundColor(Theme.muted).padding(.top, 4)
-                }
-                if account.admin { LeaguesAdmin() }
+                LeagueHub()
             } else {
             WebNote(text: t("community_web"))
             // setups and shared race analyses are switched off for now: only the leaderboards, by lap time, per discipline

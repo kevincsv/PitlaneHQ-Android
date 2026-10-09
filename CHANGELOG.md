@@ -4,6 +4,15 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; fixes ride along as
 "Fixes and improvements". 1.0.0 comes when the beta ends. Newest first.
 
+## 0.9.6 beta
+
+- **The league hub**: every league is a post with the days it races, the usual start in its time zone and in yours,
+  its next race, its disciplines (or mixed), its Discord or website and whether it is looking for drivers. Filter by
+  discipline, day or open leagues; open a post for its links and a link to share. Post yours and see how many times
+  it was opened and its links pressed, day by day.
+- **Your licence** on Home is only what the game shows in a session: a race never changes it.
+- Fixes and improvements.
+
 ## 0.9.5 beta
 
 - **The licence summary like the web's**: one card per discipline with its symbol, your iRating, what your last races

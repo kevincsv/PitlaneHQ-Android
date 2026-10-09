@@ -659,20 +659,35 @@ final class Account: ObservableObject {
                              days: (j["days"] as? [String: Any] ?? [:]).mapValues { int($0) })
     }
 
-    /// Leagues (in development: admins only for now): post one with a Discord invite, edit or remove yours.
+    /// The league hub: the posts (with the views and clicks of yours), post one or edit yours, remove yours.
     func leagues() async throws -> [League] {
         let j = (try JSONSerialization.jsonObject(with: await call("GET", "/community/leagues")) as? [String: Any]) ?? [:]
         return (j["leagues"] as? [[String: Any]] ?? []).map { x in
             League(id: str(x["id"]), name: fixTxt(str(x["name"])), about: fixTxt(str(x["about"])), cat: x["cat"] as? String, discord: str(x["discord"]), web: str(x["web"]), schedule: str(x["schedule"]),
-                   cars: fixTxt(str(x["cars"])), lang: str(x["lang"]), mine: x["mine"] as? Bool ?? false, by: str(x["by"]))
+                   cars: fixTxt(str(x["cars"])), lang: str(x["lang"]), mine: x["mine"] as? Bool ?? false, by: str(x["by"]),
+                   cats: x["cats"] as? [String] ?? [], days: (x["days"] as? [NSNumber] ?? []).map { $0.intValue }, time: str(x["time"]), tz: str(x["tz"]), open: x["open"] as? Bool ?? true,
+                   views: x["views"] == nil ? -1 : int(x["views"]), clicks: x["clicks"] == nil ? -1 : int(x["clicks"]), created: num(x["created"]) ?? 0, updated: num(x["updated"]) ?? 0)
         }
     }
     func saveLeague(_ id: String?, _ l: League) async throws {
         let path = "/community/leagues" + (id.map { "/" + ($0.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? $0) } ?? "")
-        _ = try await call("POST", path, body: ["name": l.name, "about": l.about, "cat": l.cat ?? NSNull(), "discord": l.discord, "web": l.web, "schedule": l.schedule, "cars": l.cars, "lang": l.lang])
+        _ = try await call("POST", path, body: ["name": l.name, "about": l.about, "cats": l.cats, "days": l.days, "time": l.time, "tz": l.tz, "open": l.open,
+                                              "discord": l.discord, "web": l.web, "schedule": l.schedule, "cars": l.cars, "lang": l.lang])
     }
     func deleteLeague(_ id: String) async throws {
         _ = try await call("POST", "/community/leagues/" + (id.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? id), body: ["delete": true])
+    }
+    /// A post opened (view) or one of its links pressed (discord, web): the server counts it once per driver and
+    /// day, never your own post.
+    func leagueHit(_ id: String, _ kind: String, mine: Bool) {
+        if mine || demo { return }
+        let path = "/community/leagues/" + (id.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? id) + "/hit"
+        Task { _ = try? await call("POST", path, body: ["kind": kind]) }
+    }
+    /// Your post's last 14 days of views and clicks.
+    func leagueDays(_ id: String) async throws -> [LeagueDay] {
+        let j = (try JSONSerialization.jsonObject(with: await call("GET", "/community/leagues/" + (id.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? id))) as? [String: Any]) ?? [:]
+        return (j["days"] as? [[String: Any]] ?? []).map { LeagueDay(day: str($0["day"]), views: int($0["views"]), clicks: int($0["clicks"])) }
     }
 
     /// Your profile's recent races: a summary of your own result in each (the race history itself stays encrypted).

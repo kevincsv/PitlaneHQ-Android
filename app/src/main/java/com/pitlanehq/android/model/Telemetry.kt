@@ -88,8 +88,30 @@ data class ProfileRace(val whenMs: Long, val track: String, val car: String, val
 data class ProfileLap(val track: String, val car: String, val time: Double, val created: Long, val cat: String?, val lic: String?, val anon: Boolean,
     val trackId: Long = 0, val carId: Long = 0, val pos: Int = 0, val of: Int = 0)
 
-/** A league posted on Pitlane HQ, with a direct link to its Discord. */
-data class League(val id: String, val name: String, val about: String, val cat: String?, val discord: String, val web: String, val schedule: String, val cars: String, val lang: String, val mine: Boolean = false, val by: String = "")
+/** A league posted on the hub: the days it races (0 Monday … 6 Sunday), the usual start in its time zone, one or
+ *  several disciplines (mixed), an optional Discord invite and website, whether it is looking for drivers; the views
+ *  and clicks only for its creator (−1 for everyone else). */
+data class League(val id: String, val name: String, val about: String, val cat: String?, val discord: String, val web: String, val schedule: String, val cars: String, val lang: String, val mine: Boolean = false, val by: String = "",
+    val cats: List<String> = emptyList(), val days: List<Int> = emptyList(), val time: String = "", val tz: String = "", val open: Boolean = true, val views: Int = -1, val clicks: Int = -1,
+    val created: Long = 0, val updated: Long = 0)
+
+/** One day of a league post's views and clicks, for its creator's chart. */
+data class LeagueDay(val day: String, val views: Int, val clicks: Int)
+
+/** The disciplines of a league: the new list, or the one discipline older posts carry. */
+fun leagueDiscs(x: League): List<String> = if (x.cats.isNotEmpty()) x.cats else listOfNotNull(x.cat)
+
+/** The next race of a league: the first of its days at its time, in its zone, from an hour ago on (a race under way
+ *  counts); null without a schedule. */
+fun leagueNext(x: League, now: java.time.ZonedDateTime = java.time.ZonedDateTime.now()): java.time.ZonedDateTime? {
+    if (x.days.isEmpty() || !Regex("^([01]\\d|2[0-3]):[0-5]\\d$").matches(x.time)) return null
+    val zone = runCatching { java.time.ZoneId.of(x.tz.ifBlank { "UTC" }) }.getOrDefault(java.time.ZoneId.of("UTC"))
+    val t = java.time.LocalTime.parse(x.time)
+    val today = now.withZoneSameInstant(zone).toLocalDate()
+    val limit = now.toInstant().toEpochMilli() - 3600_000
+    return (0..7).asSequence().map { today.plusDays(it.toLong()) }.filter { it.dayOfWeek.value - 1 in x.days }
+        .map { java.time.ZonedDateTime.of(it, t, zone) }.firstOrNull { it.toInstant().toEpochMilli() >= limit }
+}
 
 data class SharedReport(val id: String, val alias: String, val track: String, val car: String, val created: Long, val finish: Int, val field: Int, val best: Double?, val mine: Boolean = false)
 

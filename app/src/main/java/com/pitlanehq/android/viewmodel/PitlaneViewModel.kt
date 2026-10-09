@@ -264,6 +264,13 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         if (e == null) loadLeagues()
     }
     fun deleteLeague(id: String) = viewModelScope.launch(Dispatchers.IO) { runCatching { repo.deleteLeague(id) }; loadLeagues() }
+    /** A post opened or one of its links pressed: the server counts it once per driver and day (never your own post). */
+    fun hitLeague(id: String, kind: String) = viewModelScope.launch(Dispatchers.IO) { runCatching { repo.leagueHit(id, kind) } }
+    /** Your post's last 14 days of views and clicks. */
+    fun leagueDays(id: String, done: (List<LeagueDay>) -> Unit) = viewModelScope.launch(Dispatchers.IO) {
+        val d = runCatching { repo.leagueDays(id) }.getOrDefault(emptyList())
+        withContext(Dispatchers.Main) { done(d) }
+    }
     fun setBadgeHidden(hidden: Boolean) = viewModelScope.launch(Dispatchers.IO) { runCatching { repo.setBadgeHidden(hidden) }; loadProfile(profileLap) }
     fun adminSupporter(id: String, on: Boolean) = viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminSupporter(id, on) }; loadAdmin("users") }
 
