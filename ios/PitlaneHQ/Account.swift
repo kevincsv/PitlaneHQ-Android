@@ -487,7 +487,8 @@ final class Account: ObservableObject {
                 laps: (r["laps"] as? [[String: Any]] ?? []).map { RaceLap(n: int($0["n"]), time: num($0["t"]) ?? 0, pos: int($0["p"]), inc: int($0["i"]), pit: $0["pit"] as? Bool ?? false, cut: $0["cut"] as? Bool ?? false) },
                 results: (r["results"] as? [[String: Any]] ?? []).map {
                     RaceResult(pos: int($0["cpos"]) > 0 ? int($0["cpos"]) : int($0["pos"]), name: fixTxt(str($0["name"])), ir: int($0["ir"]), best: pos($0["best"]), inc: int($0["inc"]), laps: int($0["laps"]), k: str($0["k"]), me: $0["me"] as? Bool ?? false)
-                }.sorted { $0.pos < $1.pos }
+                }.sorted { $0.pos < $1.pos },
+                cat: r["cat"] as? String
             )
         }
     }

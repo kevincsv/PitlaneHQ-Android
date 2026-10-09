@@ -212,6 +212,20 @@ struct Race: Identifiable, Hashable {
     let dnf: Bool
     let laps: [RaceLap]
     let results: [RaceResult]
+    var cat: String? = nil  // the discipline as iRacing names it (Oval, Road, DirtOval…); raceDisc tells which of ours
+}
+
+/// The discipline of a race as the PC tells it (discipline in journal.go, raceDisc in the web): iRacing says "Road"
+/// for sports and formula cars alike, so the car name tells which.
+func raceDisc(_ cat: String?, _ car: String) -> String {
+    let c = (cat ?? "").lowercased().replacingOccurrences(of: "[ _-]", with: "", options: .regularExpression)
+    let known = ["oval": "oval", "dirtoval": "dirt_oval", "dirtroad": "dirt_road", "formulacar": "formula_car", "sportscar": "sports_car"]
+    if let k = known[c] { return k }
+    if !c.isEmpty && c != "road" { return c }
+    if car.isEmpty { return "" }
+    if car.range(of: "p217|lmp|\\bgtp\\b|\\bdpi?\\b|prototype|hypercar", options: [.regularExpression, .caseInsensitive]) != nil { return "sports_car" }
+    let formula = "formula|\\bf[1-4]\\b|super ?formula|dallara|indy|\\bir-?\\d+|skip barber|ff1600|pro mazda|\\busf\\b|lotus (18|49|79)|williams fw|mercedes-amg w1|tatuus|\\bvee\\b|\\bfr ?[23]\\."
+    return car.range(of: formula, options: [.regularExpression, .caseInsensitive]) != nil ? "formula_car" : "sports_car"
 }
 
 struct RaceLap: Hashable {

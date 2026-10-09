@@ -105,33 +105,125 @@ struct MetricGrid: View {
     }
 }
 
-/// Licences per category: in development until iRacing switches its data API back on.
-/// Licences per category: your iRating and licence of each, as the PC last saw them (the game only says the category
-/// of the session you are in, so each updates when you drive it with Pitlane HQ open).
+/// Licence summary, like the web's Home: one card per discipline (its symbol and colour), your iRating with what your
+/// last races of it gave, and the licence (class and safety rating) as the PC last saw them (the game only says the
+/// discipline of the session you are in, so each updates when you drive it with Pitlane HQ open).
 struct Licences: View {
     @EnvironmentObject var account: Account
-    @State private var cat = 0
-    private let cats = [("cat_sports", "sports_car"), ("cat_formula", "formula_car"), ("cat_oval", "oval"), ("cat_dirt_road", "dirt_road"), ("cat_dirt_oval", "dirt_oval")]
     var body: some View {
-        let r = account.ratings()[cats[cat].1]
-        let lic = (r?.lic ?? "").trimmingCharacters(in: .whitespaces).uppercased()
-        let cls = lic.isEmpty ? "—" : (lic.hasPrefix("WC") || lic.hasPrefix("PRO") ? "P" : String(lic.prefix(1)))
-        let parts = lic.split(separator: " ")
-        let sr = parts.count > 1 ? String(parts[1]) : "—"
-        let col = r == nil ? Theme.muted : Theme.fg
+        let all = account.ratings()
+        let races = account.races
+        let rows: [[String]] = stride(from: 0, to: DISCS.count, by: 2).map { Array(DISCS[$0..<min($0 + 2, DISCS.count)]) }
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel(text: t("licences"))
-            Panel {
-                Tabs(labels: cats.map { t($0.0) }, selected: $cat)
-                MetricGrid(items: [
-                    MetricData(label: t("lic_class"), value: cls, color: cls == "—" ? Theme.muted : licColor(cls)),
-                    MetricData(label: t("safety"), value: sr, color: col),
-                    MetricData(label: "iRating", value: r.map { "\($0.ir)" } ?? "—", color: r == nil ? Theme.muted : discColor(cats[cat].1), sub: r.map { day($0.at) }),
-                ], columns: 3)
-                .padding(.vertical, 6)
-                Text(t("lic_note")).font(.caption2).foregroundColor(Theme.muted)
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 8) {
+                    ForEach(row, id: \.self) { k in LicCard(k: k, r: all[k], races: races) }
+                    if row.count < 2 { Color.clear.frame(maxWidth: .infinity) }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            Text(t("lic_note")).font(.caption2).foregroundColor(Theme.muted)
+        }
+    }
+}
+
+/// One discipline's card: its symbol, the iRating (with what your last five races of it gave, like the web) and the
+/// licence pill ("B 3.21" in the licence's colour); dim while the PC has seen nothing of it.
+struct LicCard: View {
+    let k: String
+    let r: (ir: Int, lic: String, at: Double)?
+    let races: [Race]
+    var body: some View {
+        let col = discColor(k)
+        let last = races.filter { raceDisc($0.cat, $0.car) == k }.prefix(5)
+        let chg = last.reduce(0) { $0 + $1.irChange }
+        let lic = (r?.lic ?? "").trimmingCharacters(in: .whitespaces).uppercased()
+        let cls: String? = lic.isEmpty ? nil : (lic.hasPrefix("WC") || lic.hasPrefix("PRO") ? "P" : String(lic.prefix(1)))
+        let parts = lic.split(separator: " ")
+        let sr: String? = parts.count > 1 ? String(parts[1]) : nil
+        HStack(spacing: 10) {
+            DiscIcon(k: k)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(discName(k)).font(.system(size: 12, weight: .semibold)).foregroundColor(Theme.muted)
+                HStack(alignment: .lastTextBaseline, spacing: 6) {
+                    Text(r.map { "\($0.ir)" } ?? "–").font(.system(size: 20, weight: .black, design: .monospaced)).foregroundColor(r == nil ? Theme.muted : col)
+                    if r != nil, !last.isEmpty, chg != 0 {
+                        Text(signed(chg)).font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(chg > 0 ? Theme.good : Theme.bad)
+                    }
+                }
+                if r != nil, let cls { LicBadge(k: cls, sr: sr) }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(Theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(col.opacity(0.4), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .opacity(r == nil ? 0.55 : 1)
+    }
+}
+
+/// The discipline's symbol, the same strokes as the web's (our own, never iRacing's), in a rounded square of its colour.
+struct DiscIcon: View {
+    let k: String
+    var size: CGFloat = 30
+    var body: some View {
+        let col = discColor(k)
+        let s = size * 0.6 / 24
+        ZStack {
+            RoundedRectangle(cornerRadius: 8).fill(col.opacity(0.12))
+            RoundedRectangle(cornerRadius: 8).stroke(col, lineWidth: 1.5)
+            if let p = Path(DISC_PATHS[k] ?? "") {
+                p.applying(CGAffineTransform(scaleX: s, y: s))
+                    .stroke(col, style: StrokeStyle(lineWidth: 1.8 * s, lineCap: .round, lineJoin: .round))
+                    .frame(width: size * 0.6, height: size * 0.6)
             }
         }
+        .frame(width: size, height: size)
+    }
+}
+
+/// Every corner as a small bar, like the web's analyzer: taller the more time it costs (red; green when it gains), its
+/// official turn number under it. Touch one to read it on the map and the charts.
+struct CornerStrip: View {
+    let cs: [Corner]
+    let lapLen: Double
+    @Binding var pick: Double?
+    var body: some View {
+        let mx = max(0.05, cs.map { abs($0.lost) }.max() ?? 0.05)
+        Panel {
+            SectionLabel(text: t("corners_strip"))
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .bottom, spacing: 6) {
+                    ForEach(cs, id: \.self) { k in CornerBar(k: k, f: Double(k.atM) / max(lapLen, 1), mx: mx, pick: $pick) }
+                }
+            }
+        }
+    }
+}
+
+private struct CornerBar: View {
+    let k: Corner
+    let f: Double
+    let mx: Double
+    @Binding var pick: Double?
+    var body: some View {
+        let on = pick.map { abs($0 - f) < 0.012 } ?? false
+        let col: Color = k.lost > 0.02 ? Theme.bad : k.lost < -0.02 ? Theme.good : Theme.muted
+        VStack(spacing: 3) {
+            ZStack(alignment: .bottom) {
+                Color.clear.frame(height: 40)
+                RoundedRectangle(cornerRadius: 3).fill(col).frame(width: 14, height: 6 + 34 * abs(k.lost) / mx)
+            }
+            Text("T\(k.n)").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(on ? Theme.accent : Theme.muted)
+            Text((k.lost >= 0 ? "+" : "−") + String(format: "%.2f", abs(k.lost))).font(.system(size: 9, design: .monospaced)).foregroundColor(col)
+        }
+        .frame(width: 36).padding(.vertical, 4)
+        .background(on ? Theme.surface2 : Color.clear).cornerRadius(6)
+        .contentShape(Rectangle())
+        .onTapGesture { pick = f }
     }
 }
 
@@ -1246,6 +1338,12 @@ struct LapView: View {
                 Metric(label: t("delta"), value: d.map { String(format: "%+.3f", $0) } ?? "—", color: d == nil ? Theme.fg : d! <= 0 ? Theme.good : Theme.bad)
             }
             .fixedSize(horizontal: false, vertical: true)
+            // every corner as a small bar under the key facts, like the web's analyzer: touch one to read it on the map and the charts
+            if let trace, ref != nil {
+                let cc = compare(trace, ref)
+                let cs = corners(cc, turns: turns)
+                if !cs.isEmpty { CornerStrip(cs: cs, lapLen: Double(cc.speedA.count) * cc.step, pick: $pick) }
+            }
             // the car card: what this car does on other tracks against this lap, like the web's coach
             if let car, let trace { CarCardView(card: car, trace: trace) }
             if !loading {
@@ -1899,6 +1997,14 @@ struct Chart: View {
 
 // the disciplines iRacing splits its licenses into, and the license classes, like on the web
 let DISCS = ["oval", "sports_car", "formula_car", "dirt_oval", "dirt_road"]
+/// The disciplines' symbols as SVG path data (24 × 24), the same strokes as the web's DISC_IC.
+let DISC_PATHS: [String: String] = [
+    "oval": "M8.5 6h7a6 6 0 0 1 6 6a6 6 0 0 1-6 6h-7a6 6 0 0 1-6-6a6 6 0 0 1 6-6zM9.5 10h5a2 2 0 0 1 2 2a2 2 0 0 1-2 2h-5a2 2 0 0 1-2-2a2 2 0 0 1 2-2zM12 6v4",
+    "sports_car": "M3 15.5v-2.2l2.6-.9 3-3h5.6l3.4 3 2.4.6v2.5H3zM9.3 16a1.8 1.8 0 1 1-3.6 0a1.8 1.8 0 1 1 3.6 0zM18.3 16a1.8 1.8 0 1 1-3.6 0a1.8 1.8 0 1 1 3.6 0zM9.6 9.4l-.6 3h6l-1.2-3",
+    "formula_car": "M8 4h8M7 20h10M12 4v16M11.2 9.5h1.6a1.2 1.2 0 0 1 1.2 1.2v2.6a1.2 1.2 0 0 1-1.2 1.2h-1.6a1.2 1.2 0 0 1-1.2-1.2v-2.6a1.2 1.2 0 0 1 1.2-1.2zM5.5 6h1a1 1 0 0 1 1 1v2.5a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM17.5 6h1a1 1 0 0 1 1 1v2.5a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM5.5 13.5h1a1 1 0 0 1 1 1V17a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-2.5a1 1 0 0 1 1-1zM17.5 13.5h1a1 1 0 0 1 1 1V17a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-2.5a1 1 0 0 1 1-1z",
+    "dirt_oval": "M7.5 6.5h4a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5h-4A5.5 5.5 0 0 1 2 12a5.5 5.5 0 0 1 5.5-5.5zM7.5 10.5h4a1.5 1.5 0 0 1 1.5 1.5a1.5 1.5 0 0 1-1.5 1.5h-4A1.5 1.5 0 0 1 6 12a1.5 1.5 0 0 1 1.5-1.5zM19.5 8.5h.01M21.5 11.5h.01M19.8 14.5h.01M21.6 17h.01",
+    "dirt_road": "M2 15l5-6 3.5 4L14 8.5 22 15M9 21c1.5-2 4.5-2.5 5-5M4 21h.01M18 21h.01M20.5 19h.01",
+]
 /// The kind of a session for the filter: race, qual(ifying), prac(tice) or test (drive).
 func kindOf(_ k: String) -> String {
     let x = k.lowercased()
@@ -1920,9 +2026,10 @@ private func licColor(_ k: String) -> Color {
 /// The license class as a small coloured square (R, D, C, B, A, Pro).
 struct LicBadge: View {
     let k: String?
+    var sr: String? = nil  // the safety rating too ("B 3.21"), when known
     var body: some View {
         if let k, LICS.contains(k) {
-            Text(k == "P" ? "Pro" : k).font(.system(size: 10, weight: .black)).foregroundColor(Theme.fg).padding(.horizontal, 5).padding(.vertical, 1)
+            Text((k == "P" ? "Pro" : k) + (sr.map { " " + $0 } ?? "")).font(.system(size: 10, weight: .black)).foregroundColor(Theme.fg).padding(.horizontal, 5).padding(.vertical, 1)
                 .background(licColor(k).opacity(0.55)).overlay(RoundedRectangle(cornerRadius: 4).stroke(licColor(k), lineWidth: 1.5)).clipShape(RoundedRectangle(cornerRadius: 4))
         }
     }

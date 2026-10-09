@@ -103,8 +103,21 @@ data class Race(
     val start: Int, val finish: Int, val field: Int, val inc: Int, val best: Double?, val fieldBest: Double?,
     val avg: Double?, val consistency: Double?, val pits: Int, val fuelUsed: Double?,
     val ir: Int, val irChange: Int, val sof: Int, val dnf: Boolean,
-    val laps: List<RaceLap>, val results: List<RaceResult>
+    val laps: List<RaceLap>, val results: List<RaceResult>,
+    val cat: String? = null  // the discipline as iRacing names it (Oval, Road, DirtOval…); raceDisc tells which of ours
 )
+
+/** The discipline of a race as the PC tells it (discipline in journal.go, raceDisc in the web): iRacing says "Road"
+ *  for sports and formula cars alike, so the car name tells which. */
+fun raceDisc(cat: String?, car: String): String {
+    val c = (cat ?: "").lowercase().replace(Regex("[ _-]"), "")
+    mapOf("oval" to "oval", "dirtoval" to "dirt_oval", "dirtroad" to "dirt_road", "formulacar" to "formula_car", "sportscar" to "sports_car")[c]?.let { return it }
+    if (c.isNotEmpty() && c != "road") return c
+    if (car.isEmpty()) return ""
+    if (Regex("p217|lmp|\\bgtp\\b|\\bdpi?\\b|prototype|hypercar", RegexOption.IGNORE_CASE).containsMatchIn(car)) return "sports_car"
+    val formula = Regex("formula|\\bf[1-4]\\b|super ?formula|dallara|indy|\\bir-?\\d+|skip barber|ff1600|pro mazda|\\busf\\b|lotus (18|49|79)|williams fw|mercedes-amg w1|tatuus|\\bvee\\b|\\bfr ?[23]\\.", RegexOption.IGNORE_CASE)
+    return if (formula.containsMatchIn(car)) "formula_car" else "sports_car"
+}
 
 /** One lap of a race; [cut]: the car left the track, the lap is not valid. */
 data class RaceLap(val n: Int, val time: Double, val pos: Int, val inc: Int, val pit: Boolean, val cut: Boolean = false)

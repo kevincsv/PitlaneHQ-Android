@@ -4,6 +4,14 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; fixes ride along as
 "Fixes and improvements". 1.0.0 comes when the beta ends. Newest first.
 
+## 0.9.5 beta
+
+- **The licence summary like the web's**: one card per discipline with its symbol, your iRating, what your last races
+  of it gave and your licence.
+- **The lap analysis has the corners strip**: every corner as a small bar, touch one to read it on the map and the
+  charts; corners are named "T3" like on the PC.
+- Fixes and improvements.
+
 ## 0.9.4 beta
 
 - Fixes and improvements.

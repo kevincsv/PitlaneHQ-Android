@@ -33,6 +33,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.draw.alpha
@@ -847,6 +850,12 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
                     Metric(t("delta"), d?.let { "%+.3f".format(it) } ?: "—", Modifier.weight(1f).fillMaxHeight(), if (d == null) Fg else if (d <= 0) Good else Bad)
                 }
             }
+            // every corner as a small bar under the key facts, like the web's analyzer: press one to read it on the map and the charts
+            if (an.trace != null && an.ref != null) {
+                val cc = compare(an.trace, an.ref)
+                val cs = corners(cc, an.turns)
+                if (cs.isNotEmpty()) item { CornerStrip(cs, cc.step, pick) { pick = it } }
+            }
             // the car card: what this car does on other tracks (its hardest braking, where the fast drivers shift up, its
             // top speed) against this lap, like the web's coach
             if (an.car != null && an.trace != null) item { CarCard(an.car, an.trace) }
@@ -1041,6 +1050,14 @@ private fun Chip(label: String, on: Boolean, onClick: () -> Unit) {
 
 // the disciplines iRacing splits its licenses into, and the license classes, like on the web
 private val DISCS = listOf("oval", "sports_car", "formula_car", "dirt_oval", "dirt_road")
+/** The disciplines' symbols as SVG path data (24 × 24), the same strokes as the web's DISC_IC. */
+private val DISC_PATHS = mapOf(
+    "oval" to "M8.5 6h7a6 6 0 0 1 6 6a6 6 0 0 1-6 6h-7a6 6 0 0 1-6-6a6 6 0 0 1 6-6zM9.5 10h5a2 2 0 0 1 2 2a2 2 0 0 1-2 2h-5a2 2 0 0 1-2-2a2 2 0 0 1 2-2zM12 6v4",
+    "sports_car" to "M3 15.5v-2.2l2.6-.9 3-3h5.6l3.4 3 2.4.6v2.5H3zM9.3 16a1.8 1.8 0 1 1-3.6 0a1.8 1.8 0 1 1 3.6 0zM18.3 16a1.8 1.8 0 1 1-3.6 0a1.8 1.8 0 1 1 3.6 0zM9.6 9.4l-.6 3h6l-1.2-3",
+    "formula_car" to "M8 4h8M7 20h10M12 4v16M11.2 9.5h1.6a1.2 1.2 0 0 1 1.2 1.2v2.6a1.2 1.2 0 0 1-1.2 1.2h-1.6a1.2 1.2 0 0 1-1.2-1.2v-2.6a1.2 1.2 0 0 1 1.2-1.2zM5.5 6h1a1 1 0 0 1 1 1v2.5a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM17.5 6h1a1 1 0 0 1 1 1v2.5a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM5.5 13.5h1a1 1 0 0 1 1 1V17a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-2.5a1 1 0 0 1 1-1zM17.5 13.5h1a1 1 0 0 1 1 1V17a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-2.5a1 1 0 0 1 1-1z",
+    "dirt_oval" to "M7.5 6.5h4a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5h-4A5.5 5.5 0 0 1 2 12a5.5 5.5 0 0 1 5.5-5.5zM7.5 10.5h4a1.5 1.5 0 0 1 1.5 1.5a1.5 1.5 0 0 1-1.5 1.5h-4A1.5 1.5 0 0 1 6 12a1.5 1.5 0 0 1 1.5-1.5zM19.5 8.5h.01M21.5 11.5h.01M19.8 14.5h.01M21.6 17h.01",
+    "dirt_road" to "M2 15l5-6 3.5 4L14 8.5 22 15M9 21c1.5-2 4.5-2.5 5-5M4 21h.01M18 21h.01M20.5 19h.01",
+)
 /** The kind of a session for the filter: race, qual(ifying), prac(tice) or test (drive). */
 private fun kindOf(k: String): String { val x = k.lowercase(); return if ("race" in x) "race" else if ("qual" in x) "qual" else if ("test" in x) "test" else if ("prac" in x || "warm" in x || "offline" in x) "prac" else "" }
 private val LICS = listOf("R", "D", "C", "B", "A", "P")
@@ -1051,10 +1068,10 @@ private fun licColor(k: String) = when (k) { "R" -> Color(0xFFFF6363); "D" -> Co
 
 /** The license class as a small coloured square (R, D, C, B, A, Pro). */
 @Composable
-private fun LicBadge(k: String?) {
+private fun LicBadge(k: String?, sr: String? = null) {
     if (k == null || k !in LICS) return
     val c = licColor(k)
-    Text(if (k == "P") "Pro" else k, color = Fg, fontSize = 10.sp, fontWeight = FontWeight.Black,
+    Text((if (k == "P") "Pro" else k) + (sr?.let { " $it" } ?: ""), color = Fg, fontSize = 10.sp, fontWeight = FontWeight.Black,
         modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(c.copy(alpha = 0.55f)).border(1.5.dp, c, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp))
 }
 
@@ -2153,26 +2170,93 @@ private fun Grid(items: List<MetricData>, columns: Int) {
     }
 }
 
-/** Licences per category: your iRating and licence of each, as the PC last saw them (the game only says the category
- *  of the session you are in, so each updates when you drive it with Pitlane HQ open). */
+/** Licence summary, like the web's Home: one card per discipline (its symbol and colour), your iRating with what your
+ *  last races of it gave, and the licence (class and safety rating) as the PC last saw them (the game only says the
+ *  discipline of the session you are in, so each updates when you drive it with Pitlane HQ open). */
 @Composable
 private fun Licences(vm: PitlaneViewModel) {
-    val cats = listOf("cat_sports" to "sports_car", "cat_formula" to "formula_car", "cat_oval" to "oval", "cat_dirt_road" to "dirt_road", "cat_dirt_oval" to "dirt_oval")
-    var cat by rememberSaveable { mutableIntStateOf(0) }
     val acc by vm.account.collectAsState()
+    val r by vm.races.collectAsState()
     val all = remember(acc) { vm.ratings() }
+    val races = r.data ?: emptyList()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Section(t("licences"))
-        Panel {
-            Tabs(cats.map { t(it.first) }, cat) { cat = it }
-            Spacer(Modifier.height(8.dp))
-            val r = all[cats[cat].second]
-            val lic = r?.second?.trim()?.uppercase() ?: ""
-            val cls = lic.takeIf { it.isNotEmpty() }?.let { if (it.startsWith("WC") || it.startsWith("PRO")) "P" else it.take(1) } ?: "—"
-            val sr = lic.split(Regex("\\s+")).getOrNull(1) ?: "—"
-            Grid(listOf(MetricData(t("lic_class"), cls, if (r == null || cls == "—") Muted else licColor(cls)), MetricData(t("safety"), sr, if (r == null) Muted else Fg), MetricData("iRating", r?.first?.toString() ?: "—", if (r == null) Muted else discColor(cats[cat].second), r?.let { day(it.third) })), columns = 3)
-            Spacer(Modifier.height(6.dp))
-            Text(t("lic_note"), color = Muted, fontSize = 11.sp)
+        DISCS.chunked(2).forEach { row ->
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { k -> LicCard(k, all[k], races, Modifier.weight(1f).fillMaxHeight()) }
+                repeat(2 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+        Text(t("lic_note"), color = Muted, fontSize = 11.sp)
+    }
+}
+
+/** One discipline's card: its symbol, the iRating (with what your last five races of it gave, like the web) and the
+ *  licence pill ("B 3.21" in the licence's colour); dim while the PC has seen nothing of it. */
+@Composable
+private fun LicCard(k: String, r: Triple<Int, String, Long>?, races: List<Race>, m: Modifier) {
+    val col = discColor(k)
+    val last = races.filter { raceDisc(it.cat, it.car) == k }.take(5)
+    val chg = last.sumOf { it.irChange }
+    val lic = r?.second?.trim()?.uppercase() ?: ""
+    val cls = lic.takeIf { it.isNotEmpty() }?.let { if (it.startsWith("WC") || it.startsWith("PRO")) "P" else it.take(1) }
+    val sr = lic.split(Regex("\\s+")).getOrNull(1)
+    Card(
+        m.alpha(if (r == null) 0.55f else 1f), colors = CardDefaults.cardColors(containerColor = Surface),
+        border = BorderStroke(1.dp, col.copy(alpha = 0.4f)), shape = MaterialTheme.shapes.small
+    ) {
+        Row(Modifier.padding(12.dp).fillMaxHeight(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            DiscIcon(k, 30.dp)
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(discName(k), color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, lineHeight = 14.sp)
+                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(r?.first?.toString() ?: "–", color = if (r == null) Muted else col, fontSize = 20.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, lineHeight = 22.sp)
+                    if (r != null && last.isNotEmpty() && chg != 0)
+                        Text(signed(chg), color = if (chg > 0) Good else Bad, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(bottom = 3.dp))
+                }
+                if (r != null && cls != null) LicBadge(cls, sr)
+            }
+        }
+    }
+}
+
+/** The discipline's symbol, the same strokes as the web's (our own, never iRacing's), in a rounded square of its colour. */
+@Composable
+private fun DiscIcon(k: String, size: Dp) {
+    val col = discColor(k)
+    val d = DISC_PATHS[k] ?: return
+    Box(Modifier.size(size).clip(RoundedCornerShape(8.dp)).background(col.copy(alpha = 0.12f)).border(1.5.dp, col, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.size(size * 0.6f)) {
+            val s = this.size.width / 24f
+            val path = PathParser().parsePathString(d).toPath()
+            withTransform({ scale(s, s, Offset.Zero) }) { drawPath(path, col, style = Stroke(width = 1.8f, cap = StrokeCap.Round, join = StrokeJoin.Round)) }
+        }
+    }
+}
+
+/** Every corner as a small bar, like the web's analyzer: taller the more time it costs (red; green when it gains), its
+ *  official turn number under it. Press one to read it on the map and the charts. */
+@Composable
+private fun CornerStrip(cs: List<Corner>, step: Double, sel: Int?, onSel: (Int) -> Unit) {
+    val mx = (cs.maxOfOrNull { kotlin.math.abs(it.lost) } ?: 0.0).coerceAtLeast(0.05)
+    Panel {
+        Section(t("corners_strip"))
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            cs.forEach { k ->
+                val idx = (k.atM / step).roundToInt()
+                val on = sel != null && kotlin.math.abs(sel - idx) <= 2
+                val col = if (k.lost > .02) Bad else if (k.lost < -.02) Good else Muted
+                Column(
+                    Modifier.width(36.dp).clip(RoundedCornerShape(6.dp)).background(if (on) Surface2 else Color.Transparent).clickable { onSel(idx) }.padding(vertical = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Box(Modifier.height(40.dp), contentAlignment = Alignment.BottomCenter) {
+                        Box(Modifier.width(14.dp).height((6 + 34 * kotlin.math.abs(k.lost) / mx).dp).clip(RoundedCornerShape(3.dp)).background(col))
+                    }
+                    Text("T${k.n}", color = if (on) Accent else Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    Text((if (k.lost >= 0) "+" else "−") + "%.2f".format(kotlin.math.abs(k.lost)), color = col, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                }
+            }
         }
     }
 }
