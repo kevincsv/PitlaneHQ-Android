@@ -385,7 +385,6 @@ private let strings: [String: (String, String)] = [
     "viewing": ("Looking at: {0} · {1}", "Estás viendo: {0} · {1}"),
     "you_fastest": ("You are the fastest", "Eres el más rápido"),
     "you_fastest_sub": ("Your lap is the record of this car and track among {0} drivers: {1}", "Tu vuelta es el récord de este coche y circuito entre {0} pilotos: {1}"),
-    "rival_race": ("rival of a race", "rival de carrera"),
     "profile": ("Profile", "Perfil"),
     "since": ("On Pitlane HQ since {0}", "En Pitlane HQ desde {0}"),
     "anonymous_private": ("This driver is anonymous: their profile is private.", "Este piloto es anónimo: su perfil es privado."),

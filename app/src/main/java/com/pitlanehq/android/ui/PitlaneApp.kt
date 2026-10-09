@@ -1486,7 +1486,6 @@ private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
                             if (lap.sup) SupBadge()
                             if (lap.mine) Text(t("you_badge"), color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
-                        if (lap.field && !lap.mine) Text(t("rival_race"), color = Muted, fontSize = 10.sp)
                         if (lap.sectors.isNotEmpty()) Text(lap.sectors.joinToString("  ") { "%.3f".format(it) }, color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                         if (!lap.hasTrace) Text(t("trace_not_shared"), color = Muted, fontSize = 10.sp)
                     }

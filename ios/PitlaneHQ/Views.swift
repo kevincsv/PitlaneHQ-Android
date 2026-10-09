@@ -2206,7 +2206,6 @@ struct ComboView: View {
                                 if lap.sup { SupBadge() }
                                 if lap.mine { Text(t("you_badge")).font(.system(size: 10, weight: .bold)).foregroundColor(Theme.accent) }
                             }
-                            if lap.field && !lap.mine { Text(t("rival_race")).font(.system(size: 10)).foregroundColor(Theme.muted) }
                             if !lap.sectors.isEmpty { Text(lap.sectors.map { String(format: "%.3f", $0) }.joined(separator: "  ")).font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.muted) }
                             if !lap.hasTrace { Text(t("trace_not_shared")).font(.system(size: 10)).foregroundColor(Theme.muted) }
                         }

@@ -385,7 +385,6 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "viewing" to ("Looking at: {0} · {1}" to "Estás viendo: {0} · {1}"),
     "you_fastest" to ("You are the fastest" to "Eres el más rápido"),
     "you_fastest_sub" to ("Your lap is the record of this car and track among {0} drivers: {1}" to "Tu vuelta es el récord de este coche y circuito entre {0} pilotos: {1}"),
-    "rival_race" to ("rival of a race" to "rival de carrera"),
     "profile" to ("Profile" to "Perfil"),
     "since" to ("On Pitlane HQ since {0}" to "En Pitlane HQ desde {0}"),
     "anonymous_private" to ("This driver is anonymous: their profile is private." to "Este piloto es anónimo: su perfil es privado."),
