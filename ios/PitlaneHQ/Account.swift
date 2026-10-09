@@ -660,8 +660,12 @@ final class Account: ObservableObject {
     }
 
     /// The league hub: the posts (with the views and clicks of yours), post one or edit yours, remove yours.
+    @Published var leagueLimit = LeagueLimit()
     func leagues() async throws -> [League] {
         let j = (try JSONSerialization.jsonObject(with: await call("GET", "/community/leagues")) as? [String: Any]) ?? [:]
+        let lim = j["limits"] as? [String: Any] ?? [:]
+        leagueLimit = LeagueLimit(limit: j["limit"] == nil ? 3 : int(j["limit"]), supporter: j["supporter"] as? Bool ?? false,
+                                  free: lim["free"] == nil ? 3 : int(lim["free"]), supporterLimit: lim["supporter"] == nil ? 10 : int(lim["supporter"]))
         return (j["leagues"] as? [[String: Any]] ?? []).map { x in
             League(id: str(x["id"]), name: fixTxt(str(x["name"])), about: fixTxt(str(x["about"])), cat: x["cat"] as? String, discord: str(x["discord"]), web: str(x["web"]), schedule: str(x["schedule"]),
                    cars: fixTxt(str(x["cars"])), lang: str(x["lang"]), mine: x["mine"] as? Bool ?? false, by: str(x["by"]),

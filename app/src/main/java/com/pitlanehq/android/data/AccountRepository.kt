@@ -529,8 +529,12 @@ class AccountRepository(context: Context) {
     }
 
     /** Leagues (in development: admins only for now): post one with a Discord invite, edit or remove yours. */
+    @Volatile var leagueLimit = LeagueLimit()
     fun leagues(): List<League> {
-        val a = JSONObject(call("GET", "/community/leagues")).optJSONArray("leagues") ?: JSONArray()
+        val r = JSONObject(call("GET", "/community/leagues"))
+        val lim = r.optJSONObject("limits")
+        leagueLimit = LeagueLimit(r.optInt("limit", 3), r.optBoolean("supporter"), lim?.optInt("free", 3) ?: 3, lim?.optInt("supporter", 10) ?: 10)
+        val a = r.optJSONArray("leagues") ?: JSONArray()
         return (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { x ->
             val ints = { k: String -> x.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.optInt(it) } } ?: emptyList() }
             val strs = { k: String -> x.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList() }

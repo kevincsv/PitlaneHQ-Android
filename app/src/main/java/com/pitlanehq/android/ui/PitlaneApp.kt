@@ -1560,7 +1560,26 @@ private fun LeagueForm(vm: PitlaneViewModel, edit: League?, onDone: () -> Unit) 
             }
         }, enabled = !busy, modifier = Modifier.padding(top = 8.dp), colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) { Text(if (edit != null) t("save") else t("league_publish")) }
         Text(t("league_note"), color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
+        LeagueLimitNote(vm)
     }
+}
+/** How many leagues you may post (3, 10 as a supporter) and a small way to become one. */
+@Composable
+private fun LeagueLimitNote(vm: PitlaneViewModel) {
+    val lg by vm.leagues.collectAsState()
+    val lim by vm.leagueLimit.collectAsState()
+    val uri = LocalUriHandler.current
+    val used = t("league_used", lg.data?.count { it.mine } ?: 0, lim.limit)
+    if (lim.supporter) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+            Text(used, color = Muted, fontSize = 11.sp)
+            Text("  ♥ Supporter", color = Color(0xFFFF8FBF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+        return
+    }
+    Text(used + ". " + t("league_more", lim.supporterLimit), color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+    if (PATREON_URL.isNotEmpty()) Text("♥ " + t("league_donate"), color = Accent, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(top = 2.dp).clickable { uri.openUri(PATREON_URL) }.padding(vertical = 4.dp))
 }
 // ---------- Community ----------
 @Composable

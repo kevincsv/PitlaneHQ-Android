@@ -2160,7 +2160,7 @@ struct LeagueHub: View {
                 Tabs(labels: [t("leagues_explore"), edit != nil ? t("leagues_edit") : t("leagues_post"), t("leagues_mine")], selected: $tab)
                 if let err { Text(t(err)).font(.caption).foregroundColor(Theme.bad) }
                 if tab == 1 {
-                    LeagueForm(edit: edit) { edit = nil; tab = 2; Task { await load() } }
+                    LeagueForm(edit: edit, mine: (list ?? []).filter { $0.mine }.count) { edit = nil; tab = 2; Task { await load() } }
                 } else {
                     if tab == 0 {
                         Pills(items: [("", t("disc_all") + " (\(all.count))")] + DISCS.map { k in (k, discName(k) + " (\(all.filter { leagueDiscs($0).contains(k) }.count))") }, selected: $cat)
@@ -2371,6 +2371,7 @@ struct LeagueBars: View {
 struct LeagueForm: View {
     @EnvironmentObject var account: Account
     let edit: League?
+    var mine = 0
     let onDone: () -> Void
     @State private var name = ""
     @State private var about = ""
@@ -2400,6 +2401,18 @@ struct LeagueForm: View {
         Task {
             do { try await account.saveLeague(edit?.id, l); busy = false; err = nil; onDone() }
             catch { busy = false; err = (error as? AppError)?.key ?? error.localizedDescription }
+        }
+    }
+    /// how many leagues you may post (3, 10 as a supporter) and a small way to become one
+    @ViewBuilder private var limitNote: some View {
+        let lim = account.leagueLimit, used = t("league_used", mine, lim.limit)
+        if lim.supporter {
+            HStack(spacing: 6) { Text(used).font(.caption2).foregroundColor(Theme.muted); Text("♥ Supporter").font(.caption2.bold()).foregroundColor(Color(red: 1, green: 0.56, blue: 0.75)) }
+        } else {
+            Text(used + ". " + t("league_more", lim.supporterLimit)).font(.caption2).foregroundColor(Theme.muted)
+            if let u = URL(string: patreonURL), !patreonURL.isEmpty {
+                Button("♥ " + t("league_donate")) { UIApplication.shared.open(u) }.font(.caption.bold()).foregroundColor(Theme.accent).buttonStyle(.plain)
+            }
         }
     }
     var body: some View {
@@ -2438,6 +2451,7 @@ struct LeagueForm: View {
             if let err { Text(t(err)).font(.caption).foregroundColor(Theme.bad) }
             Button(edit != nil ? t("save") : t("league_publish")) { save() }.buttonStyle(.borderedProminent).tint(Theme.accent).disabled(busy)
             Text(t("league_note")).font(.caption2).foregroundColor(Theme.muted)
+            limitNote
         }
         .onAppear {
             if let e = edit { name = e.name; about = e.about; discord = e.discord; web = e.web; cars = e.cars; lang = e.lang; time = e.time; cats = leagueDiscs(e); days = e.days; open = e.open }

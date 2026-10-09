@@ -91,6 +91,8 @@ data class ProfileLap(val track: String, val car: String, val time: Double, val 
 /** A league posted on the hub: the days it races (0 Monday … 6 Sunday), the usual start in its time zone, one or
  *  several disciplines (mixed), an optional Discord invite and website, whether it is looking for drivers; the views
  *  and clicks only for its creator (−1 for everyone else). */
+/** How many leagues you may post: 3, or 10 as a supporter (Patreon or by hand). */
+data class LeagueLimit(val limit: Int = 3, val supporter: Boolean = false, val free: Int = 3, val supporterLimit: Int = 10)
 data class League(val id: String, val name: String, val about: String, val cat: String?, val discord: String, val web: String, val schedule: String, val cars: String, val lang: String, val mine: Boolean = false, val by: String = "",
     val cats: List<String> = emptyList(), val days: List<Int> = emptyList(), val time: String = "", val tz: String = "", val open: Boolean = true, val views: Int = -1, val clicks: Int = -1,
     val created: Long = 0, val updated: Long = 0)

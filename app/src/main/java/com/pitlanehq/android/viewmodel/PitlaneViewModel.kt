@@ -257,7 +257,8 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     /** A driver's profile, from one of their laps (null: yours). */
     fun loadProfile(lapId: String?) { profileLap = lapId; profile.value = Loadable(); load(profile) { Got(repo.profile(lapId)) } }
     val leagues = MutableStateFlow(Loadable<List<League>>())
-    fun loadLeagues() = load(leagues) { Got(repo.leagues()) }
+    val leagueLimit = MutableStateFlow(LeagueLimit())
+    fun loadLeagues() = load(leagues) { val l = repo.leagues(); leagueLimit.value = repo.leagueLimit; Got(l) }
     fun saveLeague(id: String?, l: League, done: (String?) -> Unit) = viewModelScope.launch(Dispatchers.IO) {
         val e = runCatching { repo.saveLeague(id, l) }.exceptionOrNull()
         kotlinx.coroutines.withContext(Dispatchers.Main) { done(e?.let { errKey(it) }) }

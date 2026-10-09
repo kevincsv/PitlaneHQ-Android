@@ -105,6 +105,9 @@ struct DriverProfile {
 /// A league posted on the hub: the days it races (0 Monday … 6 Sunday), the usual start in its time zone, one or
 /// several disciplines (mixed), an optional Discord invite and website, whether it is looking for drivers; the views
 /// and clicks only for its creator (−1 for everyone else).
+/// How many leagues you may post: 3, or 10 as a supporter (Patreon or by hand).
+struct LeagueLimit { var limit = 3; var supporter = false; var free = 3; var supporterLimit = 10 }
+
 struct League: Identifiable {
     var id: String
     var name: String
