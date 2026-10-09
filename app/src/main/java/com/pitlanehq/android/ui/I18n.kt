@@ -449,6 +449,8 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "league_need_discord" to ("The Discord link must be an invite: https://discord.gg/…" to "El enlace de Discord tiene que ser una invitación: https://discord.gg/…"),
     "league_publish" to ("Post the league" to "Publicar la liga"),
     "league_note" to ("Everyone on Pitlane HQ sees your league under your public name; only you see its views and clicks." to "Todos en Pitlane HQ ven tu liga con tu nombre público; solo tú ves sus vistas y clics."),
+    "drinks_multiple" to ("Multiple" to "Varios"),
+    "drinks_by" to ("Driven in DRINKS mode by {0}" to "Corrida en modo DRINKS por {0}"),
     "league_used" to ("{0} of {1} leagues posted" to "{0} de {1} ligas publicadas"),
     "league_more" to ("Supporters on Patreon can post up to {0}." to "Los supporters de Patreon pueden publicar hasta {0}."),
     "league_donate" to ("Support on Patreon" to "Apoyar en Patreon"),

@@ -362,6 +362,7 @@ class AccountRepository(context: Context) {
                 avg = r.optDouble("avg").pos(), consistency = r.optDouble("consistency").pos(), pits = r.optInt("pits"),
                 fuelUsed = r.optDouble("fuelUsed").pos(), ir = r.optInt("ir"), irChange = r.optInt("irChange"), sof = r.optInt("sof"),
                 dnf = r.optBoolean("dnf"), cat = r.optStr("cat"),
+                drinks = r.optJSONArray("drinks")?.let { d -> (0 until d.length()).map { fixTxt(d.optString(it)) }.filter { it.isNotBlank() } } ?: emptyList(),
                 laps = (0 until laps.length()).map { k -> laps.getJSONObject(k).let { RaceLap(it.optInt("n"), it.optDouble("t"), it.optInt("p"), it.optInt("i"), it.optBoolean("pit"), it.optBoolean("cut")) } },
                 results = (0 until res.length()).map { k ->
                     res.getJSONObject(k).let { RaceResult(it.optInt("cpos").takeIf { p -> p > 0 } ?: it.optInt("pos"), fixTxt(it.optString("name")), it.optInt("ir"), it.optDouble("best").pos(), it.optInt("inc"), it.optInt("laps"), it.optString("k"), it.optBoolean("me")) }
@@ -577,7 +578,7 @@ class AccountRepository(context: Context) {
         val a = saved("races")?.let { JSONArray(it) } ?: return
         val cats = mapOf("oval" to "oval", "dirtoval" to "dirt_oval", "dirtroad" to "dirt_road", "formulacar" to "formula_car", "sportscar" to "sports_car")
         val out = JSONArray()
-        (0 until a.length()).mapNotNull { a.optJSONObject(it) }.filter { it.optInt("finish") > 0 && it.optLong("when") > 0 && !it.optBoolean("partial") }
+        (0 until a.length()).mapNotNull { a.optJSONObject(it) }.filter { it.optInt("finish") > 0 && it.optLong("when") > 0 && !it.optBoolean("partial") && (it.optJSONArray("drinks")?.length() ?: 0) == 0 }
             .sortedByDescending { it.optLong("when") }.take(20).forEach { r ->
                 val res = r.optJSONArray("results")
                 val me = res?.let { x -> (0 until x.length()).mapNotNull { x.optJSONObject(it) }.firstOrNull { it.optBoolean("me") } }

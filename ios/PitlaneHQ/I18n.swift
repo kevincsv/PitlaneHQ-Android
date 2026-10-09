@@ -449,6 +449,8 @@ private let strings: [String: (String, String)] = [
     "league_need_discord": ("The Discord link must be an invite: https://discord.gg/…", "El enlace de Discord tiene que ser una invitación: https://discord.gg/…"),
     "league_publish": ("Post the league", "Publicar la liga"),
     "league_note": ("Everyone on Pitlane HQ sees your league under your public name; only you see its views and clicks.", "Todos en Pitlane HQ ven tu liga con tu nombre público; solo tú ves sus vistas y clics."),
+    "drinks_multiple": ("Multiple", "Varios"),
+    "drinks_by": ("Driven in DRINKS mode by {0}", "Corrida en modo DRINKS por {0}"),
     "league_used": ("{0} of {1} leagues posted", "{0} de {1} ligas publicadas"),
     "league_more": ("Supporters on Patreon can post up to {0}.", "Los supporters de Patreon pueden publicar hasta {0}."),
     "league_donate": ("Support on Patreon", "Apoyar en Patreon"),

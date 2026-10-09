@@ -128,7 +128,8 @@ data class Race(
     val avg: Double?, val consistency: Double?, val pits: Int, val fuelUsed: Double?,
     val ir: Int, val irChange: Int, val sof: Int, val dnf: Boolean,
     val laps: List<RaceLap>, val results: List<RaceResult>,
-    val cat: String? = null  // the discipline as iRacing names it (Oval, Road, DirtOval…); raceDisc tells which of ours
+    val cat: String? = null,  // the discipline as iRacing names it (Oval, Road, DirtOval…); raceDisc tells which of ours
+    val drinks: List<String> = emptyList()  // DRINKS mode: who drove it when a friend drove any lap (the PC's report)
 )
 
 /** The discipline of a race as the PC tells it (discipline in journal.go, raceDisc in the web): iRacing says "Road"

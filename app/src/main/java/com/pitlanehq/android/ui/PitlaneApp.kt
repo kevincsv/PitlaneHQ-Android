@@ -494,6 +494,7 @@ private fun RaceRow(x: Race, onClick: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(x.track, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                DrinksBadge(x)
                 Text(x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
                     listOf(day(x.whenMs), if (x.official) t("official") else t("unofficial"), if (x.sof > 0) "SOF ${x.sof}" else "").filter { it.isNotBlank() }.joinToString(" · "),
@@ -506,6 +507,17 @@ private fun RaceRow(x: Race, onClick: () -> Unit) {
                 Text("${x.inc}x", color = if (x.inc >= 8) Bad else Muted, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
             }
         }
+    }
+}
+
+/** DRINKS mode: a race a friend drove (any lap): "DRINKS · Ana", or "DRINKS · Multiple" when several drove it. */
+@Composable
+private fun DrinksBadge(x: Race, names: Boolean = false) {
+    if (x.drinks.isEmpty()) return
+    Column(Modifier.padding(vertical = 2.dp)) {
+        Text("DRINKS · " + (if (x.drinks.size > 1) t("drinks_multiple") else x.drinks[0]), color = Color(0xFFFFE2A8), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.4.sp, maxLines = 1,
+            modifier = Modifier.background(Accent.copy(alpha = 0.22f), RoundedCornerShape(50)).border(1.dp, Accent.copy(alpha = 0.6f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp))
+        if (names && x.drinks.size > 1) Text(t("drinks_by", x.drinks.joinToString(", ")), color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
     }
 }
 
@@ -525,6 +537,7 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
     LaunchedEffect(Unit) { vm.loadDriverNotes() }
     val anyMe = x.results.any { it.me }
     Screen(x.track, x.car + " · " + dayTime(x.whenMs), back = { nav.popBackStack() }) {
+        if (x.drinks.isNotEmpty()) item { DrinksBadge(x, names = true) }
         item {
             Grid(
                 listOf(

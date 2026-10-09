@@ -742,6 +742,7 @@ struct RaceRow: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(race.track).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
+                    DrinksBadge(race: race)
                     Text(race.car).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
                     Text([day(race.when), race.official ? t("official") : t("unofficial"), race.sof > 0 ? "SOF \(race.sof)" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
                         .font(.caption2).foregroundColor(Theme.muted)
@@ -753,6 +754,23 @@ struct RaceRow: View {
                         .foregroundColor(race.irChange > 0 ? Theme.good : race.irChange < 0 ? Theme.bad : Theme.muted)
                     Text("\(race.inc)x").font(.system(.caption2, design: .monospaced)).foregroundColor(race.inc >= 8 ? Theme.bad : Theme.muted)
                 }
+            }
+        }
+    }
+}
+
+/// DRINKS mode: a race a friend drove (any lap): "DRINKS · Ana", or "DRINKS · Multiple" when several drove it
+struct DrinksBadge: View {
+    let race: Race
+    var names = false
+    var body: some View {
+        if !race.drinks.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("DRINKS · " + (race.drinks.count > 1 ? t("drinks_multiple") : race.drinks[0]))
+                    .font(.system(size: 10, weight: .bold)).tracking(0.4).lineLimit(1).foregroundColor(Color(red: 1, green: 0.886, blue: 0.659))
+                    .padding(.horizontal, 8).padding(.vertical, 2)
+                    .background(Capsule().fill(Theme.accent.opacity(0.22))).overlay(Capsule().stroke(Theme.accent.opacity(0.6), lineWidth: 1))
+                if names && race.drinks.count > 1 { Text(t("drinks_by", race.drinks.joined(separator: ", "))).font(.caption).foregroundColor(Theme.muted) }
             }
         }
     }
@@ -896,6 +914,7 @@ struct RaceView: View {
         let x = race
         let best = x.laps.filter { $0.time > 0 && !$0.cut }.map(\.time).min()
         Screen(title: x.track, sub: x.car + " · " + dayTime(x.when)) {
+            if !x.drinks.isEmpty { DrinksBadge(race: x, names: true) }
             MetricGrid(items: [
                 MetricData(label: t("start"), value: "P\(x.start)"),
                 MetricData(label: t("finish"), value: x.dnf ? t("dnf") : "P\(x.finish)", color: x.finish == 1 ? Theme.purple : Theme.fg),

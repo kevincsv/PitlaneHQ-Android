@@ -254,6 +254,7 @@ struct Race: Identifiable, Hashable {
     let laps: [RaceLap]
     let results: [RaceResult]
     var cat: String? = nil  // the discipline as iRacing names it (Oval, Road, DirtOval…); raceDisc tells which of ours
+    var drinks: [String] = []  // DRINKS mode: who drove it when a friend drove any lap (the PC's report)
 }
 
 /// The discipline of a race as the PC tells it (discipline in journal.go, raceDisc in the web): iRacing says "Road"

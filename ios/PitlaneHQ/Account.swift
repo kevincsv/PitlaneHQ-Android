@@ -488,7 +488,8 @@ final class Account: ObservableObject {
                 results: (r["results"] as? [[String: Any]] ?? []).map {
                     RaceResult(pos: int($0["cpos"]) > 0 ? int($0["cpos"]) : int($0["pos"]), name: fixTxt(str($0["name"])), ir: int($0["ir"]), best: pos($0["best"]), inc: int($0["inc"]), laps: int($0["laps"]), k: str($0["k"]), me: $0["me"] as? Bool ?? false)
                 }.sorted { $0.pos < $1.pos },
-                cat: r["cat"] as? String
+                cat: r["cat"] as? String,
+                drinks: (r["drinks"] as? [String] ?? []).map { fixTxt($0) }.filter { !$0.isEmpty }
             )
         }
     }
@@ -698,7 +699,7 @@ final class Account: ObservableObject {
     func publishProfileRaces() async {
         guard !demo, signedIn, let d = saved("races"), let a = try? JSONSerialization.jsonObject(with: d) as? [[String: Any]] else { return }
         let cats = ["oval": "oval", "dirtoval": "dirt_oval", "dirtroad": "dirt_road", "formulacar": "formula_car", "sportscar": "sports_car"]
-        let list: [[String: Any]] = a.filter { int($0["finish"]) > 0 && (num($0["when"]) ?? 0) > 0 && !($0["partial"] as? Bool ?? false) }
+        let list: [[String: Any]] = a.filter { int($0["finish"]) > 0 && (num($0["when"]) ?? 0) > 0 && !($0["partial"] as? Bool ?? false) && ($0["drinks"] as? [Any] ?? []).isEmpty }
             .sorted { (num($0["when"]) ?? 0) > (num($1["when"]) ?? 0) }.prefix(20).map { r -> [String: Any] in
                 let me = (r["results"] as? [[String: Any]] ?? []).first { $0["me"] as? Bool ?? false }
                 let rawCat = str(r["cat"]).lowercased().filter { $0.isLetter }
