@@ -6,7 +6,8 @@ web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; 
 
 ## 0.9.1 beta
 
-- The licence summary shows each category's licence class in its colour.
+- **Your licence in the licence summary**: the class of each category in the licence's colour, and its safety
+  rating, once your PC sees you in a session of it.
 - Fixes and improvements.
 
 ## 0.9.0 beta
@@ -15,7 +16,7 @@ web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; 
   outside at turn-in, apex and exit, in metres), not only where you braked.
 - **The track map like iRacing's**: a road with depth, both lines, the official turn numbers and the direction of
   the lap.
-- **Licence summary**: the iRating and licence of each category on its own, in its own colour.
+- **Licence summary**: the iRating of each category on its own, in its own colour.
 - **Driver notes**: tap a driver in a race summary to mark them as dangerous, careful, clean or a friend, with a
   note only you see; the same notes as on the PC and the web.
 - "+1L" / "−1L" in the race summary; race rivals show their whole name, as the game shows it.
@@ -30,7 +31,7 @@ web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; 
   and the car card of what each car can do.
 - **Sessions filtered** by discipline, kind of session, car and track.
 - **Your account syncs by itself**, and the phone connects to your PC (the PC accepts it) or watches another
-  driver with a code.
+  driver's live telemetry with a code.
 - Two-step sign-in, email confirmation, a new icon and DRINKS mode from the phone.
 - Fixes and improvements.
 
@@ -41,26 +42,37 @@ web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; 
 
 ## 0.6.0 beta
 
-- Days you drove on Home, filters in My races and your fastest lap ever marked.
+- **Days you drove** on Home, filters in My races and your fastest lap ever marked.
+- Laps that do not count are grey and crossed out.
+- Two-step sign-in and a notice when a new version is out.
 - The apps point to https://pitlanehq.app.
 - Fixes and improvements.
 
 ## 0.5.0 beta
 
-- Track maps from your laps, with the sectors, the braking points and the incidents.
-- Incidents on every lap, named as the game does.
+- **Track maps** from your laps, with the sectors, the braking points of both laps, the coach's corners and the
+  incidents.
+- **Incidents on every lap**, named as the game does, with their points.
 - Fixes and improvements.
 
 ## 0.4.0 beta
 
-- The coach in four phases (braking, entry, apex, exit) and lap charts you can touch.
+- **The coach in four phases** (braking, entry, apex, exit) in the lap analysis.
+- Lap charts you can read by touch.
 - Fixes and improvements.
 
 ## 0.3.0 beta
 
-- One version with the PC and the web, races on Home, the lap analysis, the community and settings.
+- **One version** with the PC and the web, shown with "beta", and this changelog.
+- My races, and the community's leaderboards.
 - Fixes and improvements.
 
-## Before 0.3.0
+## 0.2.0
 
-The first builds of the Android and iPhone apps: your races, live telemetry from the PC and the community.
+- **The phone apps without the PC**: your races and iRating on Home, the lap analysis, the community and the
+  settings, in English and Spanish, also offline.
+
+## 0.1.0
+
+- **The first Android and iPhone apps**: live telemetry from your PC on the phone, and race reminders with a
+  widget.
