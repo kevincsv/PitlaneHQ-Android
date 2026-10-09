@@ -191,6 +191,12 @@ fun corners(c: Compared, turns: List<Double> = emptyList()): List<Corner> {
             val puA = aMin?.let { m -> (m..i1).firstOrNull { c.thrA[it] > .5 } }
             val puB = (zmin..i1).firstOrNull { hB[it] > .5 }
             val late = if (puA != null && puB != null) ((puA - puB) * c.step).toInt() else null
+            // the gear through the corner and the lifts after the apex: what a generic tip gives way to
+            val gA = aMin?.let { c.gearA?.getOrNull(it)?.toInt() } ?: 0
+            val gB = c.gearB?.getOrNull(zmin)?.toInt() ?: 0
+            fun lifts(th: List<Double>, from: Int, to: Int): Int { var n = 0; var prev = -1.0; for (k in from..min(to, th.size - 1)) { val t = th[k]; if (prev >= 0 && prev > .8 && t < .5) n++; prev = t }; return n }
+            val lA = aMin?.let { lifts(c.thrA, it, i1) } ?: 0
+            val lB = lifts(hB, zmin, i1)
             when (phase) {
                 "brake" -> when {
                     dd != null && dd < -6 -> { tip = "tip_brake_later"; args = listOf(-dd) }
@@ -208,6 +214,13 @@ fun corners(c: Compared, turns: List<Double> = emptyList()): List<Corner> {
                     late != null && late >= 8 -> { tip = "tip_throttle"; args = listOf(late) }
                     coastA - coastB >= 10 -> tip = "tip_no_wait"
                     else -> tip = "tip_full_throttle"
+                }
+            }
+            if (tip in setOf("tip_brake_generic", "tip_entry_speed", "tip_apex_line", "tip_full_throttle")) {
+                when {
+                    gA >= 1 && gB >= 1 && gB > gA -> { tip = "tip_gear_up"; args = listOf(gB, gA) }
+                    gA >= 1 && gB >= 1 && gB < gA -> { tip = "tip_gear_down"; args = listOf(gB, gA) }
+                    phase == "exit" && lA >= 2 && lA > lB + 1 -> { tip = "tip_lifts"; args = listOf(lA, lB) }
                 }
             }
         }

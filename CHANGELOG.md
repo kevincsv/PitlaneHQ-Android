@@ -4,6 +4,11 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; fixes ride along as
 "Fixes and improvements". 1.0.0 comes when the beta ends. Newest first.
 
+## 0.9.3 beta
+
+- **The coach says more**: the gear to take a corner in and a throttle that lifts after the apex, like on the PC.
+- Fixes and improvements.
+
 ## 0.9.2 beta
 
 - Fixes and improvements.

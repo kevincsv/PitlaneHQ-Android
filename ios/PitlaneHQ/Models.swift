@@ -523,6 +523,12 @@ func corners(_ c: Compared, turns: [Double] = []) -> [Corner] {
             let dmin: Double? = aMin.map { c.speedA[$0] - sB[zmin] }
             var late: Int? = nil
             if let m = aMin, let pA = (m...max(m, i1)).first(where: { c.thrA[$0] > 0.5 }), let pB = (zmin...i1).first(where: { hB[$0] > 0.5 }) { late = Int(Double(pA - pB) * c.step) }
+            // the gear through the corner and the lifts after the apex: what a generic tip gives way to
+            let gA = aMin.flatMap { c.gearA?[safe: $0] }.map { Int($0) } ?? 0
+            let gB = c.gearB?[safe: zmin].map { Int($0) } ?? 0
+            func lifts(_ th: [Double], _ from: Int, _ to: Int) -> Int { var n = 0; var prev = -1.0; if from > min(to, th.count - 1) { return 0 }; for k in from...min(to, th.count - 1) { let t = th[k]; if prev >= 0 && prev > 0.8 && t < 0.5 { n += 1 }; prev = t }; return n }
+            let lA = aMin.map { lifts(c.thrA, $0, i1) } ?? 0
+            let lB = lifts(hB, zmin, i1)
             switch phase ?? "" {
             case "brake":
                 if let d = dd, d < -6 { tip = "tip_brake_later"; args = ["\(-d)"] }
@@ -539,6 +545,11 @@ func corners(_ c: Compared, turns: [Double] = []) -> [Corner] {
                 if let l = late, l >= 8 { tip = "tip_throttle"; args = ["\(l)"] }
                 else if coastA - coastB >= 10 { tip = "tip_no_wait" }
                 else { tip = "tip_full_throttle" }
+            }
+            if ["tip_brake_generic", "tip_entry_speed", "tip_apex_line", "tip_full_throttle"].contains(tip ?? "") {
+                if gA >= 1 && gB >= 1 && gB > gA { tip = "tip_gear_up"; args = ["\(gB)", "\(gA)"] }
+                else if gA >= 1 && gB >= 1 && gB < gA { tip = "tip_gear_down"; args = ["\(gB)", "\(gA)"] }
+                else if phase == "exit" && lA >= 2 && lA > lB + 1 { tip = "tip_lifts"; args = ["\(lA)", "\(lB)"] }
             }
         }
         // the line: where the car was across the track; braking at the reference's point but on the wrong part of the
@@ -600,3 +611,8 @@ func losses(_ c: Compared, segM: Double = 250) -> [Loss] {
 }
 
 extension RaceResult: Identifiable { var id: String { "\(pos)|\(name)" } }
+
+extension Array {
+    /// The element at an index, or nil when it is out of the array
+    subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
+}
