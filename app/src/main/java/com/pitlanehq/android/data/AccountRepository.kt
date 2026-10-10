@@ -465,6 +465,14 @@ class AccountRepository(context: Context) {
         if (demo) return null
         return runCatching { JSONObject(cachedGet("/community/car?game=iracing&carId=$carId").data) }.getOrNull()?.takeIf { it.optInt("n") > 0 }
     }
+    /** A track's layout drawn by the community from clean laps (x/y of n points along the lap), null when none yet. */
+    fun trackLayout(trackId: Long): Pair<List<Double>, List<Double>>? {
+        if (demo || trackId <= 0) return null
+        val j = runCatching { JSONObject(cachedGet("/community/trackmaps?game=iracing&trackId=$trackId").data) }.getOrNull() ?: return null
+        val x = j.optJSONArray("x") ?: return null; val y = j.optJSONArray("y") ?: return null
+        if (x.length() < 20 || x.length() != y.length()) return null
+        return (0 until x.length()).map { x.optDouble(it) } to (0 until y.length()).map { y.optDouble(it) }
+    }
     /** A track's official turns (T1 … Tn as fractions of the lap from the line), placed by an admin on its map. */
     fun turns(trackId: Long): List<Double> {
         if (demo || trackId <= 0) return emptyList()

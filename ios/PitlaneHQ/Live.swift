@@ -2,10 +2,15 @@ import Foundation
 import UIKit
 
 /// The variables the phone asks the PC for.
-let liveVars = [
+let liveVars: [String] = [
     "Speed", "RPM", "Gear", "FuelLevel", "Lap", "LapCurrentLapTime", "LapLastLapTime", "LapBestLapTime",
-    "LapDeltaToBestLap", "Throttle", "Brake", "PlayerCarPosition",
-]
+    "LapDeltaToBestLap", "LapDeltaToBestLap_OK", "Throttle", "Brake", "PlayerCarPosition", "PlayerCarClassPosition", "PlayerCarIdx",
+    "LapCompleted", "LapDist", "LapDistPct", "OnPitRoad", "IsOnTrack", "SessionNum", "SessionLapsRemainEx", "SessionTimeRemain",
+    "PlayerCarMyIncidentCount", "FuelUsePerLap",
+    // the other cars: the standings, the relative and the map
+    "CarIdxLapDistPct", "CarIdxPosition", "CarIdxClassPosition", "CarIdxLap", "CarIdxF2Time", "CarIdxEstTime",
+    "CarIdxLastLapTime", "CarIdxBestLapTime", "CarIdxOnPitRoad",
+] + ["LF", "RF", "LR", "RR"].flatMap { c in ["tempCL", "tempCM", "tempCR", "wearL", "wearM", "wearR", "coldPressure"].map { c + $0 } }
 
 /// Live telemetry from your PC through your Pitlane HQ account's live room (/live), the same
 /// link the web app and Android use: any network, no PC address. Everything is sealed with the
@@ -21,6 +26,11 @@ final class Live: ObservableObject {
     @Published var pcOnline = false
     @Published var simConnected = false
     @Published var values: [String: Double] = [:]
+    @Published var arrays: [String: [Double]] = [:]   // the per-car values (CarIdx…)
+    @Published var session: LiveSession?             // the session YAML the PC sends: drivers, track
+    @Published var ownDelta: Double?                 // DRINKS mode: the current lap against this driver's own best
+    @Published var ownBest: Double?
+    private let laps = LiveLaps()
     @Published var message: String?
     @Published var drinks: Drinks?
     @Published var mode: Mode = UserDefaults.standard.bool(forKey: "liveOwn") ? .own : .idle
@@ -268,14 +278,25 @@ final class Live: ObservableObject {
             }
         case "fields":
             fields = a[1] as? [String] ?? []
+        case "session":
+            // the session YAML: who is who (the standings, the relative), the track (its map)
+            if let y = a[1] as? String, !y.isEmpty { session = parseLiveSession(y) }
         case "t":
             guard let v = (a[1] as? [String: Any])?["v"] as? [Any] else { return }
             var m: [String: Double] = [:]
+            var arr: [String: [Double]] = [:]
             for (i, name) in fields.enumerated() where i < v.count {
                 if let n = v[i] as? NSNumber { m[name] = n.doubleValue }
+                else if let xs = v[i] as? [Any] { arr[name] = xs.map { ($0 as? NSNumber)?.doubleValue ?? -1 } }
             }
             pcOnline = true
             values = m
+            arrays = arr
+            // DRINKS mode: whoever drives against their own laps
+            let drv = (drinks?.on ?? false) ? (drinks?.driver ?? "") : ""
+            laps.add(m, driver: drv)
+            ownDelta = laps.delta(m, driver: drv)
+            ownBest = laps.bestTime(drv)
         default:
             break
         }

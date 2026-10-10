@@ -5,6 +5,8 @@ import com.pitlanehq.android.model.LIVE_VARS
 import com.pitlanehq.android.model.LiveMode
 import com.pitlanehq.android.model.LinkState
 import com.pitlanehq.android.model.LiveState
+import com.pitlanehq.android.model.LiveLaps
+import com.pitlanehq.android.model.parseLiveSession
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -35,6 +37,7 @@ class PitWallRepository(private val account: AccountRepository) {
     private var socket: WebSocket? = null
     private var loop: Job? = null
     private var fields: List<String> = emptyList()
+    private val laps = LiveLaps() // the laps seen here, for DRINKS mode
     private val _state = MutableStateFlow(LiveState())
     val state = _state.asStateFlow()
     // what is watched: kept for your own PC (Connect stays on), never for someone's code
@@ -242,12 +245,29 @@ class PitWallRepository(private val account: AccountRepository) {
                 val f = a.getJSONArray(1)
                 fields = (0 until f.length()).map { f.getString(it) }
             }
+            // the session YAML: who is who (the standings, the relative), the track (its map)
+            "session" -> {
+                val y = a.optString(1)
+                if (y.isNotBlank()) _state.update { it.copy(session = runCatching { parseLiveSession(y) }.getOrNull() ?: it.session) }
+            }
             "t" -> {
                 val v = a.getJSONObject(1).getJSONArray("v")
                 val names = fields
                 val m = HashMap<String, Any?>(names.size)
-                for (i in names.indices) if (i < v.length()) m[names[i]] = v.opt(i).takeUnless { it == JSONObject.NULL }
-                _state.update { it.copy(pcOnline = true, values = m) }
+                val arrs = HashMap<String, List<Double>>()
+                for (i in names.indices) if (i < v.length()) {
+                    val x = v.opt(i)
+                    if (x is JSONArray) arrs[names[i]] = (0 until x.length()).map { k -> when (val e = x.opt(k)) { is Number -> e.toDouble(); is Boolean -> if (e) 1.0 else 0.0; else -> -1.0 } }
+                    else m[names[i]] = x.takeUnless { it == JSONObject.NULL }
+                }
+                _state.update {
+                    val s = it.copy(pcOnline = true, values = m, arrays = arrs)
+                    // DRINKS mode: whoever drives against their own laps
+                    val dk = s.drinks
+                    val drv = if (dk != null && dk.on) dk.driver else ""
+                    laps.add(s, drv)
+                    s.copy(ownDelta = laps.delta(s, drv), ownBest = laps.bestTime(drv))
+                }
             }
         }
     }

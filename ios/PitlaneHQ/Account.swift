@@ -591,6 +591,13 @@ final class Account: ObservableObject {
         guard let j = try await cachedGet("/community/car?game=iracing&carId=\(carId)").data as? [String: Any], ((j["n"] as? NSNumber)?.intValue ?? 0) > 0 else { return nil }
         return j
     }
+    /// A track's layout drawn by the community from clean laps (x/y of n points along the lap), nil when none yet.
+    func trackLayout(trackId: Int64) async -> ([Double], [Double])? {
+        if demo || trackId <= 0 { return nil }
+        guard let j = try? await cachedGet("/community/trackmaps?game=iracing&trackId=\(trackId)").data as? [String: Any],
+              let x = j["x"] as? [Any], let y = j["y"] as? [Any], x.count >= 20, x.count == y.count else { return nil }
+        return (x.map { ($0 as? NSNumber)?.doubleValue ?? 0 }, y.map { ($0 as? NSNumber)?.doubleValue ?? 0 })
+    }
     /// A track's official turns (T1 … Tn as fractions of the lap from the line), placed by an admin on its map.
     func turns(trackId: Int64) async -> [Double] {
         if demo || trackId <= 0 { return [] }

@@ -333,6 +333,17 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // the live map: the track's layout drawn by the community, and its official turns, once per track
+    val liveTrack = MutableStateFlow<Triple<Long, Pair<List<Double>, List<Double>>?, List<Double>>?>(null)
+    fun loadLiveTrack(trackId: Long) {
+        if (trackId <= 0 || liveTrack.value?.first == trackId) return
+        liveTrack.value = Triple(trackId, null, emptyList())
+        viewModelScope.launch {
+            val r = withContext(Dispatchers.IO) { Triple(trackId, runCatching { repo.trackLayout(trackId) }.getOrNull(), runCatching { repo.turns(trackId) }.getOrDefault(emptyList())) }
+            liveTrack.value = r
+        }
+    }
+
     // only while the live screen is open: the PC streams only while somebody watches
     fun startLive() { if (_account.value.signedIn) live.start() }
     fun stopLive() = live.stop()

@@ -1883,6 +1883,9 @@ private fun DayGrid(days: Map<String, Int>, selected: String = "", onDay: ((Stri
 @Composable
 private fun Live(vm: PitlaneViewModel) {
     val s by vm.liveState.collectAsState()
+    val notes by vm.driverNotes.collectAsState()
+    var sub by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { vm.loadDriverNotes() }
     DisposableEffect(Unit) {
         vm.startLive()
         onDispose { vm.stopLive() }
@@ -1964,37 +1967,19 @@ private fun Live(vm: PitlaneViewModel) {
         if (s.mode == LiveMode.IDLE || (s.mode == LiveMode.OWN && s.ask != "ok")) return@Screen
         item { Status(label, color) }
         s.message?.let { item { Text(t(it), color = Bad, fontSize = 12.sp) } }
-        item {
-            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Metric(t("speed"), s.num("Speed")?.let { "%.0f".format(it * 3.6) } ?: "—", Modifier.weight(1f).fillMaxHeight())
-                Metric(t("gear"), s.num("Gear")?.toInt()?.let { if (it < 0) "R" else if (it == 0) "N" else "$it" } ?: "—", Modifier.weight(1f).fillMaxHeight())
-                Metric("RPM", s.num("RPM")?.let { "%.0f".format(it) } ?: "—", Modifier.weight(1f).fillMaxHeight())
+        // the same three tabs as the PC's Telemetry: what matters while driving, the standings, the tyres
+        item { Tabs(listOf(t("tab_telemetry"), t("tab_standings"), t("tab_tyres")), sub) { sub = it } }
+        when (sub) {
+            0 -> {
+                item { LiveTop(s) }
+                item { LiveDeltaBar(s) }
+                item { LiveMap(vm, s) }
+                item { LiveRelative(s, notes) }
+                item { LiveFuel(s) }
+                item { LiveIncidents(s) }
             }
-        }
-        item {
-            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Metric(t("lap"), s.num("Lap")?.toInt()?.toString() ?: "—", Modifier.weight(1f).fillMaxHeight())
-                Metric(t("pos"), s.num("PlayerCarPosition")?.toInt()?.takeIf { it > 0 }?.let { "P$it" } ?: "—", Modifier.weight(1f).fillMaxHeight())
-                Metric(t("fuel"), s.num("FuelLevel")?.let { "%.1f L".format(it) } ?: "—", Modifier.weight(1f).fillMaxHeight())
-            }
-        }
-        item {
-            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Metric(t("current"), lapTime(s.num("LapCurrentLapTime")), Modifier.weight(1f).fillMaxHeight())
-                Metric(t("last"), lapTime(s.num("LapLastLapTime")), Modifier.weight(1f).fillMaxHeight())
-                Metric(t("best"), lapTime(s.num("LapBestLapTime")), Modifier.weight(1f).fillMaxHeight(), Purple)
-            }
-        }
-        item {
-            val d = s.num("LapDeltaToBestLap")
-            Metric(t("delta_best"), d?.let { "%+.3f".format(it) } ?: "—", Modifier.fillMaxWidth(), if (d == null) Fg else if (d <= 0) Good else Bad)
-        }
-        item {
-            Panel {
-                Section(t("inputs").uppercase())
-                Bar(t("throttle"), s.num("Throttle"), Good)
-                Bar(t("brake"), s.num("Brake"), Bad)
-            }
+            1 -> item { LiveStandings(s, notes) }
+            else -> item { LiveTyres(s) }
         }
     }
 }
@@ -2660,5 +2645,297 @@ private fun Action(title: String, sub: String, icon: ImageVector, onClick: () ->
             }
             Icon(Icons.Default.ChevronRight, null, tint = Muted)
         }
+    }
+}
+
+// ---------- Telemetry: the same three tabs as the PC's (what matters while driving, the standings, the tyres) ----------
+
+/** the delta of the top card and the delta bar: iRacing's to your best lap; in DRINKS mode the driver's own (LiveLaps) */
+private fun liveDelta(s: LiveState): Double? =
+    if (s.drinks?.on == true) s.ownDelta else if (s.num("LapDeltaToBestLap_OK") == 0.0) null else s.num("LapDeltaToBestLap")
+
+private fun liveBestLap(s: LiveState): Double? = if (s.drinks?.on == true) s.ownBest else s.num("LapBestLapTime")?.takeIf { it > 0 }
+
+private fun signedS(v: Double, d: Int = 1) = (if (v >= 0) "+" else "−") + "%.${d}f".format(kotlin.math.abs(v))
+
+/** the laps a car is up (+) or down (−) on you: a red "+1L" or a blue "−1L", like the relative of the PC */
+@Composable
+private fun LapPill(lapDiff: Double) {
+    val n = kotlin.math.round(lapDiff).toInt()
+    if (kotlin.math.abs(lapDiff) < 0.5 || n == 0) return
+    val col = if (n > 0) Bad else Blue
+    Text((if (n > 0) "+$n" else "−${-n}") + "L", color = col, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace,
+        modifier = Modifier.padding(start = 4.dp).border(1.dp, col.copy(alpha = .6f), RoundedCornerShape(50)).padding(horizontal = 4.dp, vertical = 1.dp))
+}
+
+/** the top of the Telemetry screen: where you are, the delta and your best, the last lap, the fuel; beside it the
+ *  gaps to the cars just ahead and behind, your incidents and what is left of the session */
+@Composable
+private fun LiveTop(s: LiveState) {
+    val ses = s.session
+    val sn = s.num("SessionNum")?.toInt()
+    val kind = sn?.let { ses?.kinds?.get(it) }.orEmpty()
+    val drk = s.drinks?.on == true
+    val dlt = liveDelta(s)
+    val best = liveBestLap(s)
+    val last = s.num("LapLastLapTime")?.takeIf { it > 0 }
+    val field = ses?.drivers?.values?.count { !it.pace && !it.spectator } ?: 0
+    val pos = s.num("PlayerCarPosition")?.toInt()?.takeIf { it > 0 }
+    val total = sn?.let { ses?.laps?.get(it) }?.takeIf { it in 1..31999 }
+    val lap = s.num("Lap")?.toInt()
+    val fuel = s.num("FuelLevel")
+    val perLap = s.num("FuelUsePerLap")?.takeIf { it > 0.01 }
+    val (ahead, behind) = s.aheadBehind()
+    val inc = s.num("PlayerCarMyIncidentCount")?.toInt()
+    val lapsLeft = s.num("SessionLapsRemainEx")?.toInt()?.takeIf { it in 0..31999 }
+    val timeLeft = s.num("SessionTimeRemain")?.takeIf { it > 0 && it < 604800 }
+    Panel {
+        Text(ses?.track?.takeIf { it.isNotBlank() } ?: t("tab_telemetry"), fontWeight = FontWeight.Black, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (kind.isNotBlank()) Text(kind, color = Muted, fontSize = 12.sp)
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Metric(t("lt_position"), pos?.let { "P$it" + if (field > 1) "/$field" else "" } ?: "—", Modifier.weight(1f).fillMaxHeight(),
+                sub = lap?.let { t("lt_lap_of", "$it" + (total?.let { tt -> "/$tt" } ?: "")) })
+            Metric("Delta", dlt?.let { signedS(it, 2) } ?: "—", Modifier.weight(1f).fillMaxHeight(), color = if (dlt == null) Fg else if (dlt <= 0) Good else Bad,
+                sub = best?.let { t("lt_best_t", lapTime(it)) + (s.drinks?.driver?.takeIf { drk && it.isNotBlank() }?.let { " · $it" } ?: "") })
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Metric(t("lt_last"), lapTime(last), Modifier.weight(1f).fillMaxHeight(), color = if (last != null && best != null && last <= best + 0.001) Purple else Fg,
+                sub = if (last != null && best != null) (if (last <= best + 0.001) t("lt_your_best") else t("lt_off_best", "%.2f".format(last - best))) else null)
+            Metric(t("lt_fuel"), fuel?.let { "%.1f L".format(it) } ?: "—", Modifier.weight(1f).fillMaxHeight(),
+                sub = if (fuel != null && perLap != null) t("lt_laps", "%.1f".format(fuel / perLap)) else null)
+        }
+    }
+    Panel {
+        Section((if (kind.contains("race", true)) t("lt_race") else t("lt_session")).uppercase())
+        InfoRow(t("lt_ahead"), ahead?.let { "−%.1f s".format(it) } ?: "—")
+        InfoRow(t("lt_behind"), behind?.let { "+%.1f s".format(it) } ?: "—")
+        InfoRow(t("lt_incidents"), inc?.let { "${it}x" } ?: "—", if ((inc ?: 0) >= 8) Bad else Fg)
+        InfoRow(t("lt_left"), lapsLeft?.let { t("lt_laps", it) } ?: timeLeft?.let { "%d:%02d".format((it / 60).toInt(), (it % 60).toInt()) } ?: "—")
+    }
+}
+
+/** the delta bar: a track with the delta from its centre (one second to each side) and the value in a pill */
+@Composable
+private fun LiveDeltaBar(s: LiveState) {
+    val d = liveDelta(s)
+    Panel {
+        Section(t("lt_deltabar").uppercase())
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Canvas(Modifier.weight(1f).height(14.dp)) {
+                val r = size.height / 2
+                drawRoundRect(Surface2, cornerRadius = androidx.compose.ui.geometry.CornerRadius(r, r))
+                if (d != null) {
+                    val f = (d.coerceIn(-1.0, 1.0) / 1.0).toFloat()
+                    val cx = size.width / 2; val w = kotlin.math.abs(f) * size.width / 2
+                    drawRect(if (d <= 0) Good else Bad, topLeft = Offset(if (f < 0) cx - w else cx, 0f), size = androidx.compose.ui.geometry.Size(w, size.height))
+                }
+                drawLine(Fg, Offset(size.width / 2, 0f), Offset(size.width / 2, size.height), strokeWidth = 2f)
+            }
+            Text(d?.let { signedS(it, 2) } ?: "—", color = if (d == null) Fg else if (d <= 0) Good else Bad, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Black,
+                modifier = Modifier.padding(start = 10.dp).widthIn(min = 64.dp))
+        }
+    }
+}
+
+/** a driver's name in the relative and the standings: your note's icon first, then the name, its laps up or down */
+@Composable
+private fun RowScope.LiveName(r: LiveRow, notes: Map<String, DriverNote>) {
+    val d = r.d
+    val note = if (r.me || d == null) null else noteFor(notes, d.key, d.name)
+    if (note != null && note.tag.isNotEmpty()) { TagIcon(note.tag, 12.dp); Spacer(Modifier.width(4.dp)) }
+    Text(d?.name ?: "#${r.idx}", fontSize = 12.sp, fontWeight = if (r.me) FontWeight.Black else FontWeight.Normal, color = if (r.me) Accent else Fg,
+        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+    if (d?.ai == true) Text(" " + t("ai_driver"), color = Blue, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+    if (!r.me) LapPill(r.lapDiff)
+    if (r.pit) Text(" " + t("lt_pit"), color = Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+}
+
+/** the relative: the cars just ahead and behind you on track, with the time to them */
+@Composable
+private fun LiveRelative(s: LiveState, notes: Map<String, DriverNote>) {
+    val rows = s.relative(3)
+    Panel {
+        Section(t("lt_relative").uppercase())
+        if (rows.isEmpty()) { Text(t("lt_no_cars"), color = Muted, fontSize = 12.sp); return@Panel }
+        rows.forEach { r ->
+            Row(Modifier.fillMaxWidth().background(if (r.me) Accent.copy(alpha = .12f) else Color.Transparent, RoundedCornerShape(4.dp)).padding(vertical = 4.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (r.pos > 0) "P${r.pos}" else "", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(34.dp))
+                Text(r.d?.number?.let { "#$it" } ?: "", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(36.dp))
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) { LiveName(r, notes) }
+                val lic = r.d?.lic.orEmpty()
+                if (lic.isNotBlank()) Text(lic.split(" ").first(), color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = 4.dp))
+                Text(if (r.me) "—" else r.gap?.let { signedS(it) } ?: "—", fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, modifier = Modifier.widthIn(min = 48.dp))
+            }
+        }
+    }
+}
+
+/** the standings: every car in order, its last and best lap and its gap to the leader */
+@Composable
+private fun LiveStandings(s: LiveState, notes: Map<String, DriverNote>) {
+    val rows = s.standings()
+    val bestAll = rows.mapNotNull { it.best }.minOrNull()
+    Panel {
+        Section(t("tab_standings").uppercase() + if (rows.isNotEmpty()) " · " + t("lt_drivers_n", rows.size) else "")
+        if (rows.isEmpty()) { Text(t("lt_no_cars"), color = Muted, fontSize = 12.sp); return@Panel }
+        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+            listOf("P" to 30, "#" to 34).forEach { (h, w) -> Text(h, color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(w.dp)) }
+            Text(t("lt_driver"), color = Muted, fontSize = 10.sp, modifier = Modifier.weight(1f))
+            Text(t("last"), color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(62.dp))
+            Text(t("best"), color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(62.dp))
+            Text(t("lt_gap"), color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
+        }
+        rows.forEach { r ->
+            Row(Modifier.fillMaxWidth().background(if (r.me) Accent.copy(alpha = .12f) else Color.Transparent, RoundedCornerShape(4.dp)).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("${r.pos}", color = if (r.me) Accent else Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(30.dp))
+                Text(r.d?.number ?: "", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(34.dp))
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) { LiveName(r, notes) }
+                Text(r.last?.let { lapTime(it) } ?: "—", fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(62.dp))
+                Text(r.best?.let { lapTime(it) } ?: "—", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = if (r.best != null && r.best == bestAll) Purple else Fg, modifier = Modifier.width(62.dp))
+                Text(if (r.pos == 1) "—" else r.gap?.let { "+%.1f".format(it) } ?: "—", fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
+            }
+        }
+    }
+}
+
+/** the fuel: what is in the tank, how many laps it lasts and the use per lap */
+@Composable
+private fun LiveFuel(s: LiveState) {
+    val fuel = s.num("FuelLevel"); val per = s.num("FuelUsePerLap")?.takeIf { it > 0.01 }
+    Panel {
+        Section(t("lt_fuel").uppercase())
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Metric(t("lt_in_tank"), fuel?.let { "%.1f L".format(it) } ?: "—", Modifier.weight(1f).fillMaxHeight())
+            Metric(t("lt_laps_fuel"), if (fuel != null && per != null) "%.1f".format(fuel / per) else "—", Modifier.weight(1f).fillMaxHeight())
+            Metric(t("lt_per_lap"), per?.let { "%.2f L".format(it) } ?: "—", Modifier.weight(1f).fillMaxHeight())
+        }
+    }
+}
+
+/** your incidents in this session */
+@Composable
+private fun LiveIncidents(s: LiveState) {
+    val inc = s.num("PlayerCarMyIncidentCount")?.toInt()
+    Panel {
+        Section(t("lt_incident_log").uppercase())
+        Text(inc?.let { "${it}x" } ?: "—", fontSize = 30.sp, fontWeight = FontWeight.Black, color = if ((inc ?: 0) >= 8) Bad else Fg)
+        if (inc == 0) Text(t("lt_clean"), color = Good, fontSize = 12.sp)
+    }
+}
+
+/** the live map: the track's layout drawn by the community, as a road with depth, the start/finish line with the
+ *  direction, the official turns, and every car where its lap distance puts it (you in amber) */
+@Composable
+private fun LiveMap(vm: PitlaneViewModel, s: LiveState) {
+    val tid = s.session?.trackId ?: 0L
+    LaunchedEffect(tid) { if (tid > 0) vm.loadLiveTrack(tid) }
+    val lt by vm.liveTrack.collectAsState()
+    val lay = lt?.takeIf { it.first == tid }?.second
+    val turns = lt?.takeIf { it.first == tid }?.third ?: emptyList()
+    val dpx = with(LocalDensity.current) { 1.dp.toPx() }
+    val labelPx = with(LocalDensity.current) { 9.sp.toPx() }
+    val turnPaint = remember(labelPx) { android.graphics.Paint().apply { color = android.graphics.Color.rgb(0x8A, 0x97, 0xA9); textSize = labelPx; isFakeBoldText = true; isAntiAlias = true; textAlign = android.graphics.Paint.Align.CENTER } }
+    Panel {
+        Section(t("lt_map").uppercase())
+        if (lay == null) { Text(if (tid > 0) t("lt_map_none") else t("lt_no_cars"), color = Muted, fontSize = 12.sp); return@Panel }
+        val xs = lay.first; val ys = lay.second; val n = xs.size
+        val minX = xs.min(); val maxX = xs.max(); val minY = ys.min(); val maxY = ys.max()
+        Canvas(Modifier.fillMaxWidth().height(240.dp)) {
+            val pad = 22f * dpx
+            val k = minOf((size.width - 2 * pad) / maxOf(1e-6, maxX - minX).toFloat(), (size.height - 2 * pad) / maxOf(1e-6, maxY - minY).toFloat())
+            val ox = (size.width - 2 * pad - (maxX - minX).toFloat() * k) / 2; val oy = (size.height - 2 * pad - (maxY - minY).toFloat() * k) / 2
+            fun pt(i: Int) = Offset(pad + (xs[i] - minX).toFloat() * k + ox, size.height - pad - (ys[i] - minY).toFloat() * k - oy)
+            fun at(f: Double): Offset { val q = (((f % 1) + 1) % 1) * n; val i = q.toInt() % n; val j = (i + 1) % n; val r = (q - q.toInt()).toFloat(); val a = pt(i); val b = pt(j); return Offset(a.x + (b.x - a.x) * r, a.y + (b.y - a.y) * r) }
+            val track = Path()
+            for (i in 0 until n) { val q = pt(i); if (i == 0) track.moveTo(q.x, q.y) else track.lineTo(q.x, q.y) }
+            track.close()
+            val w = 11f * dpx
+            drawContext.canvas.save(); drawContext.canvas.translate(1.5f * dpx, 2.5f * dpx)
+            drawPath(track, Color.Black.copy(alpha = .38f), style = Stroke(width = w + 2 * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            drawContext.canvas.restore()
+            drawPath(track, Line.copy(red = minOf(1f, Line.red + .12f), green = minOf(1f, Line.green + .12f), blue = minOf(1f, Line.blue + .12f)), style = Stroke(width = w, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            drawPath(track, Color(0xFF151A21), style = Stroke(width = w - 3.5f * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            // the start/finish line across the road and the way the cars go beside it
+            val p0 = pt(0); val p1 = pt(maxOf(2, n / 60))
+            val dx = p1.x - p0.x; val dy = p1.y - p0.y; val m = maxOf(1e-6f, kotlin.math.hypot(dx, dy)); val ux = dx / m; val uy = dy / m
+            var nx = -uy; var ny = ux
+            if ((p0.x - size.width / 2f) * nx + (p0.y - size.height / 2f) * ny < 0) { nx = -nx; ny = -ny }
+            drawLine(Color.White, Offset(p0.x - nx * w / 2, p0.y - ny * w / 2), Offset(p0.x + nx * w / 2, p0.y + ny * w / 2), strokeWidth = 3.5f * dpx)
+            val bx = p0.x + nx * (w / 2 + 8 * dpx); val by = p0.y + ny * (w / 2 + 8 * dpx); val tx = bx + ux * 18f * dpx; val ty = by + uy * 18f * dpx; val h = 6f * dpx
+            drawLine(Fg, Offset(bx, by), Offset(tx - ux * h, ty - uy * h), strokeWidth = 2f * dpx, cap = StrokeCap.Round)
+            val head = Path(); head.moveTo(tx, ty); head.lineTo(tx - ux * h + nx * h * .6f, ty - uy * h + ny * h * .6f); head.lineTo(tx - ux * h - nx * h * .6f, ty - uy * h - ny * h * .6f); head.close()
+            drawPath(head, Fg)
+            // the official turns, beside the road
+            turns.forEachIndexed { ti, f ->
+                val i = (f * n).toInt().coerceIn(0, n - 1); val q = pt(i); val q1 = pt((i + 2) % n); val q0 = pt((i - 2 + n) % n)
+                val tmx = q1.x - q0.x; val tmy = q1.y - q0.y; val tm = maxOf(1e-3f, kotlin.math.hypot(tmx, tmy))
+                var qx = -tmy / tm; var qy = tmx / tm
+                if ((q.x - size.width / 2) * qx + (q.y - size.height / 2) * qy < 0) { qx = -qx; qy = -qy }
+                drawContext.canvas.nativeCanvas.drawText("${ti + 1}", q.x + qx * (w / 2 + 9 * dpx), q.y + qy * (w / 2 + 9 * dpx) + labelPx * .35f, turnPaint)
+            }
+            // the cars: you on top, the others dimmed in the pits, laps up red and down blue
+            val pct = s.arrays["CarIdxLapDistPct"] ?: emptyList()
+            val me = s.meIdx()
+            val lapsArr = s.arrays["CarIdxLap"] ?: emptyList()
+            val pitArr = s.arrays["CarIdxOnPitRoad"] ?: emptyList()
+            val order = pct.indices.filter { pct[it] >= 0 && s.session?.drivers?.get(it)?.let { d -> !d.pace && !d.spectator } != false }.sortedBy { if (it == me) 1 else 0 }
+            order.forEach { i ->
+                val p = at(pct[i])
+                val diff = (lapsArr.getOrElse(i) { 0.0 } + pct[i]) - (lapsArr.getOrElse(me) { 0.0 } + pct.getOrElse(me) { 0.0 })
+                val col = if (i == me) Accent else if (diff > .5) Bad else if (diff < -.5) Blue else Fg
+                val a = if (pitArr.getOrElse(i) { 0.0 } != 0.0) .45f else 1f
+                drawCircle(Ink, radius = (if (i == me) 7f else 5f) * dpx + 1.5f * dpx, center = p, alpha = a)
+                drawCircle(col, radius = (if (i == me) 7f else 5f) * dpx, center = p, alpha = a)
+            }
+        }
+    }
+}
+
+/** the tyres: each one's three zones (outer, middle, inner) by temperature, the wear and the cold pressure, from the
+ *  last stop in the pit box (iRacing sends them only then) */
+@Composable
+private fun LiveTyres(s: LiveState) {
+    val any = listOf("LF", "RF", "LR", "RR").any { s.num(it + "tempCM") != null }
+    Panel {
+        Section(t("tab_tyres").uppercase())
+        Text(t("lt_tyres_note"), color = Muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp))
+        if (!any) { Text(t("lt_tyres_none"), color = Muted, fontSize = 12.sp); return@Panel }
+        listOf(listOf("LF" to t("lt_fl"), "RF" to t("lt_fr")), listOf("LR" to t("lt_rl"), "RR" to t("lt_rr"))).forEach { pair ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                pair.forEach { (c, nm) -> TyreCard(s, c, nm, Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+private fun heatColor(t: Double?): Color {
+    if (t == null) return Surface2
+    val f = ((t - 60) / 50).coerceIn(0.0, 1.0).toFloat() // blue cold, green in the window, red hot
+    return if (f < .5f) lerpColor(Blue, Good, f * 2) else lerpColor(Good, Bad, (f - .5f) * 2)
+}
+
+private fun lerpColor(a: Color, b: Color, f: Float) = Color(a.red + (b.red - a.red) * f, a.green + (b.green - a.green) * f, a.blue + (b.blue - a.blue) * f, 1f)
+
+@Composable
+private fun TyreCard(s: LiveState, c: String, name: String, m: Modifier) {
+    val left = c[0] == 'L'
+    val zones = if (left) listOf("tempCL" to "O", "tempCM" to "M", "tempCR" to "I") else listOf("tempCL" to "I", "tempCM" to "M", "tempCR" to "O")
+    val wear = listOf("wearL", "wearM", "wearR").map { s.num(c + it) }
+    val temps = zones.map { s.num(c + it.first) }
+    val avg = if (temps.all { it != null }) temps.sumOf { it!! } / 3 else null
+    Column(m.background(Surface2, RoundedCornerShape(8.dp)).padding(8.dp)) {
+        Row { Text("$c · $name", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis); Text(avg?.let { "%.0f°".format(it) } ?: "—", fontSize = 12.sp, fontFamily = FontFamily.Monospace) }
+        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            zones.forEachIndexed { k, (_, lab) ->
+                Column(Modifier.weight(1f).background(heatColor(temps[k]), RoundedCornerShape(4.dp)).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(temps[k]?.let { "%.0f".format(it) } ?: "–", color = Ink, fontSize = 12.sp, fontWeight = FontWeight.Black)
+                    Text(lab, color = Ink, fontSize = 9.sp)
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { wear.forEach { w -> Text(w?.let { "${(it * 100).roundToInt()}%" } ?: "–", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = Muted) } }
+        s.num(c + "coldPressure")?.let { Text(t("lt_cold", "%.0f kPa".format(it)), fontSize = 10.sp, color = Muted, modifier = Modifier.padding(top = 4.dp)) }
     }
 }

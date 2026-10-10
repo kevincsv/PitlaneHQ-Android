@@ -14,9 +14,13 @@ data class LiveState(
     // Connect asks your PC first: "" (not asked), "wait" (your PC shows Accept / Decline) or "ok"
     val ask: String = "",
     val askAt: Long = 0L,
-    val declinedAt: Long = 0L             // when your PC declined this phone
+    val declinedAt: Long = 0L,            // when your PC declined this phone
+    val arrays: Map<String, List<Double>> = emptyMap(), // the per-car values (CarIdx…)
+    val session: LiveSession? = null,     // the session YAML the PC sends: drivers, track
+    val ownDelta: Double? = null,         // DRINKS mode: the current lap against this driver's own best (LiveLaps)
+    val ownBest: Double? = null
 ) {
-    fun num(name: String): Double? = (values[name] as? Number)?.toDouble()
+    fun num(name: String): Double? = when (val v = values[name]) { is Number -> v.toDouble(); is Boolean -> if (v) 1.0 else 0.0; else -> null }
 }
 
 /** IDLE: only whether your PC is online (it sends nothing); OWN: you watch your PC; CODE: you watch someone's share code. */
@@ -30,8 +34,13 @@ enum class LinkState { OFF, CONNECTING, OPEN }
 /** The variables the phone asks the PC for. */
 val LIVE_VARS = listOf(
     "Speed", "RPM", "Gear", "FuelLevel", "Lap", "LapCurrentLapTime", "LapLastLapTime", "LapBestLapTime",
-    "LapDeltaToBestLap", "Throttle", "Brake", "PlayerCarPosition"
-)
+    "LapDeltaToBestLap", "LapDeltaToBestLap_OK", "Throttle", "Brake", "PlayerCarPosition", "PlayerCarClassPosition", "PlayerCarIdx",
+    "LapCompleted", "LapDist", "LapDistPct", "OnPitRoad", "IsOnTrack", "SessionNum", "SessionLapsRemainEx", "SessionTimeRemain",
+    "PlayerCarMyIncidentCount", "FuelUsePerLap",
+    // the other cars: the standings, the relative and the map
+    "CarIdxLapDistPct", "CarIdxPosition", "CarIdxClassPosition", "CarIdxLap", "CarIdxF2Time", "CarIdxEstTime",
+    "CarIdxLastLapTime", "CarIdxBestLapTime", "CarIdxOnPitRoad"
+) + listOf("LF", "RF", "LR", "RR").flatMap { c -> listOf("tempCL", "tempCM", "tempCR", "wearL", "wearM", "wearR", "coldPressure").map { c + it } }
 
 /** One of your own sessions uploaded by the PC (GET /api/sessions). */
 data class CloudSession(

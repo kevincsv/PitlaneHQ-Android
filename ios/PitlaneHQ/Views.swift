@@ -2805,8 +2805,6 @@ struct LiveView: View {
     private func start() { live.start(token: account.token, key: account.dataKey, demo: account.demo) }
 
     var body: some View {
-        let gear = live.num("Gear").map { Int($0) }
-        let delta = live.num("LapDeltaToBestLap")
         Screen(title: t("live_title"), sub: t("live_sub")) {
             // your PC, from anywhere: Connect when it is online, Disconnect to stop the live data on this phone
             Panel {
@@ -2873,30 +2871,8 @@ struct LiveView: View {
             if live.mode == .code || (live.mode == .own && live.ask == "ok") {
             StatusPill(text: status.0, color: status.1)
             if let m = live.message { Text(t(m)).font(.caption).foregroundColor(Theme.bad) }
-            HStack(spacing: 8) {
-                Metric(label: t("speed"), value: live.num("Speed").map { String(format: "%.0f", $0 * 3.6) } ?? "—")
-                Metric(label: t("gear"), value: gear.map { $0 < 0 ? "R" : $0 == 0 ? "N" : "\($0)" } ?? "—")
-                Metric(label: "RPM", value: live.num("RPM").map { String(format: "%.0f", $0) } ?? "—")
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
-                Metric(label: t("lap"), value: live.num("Lap").map { "\(Int($0))" } ?? "—")
-                Metric(label: t("pos"), value: live.num("PlayerCarPosition").flatMap { $0 > 0 ? "P\(Int($0))" : nil } ?? "—")
-                Metric(label: t("fuel"), value: live.num("FuelLevel").map { String(format: "%.1f L", $0) } ?? "—")
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
-                Metric(label: t("current"), value: lapTime(live.num("LapCurrentLapTime")))
-                Metric(label: t("last"), value: lapTime(live.num("LapLastLapTime")))
-                Metric(label: t("best"), value: lapTime(live.num("LapBestLapTime")), color: Theme.purple)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            Metric(label: t("delta_best"), value: delta.map { String(format: "%+.3f", $0) } ?? "—", color: delta == nil ? Theme.fg : delta! <= 0 ? Theme.good : Theme.bad)
-            Panel {
-                SectionLabel(text: t("inputs").uppercased())
-                bar(t("throttle"), live.num("Throttle"), Theme.good)
-                bar(t("brake"), live.num("Brake"), Theme.bad)
-            }
+            // the same three tabs as the PC's Telemetry: what matters while driving, the standings, the tyres
+            LiveTabsView(live: live)
             }
         }
         .onAppear { start() }
