@@ -408,7 +408,8 @@ class AccountRepository(context: Context) {
                 id = s.getString("id"), started = s.optLong("started"), track = s.optString("track"),
                 trackConfig = s.optString("track_config").takeUnless { it == "null" } ?: "", car = s.optString("car"),
                 kind = s.optString("kind").takeUnless { it == "null" } ?: "", laps = s.optInt("laps"), best = s.optDouble("best").pos(),
-                cat = s.optStr("cat"), lic = s.optStr("lic")
+                cat = s.optStr("cat"), lic = s.optStr("lic"),
+                drvs = s.optStr("drvs")?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList(), ai = s.optInt("ai", 0) == 1
             )
         }, g.stale)
     }
@@ -422,7 +423,7 @@ class AccountRepository(context: Context) {
         val a = JSONObject(g.data).optJSONArray("laps") ?: JSONArray()
         return Got((0 until a.length()).map { i ->
             val l = a.getJSONObject(i)
-            CloudLap(l.optString("id"), l.optInt("n"), l.optDouble("time"), l.optInt("valid", 1) == 1, doubles(l.optJSONArray("sectors")), l.optInt("inc", 0))
+            CloudLap(l.optString("id"), l.optInt("n"), l.optDouble("time"), l.optInt("valid", 1) == 1, doubles(l.optJSONArray("sectors")), l.optInt("inc", 0), l.optStr("drv") ?: "")
         }, g.stale)
     }
 
@@ -436,6 +437,62 @@ class AccountRepository(context: Context) {
         val xy = x != null && y != null && x.size == d.length() && y.size == d.length()
         return Trace(j.optDouble("bin", 10.0), (0 until d.length()).map { i -> d.getJSONArray(i).let { r -> DoubleArray(6) { k -> r.optDouble(k, 0.0) } } }, if (xy) x else null, if (xy) y else null, j.optJSONArray("inc")?.let { doubles(it) } ?: emptyList(),
             j.optJSONArray("incK")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList())
+    }
+
+    /**
+     * The model's references for a lap time, as the PC and the web take them: the record (the fastest lap really
+     * driven) and the next level (the real lap of the driver just ahead, 0.3–3 % faster). Their points come every 5 m
+     * (the record) or every 10 m (the next level, put back to 5 m like the web's up()); null when there is none.
+     */
+    fun modelRefs(trackId: Long, carId: Long, lapTime: Double): Pair<Pair<Trace, Double>?, Pair<Trace, Double>?> {
+        if (demo || trackId <= 0 || carId <= 0) return null to null
+        val m = runCatching { JSONObject(cachedGet("/community/model?game=iracing&trackId=$trackId&carId=$carId").data) }.getOrNull() ?: return null to null
+        fun row(b: JSONArray) = doubleArrayOf(b.optDouble(0, 0.0), b.optDouble(2, 0.0), b.optDouble(3, 0.0), b.optDouble(4, 0.0), 0.0, b.optDouble(1, 0.0))
+        fun xy(o: JSONObject?, n: Int): Pair<List<Double>, List<Double>>? {
+            if (o == null) return null
+            val x = o.optJSONArray("x")?.let { doubles(it) } ?: return null; val y = o.optJSONArray("y")?.let { doubles(it) } ?: return null
+            return if (x.size == n && y.size == n) x to y else null
+        }
+        var rec: Pair<Trace, Double>? = null
+        val ideal = m.optJSONArray("ideal")
+        val idealTime = m.optDouble("idealTime", 0.0)
+        if (ideal != null && ideal.length() > 40 && idealTime > 0) {
+            val rows = (0 until ideal.length()).mapNotNull { ideal.optJSONArray(it)?.let { b -> row(b) } }
+            val p = xy(m.optJSONObject("idealXY"), rows.size) ?: xy(m.optJSONObject("lineXY"), rows.size)
+            rec = Trace(5.0, rows, p?.first, p?.second) to idealTime
+        }
+        var lvl: Pair<Trace, Double>? = null
+        val lad = m.optJSONArray("ladder")
+        val nb = m.optInt("nb", 0)
+        if (lad != null && lad.length() > 0 && lapTime > 0) {
+            val l = (0 until lad.length()).mapNotNull { lad.optJSONObject(it) }
+            var i = l.indexOfFirst { lapTime <= it.optDouble("upTo", 0.0) }
+            if (i < 0) i = l.size - 1
+            while (i > 0 && !(l[i].optDouble("time", 0.0) < lapTime * 0.997)) i--
+            val x = l[i]
+            val raw = x.optJSONArray("bins")
+            val t = x.optDouble("time", 0.0)
+            if (raw != null && raw.length() > 20 && t > 0 && t < lapTime - 0.001) {
+                val bins = (0 until raw.length()).mapNotNull { raw.optJSONArray(it) }
+                val rows = ArrayList<DoubleArray>()
+                bins.forEachIndexed { k, b ->
+                    val a = row(b); rows.add(a)
+                    val nx = bins.getOrNull(k + 1)?.let { row(it) }
+                    rows.add(if (nx != null) doubleArrayOf((a[0] + nx[0]) / 2, a[1], a[2], a[3], 0.0, (a[5] + nx[5]) / 2) else a.copyOf())
+                }
+                val cut = if (nb > 0) rows.take(nb) else rows
+                val rx = x.optJSONArray("x")?.let { doubles(it) }; val ry = x.optJSONArray("y")?.let { doubles(it) }
+                var px: List<Double>? = null; var py: List<Double>? = null
+                if (rx != null && ry != null && rx.size >= 6 && rx.size == ry.size) {
+                    val ox = ArrayList<Double>(); val oy = ArrayList<Double>()
+                    rx.forEachIndexed { k, v -> val n = if (k + 1 < rx.size) k + 1 else k; ox.add(v); ox.add((v + rx[n]) / 2); oy.add(ry[k]); oy.add((ry[k] + ry[n]) / 2) }
+                    if (ox.size >= cut.size) { px = ox.take(cut.size); py = oy.take(cut.size) }
+                }
+                if (px == null) xy(m.optJSONObject("lineXY"), cut.size)?.let { px = it.first; py = it.second }
+                lvl = Trace(5.0, cut, px, py) to t
+            }
+        }
+        return rec to lvl
     }
 
     fun lapTrace(lapId: String): Trace? {

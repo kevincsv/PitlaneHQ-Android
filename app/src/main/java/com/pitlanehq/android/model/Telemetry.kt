@@ -53,10 +53,12 @@ data class CloudSession(
     val laps: Int,
     val best: Double?,
     val cat: String? = null,   // the discipline: oval, sports_car, formula_car, dirt_oval, dirt_road
-    val lic: String? = null    // your license class in it: R, D, C, B, A, P
+    val lic: String? = null,   // your license class in it: R, D, C, B, A, P
+    val drvs: List<String> = emptyList(),  // the friends who drove laps of it in DRINKS mode
+    val ai: Boolean = false    // a session against iRacing's AI
 )
 
-data class CloudLap(val id: String, val n: Int, val time: Double, val valid: Boolean, val sectors: List<Double>, val inc: Int = 0)
+data class CloudLap(val id: String, val n: Int, val time: Double, val valid: Boolean, val sectors: List<Double>, val inc: Int = 0, val drv: String = "")  // drv: a friend's lap (DRINKS mode)
 
 /** A lap trace: one row every [bin] metres: speed m/s, throttle 0-1, brake 0-1, gear, steering rad, lap time s. */
 /** One incident of a lap: where (m), its points and what it was ("off", "loss", "light" contact or "contact"). */

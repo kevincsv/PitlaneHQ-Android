@@ -6,6 +6,9 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.pitlanehq.android.data.*
@@ -19,12 +22,13 @@ import kotlinx.coroutines.withContext
 
 /** A lap next to the lap it is compared with. */
 data class LapAnalysis(val lap: CloudLap, val trace: Trace?, val ref: Trace?, val refLabel: String, val refTime: Double?, val refSectors: List<Double>, val car: JSONObject? = null,
-    val turns: List<Double> = emptyList(), val pit: PitLane? = null)
+    val turns: List<Double> = emptyList(), val pit: PitLane? = null, val fastest: Boolean = false)
 
 /** The pit lane of a track (from laps through the pits): [5 m point of a lap of n points, metres to the left of the track]. */
 data class PitLane(val n: Int, val pts: List<Pair<Int, Double>>)
 
-enum class RefKind { MY_BEST, COMMUNITY }
+/** lap B: your best lap of the session, or the model's next level (the driver just ahead) or record */
+enum class RefKind { MY_BEST, LEVEL, RECORD }
 
 class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = AccountRepository(app)
@@ -45,6 +49,8 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     val bests = MutableStateFlow(Loadable<List<PersonalBest>>())
     val laps = MutableStateFlow(Loadable<List<CloudLap>>())
     val analysis = MutableStateFlow(Loadable<LapAnalysis>())
+    val coach = MutableStateFlow(Loadable<LapAnalysis>()) // Analysis → Coach: the best lap of the chosen session
+    var coachKey = ""
     val combos = MutableStateFlow(Loadable<List<Combo>>())
     val board = MutableStateFlow(Loadable<List<CommunityLap>>())
     val reports = MutableStateFlow(Loadable<List<SharedReport>>())
@@ -54,7 +60,10 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     private var profileLap: String? = null
 
     // what the detail screens show
-    var session: CloudSession? = null
+    // the session Analysis → Laps and Coach show (and the one a session screen opens)
+    var session by mutableStateOf<CloudSession?>(null)
+    // the Analysis tab to open next (Home's "See all" opens My races)
+    var analysisTab: Int? = null
     var combo: Combo? = null
     var race: Race? = null
 
@@ -282,10 +291,20 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Opens a lap and the lap it is compared with: your best lap of the session, or the community's fastest. */
-    fun analyse(s: CloudSession, lap: CloudLap, all: List<CloudLap>, kind: RefKind) {
-        analysis.value = Loadable(loading = true)
-        load(analysis) {
+    /** Analysis → Coach: the best valid lap of a session against the model's next level (else the record), once per session */
+    fun coachFor(s: CloudSession, all: List<CloudLap>) {
+        // your best lap (a friend's lap in DRINKS mode is never the account's), else the fastest lap of the session
+        val best = all.filter { it.valid && it.time > 0 && it.drv.isEmpty() }.minByOrNull { it.time } ?: all.filter { it.valid && it.time > 0 }.minByOrNull { it.time }
+        if (best == null) { coach.value = Loadable(); coachKey = ""; return }
+        if (coachKey == s.id + "|" + best.id && (coach.value.data != null || coach.value.loading)) return
+        coachKey = s.id + "|" + best.id
+        analyse(s, best, all, RefKind.LEVEL, coach)
+    }
+
+    /** Opens a lap and the lap it is compared with: the driver's own best lap of the session, or the model's next level or record. */
+    fun analyse(s: CloudSession, lap: CloudLap, all: List<CloudLap>, kind: RefKind, into: MutableStateFlow<Loadable<LapAnalysis>> = analysis) {
+        into.value = Loadable(loading = true)
+        load(into) {
             val tr = repo.lapTrace(lap.id)
             var ref: Trace? = null
             var label = ""
@@ -297,29 +316,38 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
                 ?: combos.firstOrNull { s.track.startsWith(it.track, true) && it.car.equals(s.car, true) }
             // the car card needs the car alone: what it does on other tracks, for when nobody known drove it here yet
             val card = (c ?: combos.firstOrNull { it.car.equals(s.car, true) })?.let { runCatching { repo.carCard(it.carId) }.getOrNull() }
-            if (kind == RefKind.MY_BEST) {
-                val best = all.filter { it.valid && it.time > 0 && it.id != lap.id }.minByOrNull { it.time }
+            var fastest = false
+            // each driver against their own laps (DRINKS mode: a friend's lap against that friend's best)
+            val ownBest = {
+                val best = all.filter { it.valid && it.time > 0 && it.id != lap.id && it.drv == lap.drv }.minByOrNull { it.time }
                 if (best != null) {
                     ref = runCatching { repo.lapTrace(best.id) }.getOrNull()
                     label = "L${best.n}"
                     refTime = best.time
                     refSec = best.sectors
                 }
-            } else {
-                // the community leaderboard of this track and car
-                val top = c?.let { runCatching { repo.leaderboard(it.trackId, it.carId).data }.getOrNull() }?.firstOrNull { it.hasTrace }
-                if (top != null) {
-                    ref = runCatching { repo.communityTrace(top.id) }.getOrNull()
-                    label = top.alias
-                    refTime = top.time
-                    refSec = top.sectors
+            }
+            if (kind == RefKind.MY_BEST) ownBest()
+            else {
+                // the model's references, like the PC and the web: the next level, else the record
+                val (rec, lvl) = c?.let { runCatching { repo.modelRefs(it.trackId, it.carId, lap.time) }.getOrNull() } ?: (null to null)
+                val pick = if (kind == RefKind.LEVEL) lvl ?: rec else rec
+                if (pick != null && pick.second < lap.time - 0.001) {
+                    ref = pick.first
+                    refTime = pick.second
+                    label = if (pick === lvl) "▲ " + com.pitlanehq.android.ui.t("next_level") else "★ " + com.pitlanehq.android.ui.t("record")
+                } else {
+                    // nobody known is faster here (this lap is the record) or nobody known at all: like the web's coach,
+                    // your own best lap of the session is lap B
+                    fastest = pick != null
+                    ownBest()
                 }
             }
             // a rival's lap has no path (it comes from its place on track): the line is then measured against your
             // own best lap of the session, the fastest line known here
             val r0 = ref
             if (r0 != null && (r0.x == null || r0.y == null)) {
-                val best = all.filter { it.valid && it.time > 0 && it.id != lap.id }.minByOrNull { it.time }
+                val best = all.filter { it.valid && it.time > 0 && it.id != lap.id && it.drv == lap.drv }.minByOrNull { it.time }
                 val bt = best?.let { runCatching { repo.lapTrace(it.id) }.getOrNull() }
                 val bx = bt?.x; val by = bt?.y
                 if (bx != null && by != null && kotlin.math.abs(bx.size - r0.rows.size) <= 6) {
@@ -329,7 +357,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
             }
             // the official turn numbers of this track, when an admin has placed them on its map (else the corners are counted)
             val turns = c?.let { runCatching { repo.turns(it.trackId) }.getOrNull() } ?: emptyList()
-            Got(LapAnalysis(lap, tr, ref, label, refTime, refSec, card, turns))
+            Got(LapAnalysis(lap, tr, ref, label, refTime, refSec, card, turns, fastest = fastest))
         }
     }
 

@@ -530,7 +530,8 @@ final class Account: ObservableObject {
         return Got(data: (g.data as? [[String: Any]] ?? []).compactMap { s in
             guard let id = s["id"] as? String else { return nil }
             return CloudSession(id: id, started: num(s["started"]) ?? 0, track: str(s["track"]), trackConfig: str(s["track_config"]), car: str(s["car"]), kind: str(s["kind"]), laps: int(s["laps"]), best: pos(s["best"]),
-                                cat: s["cat"] as? String, lic: s["lic"] as? String)
+                                cat: s["cat"] as? String, lic: s["lic"] as? String,
+                                drvs: str(s["drvs"]).split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }, ai: int(s["ai"]) == 1)
         }, stale: g.stale)
     }
 
@@ -539,7 +540,7 @@ final class Account: ObservableObject {
         let g = try await cachedGet("/api/sessions/" + idPath(sessionId))
         let a = (g.data as? [String: Any])?["laps"] as? [[String: Any]] ?? []
         return Got(data: a.map { l in
-            CloudLap(id: str(l["id"]), n: int(l["n"]), time: num(l["time"]) ?? 0, valid: ((l["valid"] as? NSNumber)?.intValue ?? 1) == 1, sectors: doubles(l["sectors"]), inc: int(l["inc"]))
+            CloudLap(id: str(l["id"]), n: int(l["n"]), time: num(l["time"]) ?? 0, valid: ((l["valid"] as? NSNumber)?.intValue ?? 1) == 1, sectors: doubles(l["sectors"]), inc: int(l["inc"]), drv: str(l["drv"]))
         }, stale: g.stale)
     }
 
@@ -597,6 +598,65 @@ final class Account: ObservableObject {
         guard let j = try? await cachedGet("/community/trackmaps?game=iracing&trackId=\(trackId)").data as? [String: Any],
               let x = j["x"] as? [Any], let y = j["y"] as? [Any], x.count >= 20, x.count == y.count else { return nil }
         return (x.map { ($0 as? NSNumber)?.doubleValue ?? 0 }, y.map { ($0 as? NSNumber)?.doubleValue ?? 0 })
+    }
+    /// The model's references for a car and track (`/community/model`): the record (the fastest lap really driven) and the
+    /// next level for a lap of `lapTime` (the driver just ahead), each a trace every 5 m with its time and, when known, its line.
+    func modelRefs(trackId: Int64, carId: Int64, lapTime: Double) async -> (rec: (Trace, Double)?, lvl: (Trace, Double)?) {
+        if demo || trackId <= 0 || carId <= 0 { return (nil, nil) }
+        guard let m = try? await cachedGet("/community/model?game=iracing&trackId=\(trackId)&carId=\(carId)").data as? [String: Any] else { return (nil, nil) }
+        // the model's bins are [speed, time, throttle, brake, gear, steering]; a trace row is [speed, throttle, brake, gear, steering, time]
+        func row(_ b: [Any]) -> [Double] {
+            let v = b.map { ($0 as? NSNumber)?.doubleValue ?? 0 }
+            func at(_ i: Int) -> Double { i < v.count ? v[i] : 0 }
+            return [at(0), at(2), at(3), at(4), 0, at(1)]
+        }
+        func nums(_ a: Any?) -> [Double]? { (a as? [Any])?.map { ($0 as? NSNumber)?.doubleValue ?? 0 } }
+        func xy(_ o: Any?, _ n: Int) -> ([Double], [Double])? {
+            guard let o = o as? [String: Any], let x = nums(o["x"]), let y = nums(o["y"]), x.count == n, y.count == n else { return nil }
+            return (x, y)
+        }
+        func num0(_ o: [String: Any], _ k: String) -> Double { (o[k] as? NSNumber)?.doubleValue ?? 0 }
+        var rec: (Trace, Double)? = nil
+        if let ideal = m["ideal"] as? [[Any]], ideal.count > 40, num0(m, "idealTime") > 0 {
+            let rows = ideal.map(row)
+            var tr = Trace(bin: 5, rows: rows)
+            if let p = xy(m["idealXY"], rows.count) ?? xy(m["lineXY"], rows.count) { tr.x = p.0; tr.y = p.1 }
+            rec = (tr, num0(m, "idealTime"))
+        }
+        var lvl: (Trace, Double)? = nil
+        let nb = (m["nb"] as? NSNumber)?.intValue ?? 0
+        if let lad = m["ladder"] as? [[String: Any]], !lad.isEmpty, lapTime > 0 {
+            // the first level this lap is within, then down to one really faster than it
+            var i = lad.firstIndex { lapTime <= num0($0, "upTo") } ?? lad.count - 1
+            while i > 0 && !(num0(lad[i], "time") < lapTime * 0.997) { i -= 1 }
+            let x = lad[i], tm = num0(x, "time")
+            if let raw = x["bins"] as? [[Any]], raw.count > 20, tm > 0, tm < lapTime - 0.001 {
+                // its bins are every 10 m: each one and the point between it and the next make the 5 m rows
+                var rows: [[Double]] = []
+                for k in raw.indices {
+                    let a = row(raw[k])
+                    rows.append(a)
+                    if k + 1 < raw.count {
+                        let nx = row(raw[k + 1])
+                        rows.append([(a[0] + nx[0]) / 2, a[1], a[2], a[3], 0, (a[5] + nx[5]) / 2])
+                    } else { rows.append(a) }
+                }
+                let cut = nb > 0 ? Array(rows.prefix(nb)) : rows
+                var tr = Trace(bin: 5, rows: cut)
+                if let rx = nums(x["x"]), let ry = nums(x["y"]), rx.count >= 6, rx.count == ry.count {
+                    var ox: [Double] = [], oy: [Double] = []
+                    for k in rx.indices {
+                        let n = k + 1 < rx.count ? k + 1 : k
+                        ox.append(rx[k]); ox.append((rx[k] + rx[n]) / 2)
+                        oy.append(ry[k]); oy.append((ry[k] + ry[n]) / 2)
+                    }
+                    if ox.count >= cut.count { tr.x = Array(ox.prefix(cut.count)); tr.y = Array(oy.prefix(cut.count)) }
+                }
+                if tr.x == nil, let p = xy(m["lineXY"], cut.count) { tr.x = p.0; tr.y = p.1 }
+                lvl = (tr, tm)
+            }
+        }
+        return (rec, lvl)
     }
     /// A track's official turns (T1 … Tn as fractions of the lap from the line), placed by an admin on its map.
     func turns(trackId: Int64) async -> [Double] {

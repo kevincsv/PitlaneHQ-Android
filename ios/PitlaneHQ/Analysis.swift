@@ -1,0 +1,344 @@
+import SwiftUI
+
+/// Lap B: the driver's own best lap of the session, or the model's next level (the driver just ahead) or record.
+enum RefKind: Hashable { case myBest, level, record }
+
+/// A lap and the lap it is compared with, for the lap analysis and the coach.
+struct LapAnalysis {
+    let lap: CloudLap
+    var trace: Trace?
+    var ref: Trace?
+    var refLabel = ""
+    var refTime: Double?
+    var refSectors: [Double] = []
+    var car: [String: Any]?
+    var turns: [Double] = []      // the official turn numbers of this track, when an admin placed them
+    var fastest = false           // nobody known is faster here: lap B is your own best
+}
+
+private func fillArgs(_ s0: String, _ args: [String]) -> String {
+    var s = s0
+    for (i, a) in args.enumerated() { s = s.replacingOccurrences(of: "{\(i)}", with: a) }
+    return s
+}
+
+extension Account {
+    private func ownRef(_ b: CloudLap?) async -> (Trace?, String, Double?, [Double]) {
+        guard let b else { return (nil, "", nil, []) }
+        let tr: Trace? = try? await lapTrace(b.id)
+        return (tr, "L\(b.n)", b.time, b.sectors)
+    }
+
+    /// Opens a lap and its lap B, like the PC and the web: the driver's own best lap of the session (DRINKS mode: a
+    /// friend's lap against that friend's best), or the model's next level or record; when nobody known is faster,
+    /// your own best lap.
+    func analyse(session: CloudSession, lap: CloudLap, all: [CloudLap], kind: RefKind) async throws -> LapAnalysis {
+        var a = LapAnalysis(lap: lap)
+        a.trace = try await lapTrace(lap.id)
+        // the car and track of this session among the ones the community knows, matched by name
+        let combos = (try? await self.combos().data) ?? []
+        let c = combos.first { $0.track.caseInsensitiveCompare(session.track) == .orderedSame && $0.car.caseInsensitiveCompare(session.car) == .orderedSame }
+            ?? combos.first { session.track.lowercased().hasPrefix($0.track.lowercased()) && $0.car.caseInsensitiveCompare(session.car) == .orderedSame }
+        // the car card needs the car alone: what it does on other tracks, for when nobody known drove it here yet
+        if let cc = c ?? combos.first(where: { $0.car.caseInsensitiveCompare(session.car) == .orderedSame }) { a.car = try? await carCard(carId: cc.carId) }
+        if let tc = c { a.turns = await turns(trackId: tc.trackId) }
+        let own = all.filter { $0.valid && $0.time > 0 && $0.id != lap.id && $0.drv == lap.drv }.min { $0.time < $1.time }
+        if kind == .myBest {
+            (a.ref, a.refLabel, a.refTime, a.refSectors) = await ownRef(own)
+        } else {
+            var rec: (Trace, Double)? = nil
+            var lvl: (Trace, Double)? = nil
+            if let c {
+                let m = await modelRefs(trackId: c.trackId, carId: c.carId, lapTime: lap.time)
+                rec = m.rec
+                lvl = m.lvl
+            }
+            let pick = kind == .level ? (lvl ?? rec) : rec
+            if let p = pick, p.1 < lap.time - 0.001 {
+                a.ref = p.0
+                a.refTime = p.1
+                a.refLabel = kind == .level && lvl != nil ? "▲ " + t("next_level") : "★ " + t("record")
+            } else {
+                // nobody known is faster here (this lap is the record) or nobody known at all: like the web's coach,
+                // your own best lap of the session is lap B
+                a.fastest = pick != nil
+                (a.ref, a.refLabel, a.refTime, a.refSectors) = await ownRef(own)
+            }
+        }
+        // a rival's lap has no path (it comes from its place on track): the line is then measured against the driver's
+        // own best lap of the session, the fastest line known here
+        if var r = a.ref, r.x == nil || r.y == nil, let b = own, let bt = try? await lapTrace(b.id), let bx = bt.x, let by = bt.y,
+           !bx.isEmpty, abs(bx.count - r.rows.count) <= 6 {
+            r.x = (0..<r.rows.count).map { bx[min($0, bx.count - 1)] }
+            r.y = (0..<r.rows.count).map { by[min($0, by.count - 1)] }
+            a.ref = r
+        }
+        return a
+    }
+}
+
+/// Lap A's sectors against lap B's.
+struct SectorTable: View {
+    let a: [Double]
+    let b: [Double]
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionLabel(text: t("sectors"))
+            Panel {
+                ForEach(Array(a.enumerated()), id: \.offset) { i, s in
+                    let r: Double? = i < b.count ? b[i] : nil
+                    HStack {
+                        Text("S\(i + 1)").foregroundColor(Theme.muted).frame(width: 40, alignment: .leading)
+                        Text(String(format: "%.3f", s)).foregroundColor(Theme.accent)
+                        Spacer()
+                        Text(r.map { String(format: "%.3f", $0) } ?? "—").foregroundColor(Theme.blue)
+                        Spacer()
+                        Text(r.map { String(format: "%+.3f", s - $0) } ?? "").foregroundColor(r != nil && s <= r! ? Theme.good : Theme.bad)
+                    }
+                    .font(.system(size: 13, design: .monospaced))
+                }
+            }
+        }
+    }
+}
+
+/// A corner that costs time: its official turn, where, the phase that loses the most, the tip and what the line says.
+struct CornerTipView: View {
+    let k: Corner
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(t("corner_n", k.n)).font(.subheadline.weight(.black)).foregroundColor(Theme.accent)
+                Text(t("at_m", k.atM) + (k.phase.map { " · " + t("phase_" + $0) } ?? "")).font(.caption).foregroundColor(Theme.muted)
+                Spacer()
+                Text(String(format: "+%.2f", k.lost)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.bad)
+            }
+            if let tip = k.tip { Text(fillArgs(t(tip), k.args)).font(.subheadline) }
+            if let lt = k.lineTip { Text(fillArgs(t(lt), k.lineArgs)).font(.footnote).foregroundColor(Theme.accent) }
+        }
+    }
+}
+
+/// One step of the coach's plan: the corner, its phase, what it costs and the tip.
+private struct PlanRow: View {
+    let i: Int
+    let k: Corner
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text("\(i + 1).").font(.subheadline.weight(.black)).foregroundColor(Theme.accent).frame(width: 22, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(t("corner_n", k.n) + (k.phase.map { " · " + t("phase_" + $0) } ?? "")).font(.subheadline.bold())
+                    Spacer()
+                    Text(String(format: "+%.2f s", k.lost)).font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.bad)
+                }
+                if let tip = k.tip { Text(fillArgs(t(tip), k.args)).font(.caption).foregroundColor(Theme.muted) }
+            }
+        }
+        .padding(.top, 4)
+    }
+}
+
+/// A corner's four phases (braking, entry, apex, exit): what each costs against lap B.
+private struct PhaseRow: View {
+    let k: Corner
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(phaseKeys, id: \.self) { p in
+                    let v = k.phases[p] ?? 0
+                    Text(t("phase_" + p) + " " + (v > 0 ? "+" : "") + String(format: "%.2f", v))
+                        .font(.system(size: 11, design: .monospaced)).foregroundColor(v > 0.03 ? Theme.bad : Theme.muted)
+                }
+            }
+        }
+        .padding(.top, 2)
+    }
+}
+
+/// The coach, like the web's: the gap to the reference with what to work on first, the plan, the map, the sectors and the
+/// corners that cost the most (each with its four phases). The car card shows only when nobody known is ahead.
+struct CoachBody: View {
+    let an: LapAnalysis
+    @State private var pick: Double?
+
+    var body: some View {
+        let refName = an.refLabel.isEmpty ? t("ref") : an.refLabel
+        let d = an.refTime.map { an.lap.time - $0 }
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Metric(label: t("you") + " · L\(an.lap.n)", value: lapTime(an.lap.time), color: Theme.accent)
+                Metric(label: refName, value: lapTime(an.refTime), color: Theme.blue)
+                Metric(label: t("delta"), value: d.map { String(format: "%+.3f", $0) } ?? "—", color: d == nil ? Theme.fg : d! <= 0 ? Theme.good : Theme.bad)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            if an.fastest { Text(t("coach_fastest")).font(.caption).foregroundColor(Theme.good) }
+            if let tr = an.trace { details(tr) } else { EmptyNote(text: t("no_trace")) }
+        }
+    }
+
+    @ViewBuilder private func summary(_ cs: [Corner], _ lose: [Corner]) -> some View {
+        let lost = cs.reduce(0.0) { $0 + max(0, $1.lost) }
+        let gained = cs.reduce(0.0) { $0 + min(0, $1.lost) }
+        Text(t("coach_sum", String(format: "%.2f", lost), cs.count, String(format: "%.2f", -gained))).font(.caption).foregroundColor(Theme.muted)
+        Panel {
+            SectionLabel(text: t("coach_first").uppercased())
+            if let f = lose.first { CornerTipView(k: f) } else { Text(t("all_clean")).font(.subheadline).foregroundColor(Theme.good) }
+        }
+        if !lose.isEmpty {
+            Panel {
+                SectionLabel(text: t("coach_plan").uppercased())
+                Text(t("coach_plan_note")).font(.caption2).foregroundColor(Theme.muted)
+                ForEach(Array(lose.prefix(4).enumerated()), id: \.offset) { i, k in PlanRow(i: i, k: k) }
+            }
+        }
+    }
+
+    @ViewBuilder private func details(_ tr: Trace) -> some View {
+        let c = compare(tr, an.ref)
+        let cs: [Corner] = an.ref != nil ? corners(c, turns: an.turns) : []
+        let lose = cs.filter { $0.tip != nil && $0.lost > 0.03 }.sorted { $0.lost > $1.lost }
+        if an.ref == nil { Text(t("no_reference")).font(.caption).foregroundColor(Theme.muted) }
+        else if !cs.isEmpty { summary(cs, lose) }
+        if tr.hasShape { TrackMapView(c: c, trace: tr, pick: $pick, turns: an.turns) }
+        if !an.lap.sectors.isEmpty { SectorTable(a: an.lap.sectors, b: an.refSectors) }
+        if !lose.isEmpty {
+            SectionLabel(text: t("coach_top").uppercased())
+            ForEach(Array(lose.prefix(3)), id: \.self) { k in
+                Panel {
+                    CornerTipView(k: k)
+                    PhaseRow(k: k)
+                    if k.coastA - k.coastB > 10 { Text(t("coasting") + ": \(Int(k.coastA)) m · " + t("ref") + " \(Int(k.coastB)) m").font(.caption2).foregroundColor(Theme.muted) }
+                }
+            }
+        }
+        // what this car does on other tracks, when nobody known is ahead of this lap here
+        if let car = an.car, an.fastest || an.ref == nil { CarCardView(card: car, trace: tr) }
+    }
+}
+
+/// "DRINKS · Ana" (or "Multiple drivers") when friends drove laps of a session, and "vs AI" for one against iRacing's AI.
+struct SessionBadges: View {
+    let x: CloudSession
+    var body: some View {
+        if !x.drvs.isEmpty || x.ai {
+            HStack(spacing: 6) {
+                if !x.drvs.isEmpty {
+                    Text("DRINKS · " + (x.drvs.count > 1 ? t("drinks_multiple") : x.drvs[0])).font(.system(size: 10, weight: .bold)).foregroundColor(Color(red: 1, green: 0.886, blue: 0.659)).lineLimit(1)
+                        .padding(.horizontal, 8).padding(.vertical, 2).background(Theme.accent.opacity(0.22)).overlay(Capsule().stroke(Theme.accent.opacity(0.6), lineWidth: 1)).clipShape(Capsule())
+                }
+                if x.ai {
+                    Text(t("vs_ai")).font(.system(size: 10, weight: .bold)).foregroundColor(Theme.blue).lineLimit(1)
+                        .padding(.horizontal, 8).padding(.vertical, 2).overlay(Capsule().stroke(Theme.blue.opacity(0.55), lineWidth: 1))
+                }
+            }
+        }
+    }
+}
+
+/// A session in My sessions: its track, car, kind, day and laps, your best lap, and who drove it in DRINKS mode.
+struct SessionRow: View {
+    let x: CloudSession
+    var on = false
+    var body: some View {
+        Panel {
+            Text(fixText(x.track) + (x.trackConfig.isEmpty ? "" : " · " + fixText(x.trackConfig))).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
+            Text(fixText(x.car)).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+            SessionBadges(x: x)
+            HStack {
+                Text([kindText(x.kind), day(x.started), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+                LicBadge(k: x.lic)
+                Spacer()
+                Text(lapTime(x.best)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
+            }
+            .padding(.top, 4)
+        }
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(on ? Theme.accent : Color.clear, lineWidth: 1))
+    }
+}
+
+/// The session Laps and the Coach show, with the button that opens My sessions to choose another.
+struct SessionHead: View {
+    let x: CloudSession
+    let choose: () -> Void
+    var body: some View {
+        Panel {
+            Text(fixText(x.track) + (x.trackConfig.isEmpty ? "" : " · " + fixText(x.trackConfig))).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
+            Text(fixText(x.car)).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+            SessionBadges(x: x)
+            HStack(spacing: 6) {
+                Text([kindText(x.kind), day(x.started), discName(x.cat)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+                LicBadge(k: x.lic)
+                Spacer()
+                Button(t("choose_session") + " ▾", action: choose).font(.caption.bold()).foregroundColor(Theme.accent).lineLimit(1)
+            }
+        }
+    }
+}
+
+/// A session's laps: its best and average, then every lap with its sectors and, in DRINKS mode, its driver (tap one to
+/// analyse it).
+struct SessionLaps: View {
+    let session: CloudSession
+    let laps: [CloudLap]
+    var body: some View {
+        // your laps only: a friend's lap (DRINKS mode) is never the account's best
+        let mine = laps.filter { $0.valid && $0.time > 0 && $0.drv.isEmpty }
+        let valid = mine.isEmpty ? laps.filter { $0.valid && $0.time > 0 } : mine
+        let best = valid.map(\.time).min()
+        let nSec = laps.map(\.sectors.count).max() ?? 0
+        // fastest time of each sector over the valid laps, in purple like in the sim
+        let bestSec: [Double?] = (0..<nSec).map { i in valid.compactMap { i < $0.sectors.count && $0.sectors[i] > 0 ? $0.sectors[i] : nil }.min() }
+        // the average of the valid laps: a real figure, not a lap made of the best sectors
+        let avg: Double? = valid.isEmpty ? nil : valid.map(\.time).reduce(0, +) / Double(valid.count)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Metric(label: t("best"), value: lapTime(best), color: Theme.purple)
+                Metric(label: t("average"), value: lapTime(avg))
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            if laps.isEmpty { EmptyNote(text: t("no_laps")) }
+            else {
+                HStack {
+                    SectionLabel(text: t("laps").uppercased())
+                    Spacer()
+                    Text(t("tap_lap")).font(.caption2).foregroundColor(Theme.muted)
+                }
+                ForEach(laps) { lap in
+                    NavigationLink(value: Route.lap(session, lap, laps)) { LapRow(lap: lap, best: best, bestSec: bestSec) }.buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}
+
+private struct LapRow: View {
+    let lap: CloudLap
+    let best: Double?
+    let bestSec: [Double?]
+    var body: some View {
+        Panel {
+            HStack {
+                Text("L\(lap.n)").font(.system(.subheadline, design: .monospaced)).foregroundColor(Theme.muted).frame(width: 44, alignment: .leading)
+                Text(lapTime(lap.time)).font(.system(.subheadline, design: .monospaced).bold())
+                    .foregroundColor(!lap.valid ? Theme.muted : lap.time == best ? Theme.purple : Theme.fg).strikethrough(!lap.valid)
+                Spacer()
+                if let best, lap.valid, lap.time > best { Text(String(format: "+%.3f", lap.time - best)).font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.muted) }
+                if lap.inc > 0 { Text("\(lap.inc)x").font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.bad) }
+                if !lap.valid { Text(t("invalid")).font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.bad) }
+                Image(systemName: "chevron.right").foregroundColor(Theme.muted)
+            }
+            if !lap.drv.isEmpty { Text(lap.drv).font(.caption2).foregroundColor(Theme.accent).lineLimit(1) }
+            if !lap.sectors.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(Array(lap.sectors.enumerated()), id: \.offset) { i, s in
+                            Text("S\(i + 1) " + String(format: "%.3f", s)).font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(lap.valid && i < bestSec.count && bestSec[i] == s ? Theme.purple : Theme.muted)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

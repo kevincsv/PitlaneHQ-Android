@@ -14,6 +14,9 @@ struct CloudSession: Identifiable, Hashable {
     /// the discipline (oval, sports_car, formula_car, dirt_oval, dirt_road) and your license class in it (R, D, C, B, A, P)
     var cat: String? = nil
     var lic: String? = nil
+    /// the friends who drove laps of it in DRINKS mode, and a session against iRacing's AI
+    var drvs: [String] = []
+    var ai = false
 }
 
 struct CloudLap: Identifiable, Hashable {
@@ -23,6 +26,7 @@ struct CloudLap: Identifiable, Hashable {
     let valid: Bool
     let sectors: [Double]
     var inc: Int = 0 // incident points on the lap (they do not make it invalid)
+    var drv = ""     // a friend's lap (DRINKS mode): who drove it
 }
 
 /// One row every `bin` metres: speed m/s, throttle 0-1, brake 0-1, gear, steering rad, lap time s.

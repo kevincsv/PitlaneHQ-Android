@@ -425,7 +425,6 @@ struct LoadState: View {
 }
 
 enum Route: Hashable {
-    case races
     case race(Race)
     case session(CloudSession)
     case lap(CloudSession, CloudLap, [CloudLap])
@@ -437,7 +436,6 @@ extension View {
     func routes() -> some View {
         navigationDestination(for: Route.self) { r in
             switch r {
-            case .races: RacesView()
             case let .race(x): RaceView(race: x)
             case let .session(s): SessionView(session: s)
             case let .lap(s, l, all): LapView(session: s, lap: l, all: all)
@@ -803,6 +801,7 @@ struct AiBadge: View {
 
 struct HomeView: View {
     @EnvironmentObject var account: Account
+    @EnvironmentObject private var inbox: Inbox
 
     var body: some View {
         let races = account.races
@@ -825,7 +824,7 @@ struct HomeView: View {
             HStack {
                 SectionLabel(text: t("recent_races"))
                 Spacer()
-                if races.count > 5 { NavigationLink(t("see_all"), value: Route.races).font(.caption) }
+                if races.count > 5 { Button(t("see_all")) { inbox.analysisTab = 3; inbox.goTab = 1 }.font(.caption).foregroundColor(Theme.accent) }
             }
             if races.isEmpty { EmptyNote(text: t("no_races")) }
             ForEach(races.prefix(5)) { r in
@@ -919,17 +918,6 @@ struct DaysDriven: View {
 }
 
 private struct DayRef: Identifiable { let day: Date; var id: Double { day.timeIntervalSince1970 } }
-
-struct RacesView: View {
-    @EnvironmentObject var account: Account
-    var body: some View {
-        Screen(title: t("all_races")) {
-            ForEach(account.races) { r in
-                NavigationLink(value: Route.race(r)) { RaceRow(race: r) }.buttonStyle(.plain)
-            }
-        }
-    }
-}
 
 struct RaceView: View {
     let race: Race
@@ -1111,22 +1099,71 @@ struct DriverNoteSheet: View {
 
 // ---------- Analysis ----------
 
+/// Analysis, as on the PC and the web: Laps (the laps of the session you chose), Coach (its best lap against the model's
+/// next level), My sessions (every session in the account, filtered like the web's "Choose a session") and My races.
 struct AnalysisView: View {
     @EnvironmentObject var account: Account
     @EnvironmentObject var net: NetMonitor
+    @EnvironmentObject private var inbox: Inbox
     @StateObject private var sessions = Loader<[CloudSession]>()
     @StateObject private var bests = Loader<[PersonalBest]>()
+    @StateObject private var laps = Loader<[CloudLap]>()
     @State private var tab = 0
+    // the tab a session chosen in My sessions opens: Laps, or the Coach when you came from it
+    @State private var pickFor = 0
+    @State private var onlyBest = false
+    @State private var cur: CloudSession?
+    @State private var coach: LapAnalysis?
+    @State private var coachKey = ""
+    @State private var coachBusy = false
+    @State private var coachErr: String?
     @State private var fCat = ""
     @State private var fCar = ""
     @State private var fTrack = ""
     @State private var fKind = ""
     @State private var fDay = ""
     @State private var showDays = false
+    @State private var lastDemo = false
 
     private func load() async {
-        if tab == 0 { await sessions.load { try await account.sessions() } } else { await bests.load { try await account.bests() } }
+        if tab == 3 { await account.sync(quiet: true); return }
+        if tab == 2 && onlyBest { await bests.load { try await account.bests() }; return }
+        await sessions.load { try await account.sessions() }
+        // Laps and the Coach open on your newest session until you choose another
+        if cur == nil, let s = sessions.data?.first { await open(s, go: false) }
+        else if let c = cur, tab < 2 { await loadLaps(c) }
     }
+    private func loadLaps(_ s: CloudSession) async {
+        await laps.load { try await account.laps(s.id) }
+        if tab == 1 { await loadCoach() }
+    }
+    private func open(_ s: CloudSession, go: Bool = true) async {
+        cur = s
+        laps.data = nil
+        coach = nil
+        coachKey = ""
+        if go { tab = pickFor }
+        await loadLaps(s)
+    }
+    /// the coach: your best lap of the session (a friend's lap in DRINKS mode is never the account's) against the next level
+    private func loadCoach() async {
+        guard let s = cur, let ls = laps.data else { return }
+        let ok = ls.filter { $0.valid && $0.time > 0 }
+        guard let best = ok.filter({ $0.drv.isEmpty }).min(by: { $0.time < $1.time }) ?? ok.min(by: { $0.time < $1.time }) else { coach = nil; coachKey = ""; return }
+        let key = s.id + "|" + best.id
+        if key == coachKey && (coach != nil || coachBusy) { return }
+        coachKey = key
+        coachBusy = true
+        coachErr = nil
+        do {
+            let a = try await account.analyse(session: s, lap: best, all: ls, kind: .level)
+            if coachKey == key { coach = a }
+        } catch {
+            coachErr = (error as? AppError)?.key ?? error.localizedDescription
+        }
+        coachBusy = false
+    }
+
     // the car and the track are two filters: with many of each, one list of every pair gets long
     // a car or a track is known by its name without accents or broken characters, so one track never shows twice
     private func trackName(_ x: CloudSession) -> String { fixText(x.track) + (x.trackConfig.isEmpty ? "" : " · " + fixText(x.trackConfig)) }
@@ -1180,66 +1217,94 @@ struct AnalysisView: View {
         }
     }
 
+    /// Laps and the Coach: the session you chose (the newest until you choose another)
+    @ViewBuilder private var lapsAndCoach: some View {
+        if let s = cur {
+            SessionHead(x: s) { pickFor = tab; tab = 2 }
+            LoadState(loading: laps.loading, error: laps.error, stale: laps.stale) { Task { await loadLaps(s) } }
+            if let ls = laps.data {
+                if tab == 0 { SessionLaps(session: s, laps: ls) }
+                else if !ls.contains(where: { $0.valid && $0.time > 0 }) { EmptyNote(text: t("coach_no_lap")) }
+                else {
+                    LoadState(loading: coachBusy, error: coachErr) { coachKey = ""; Task { await loadCoach() } }
+                    if let an = coach, coachKey.hasPrefix(s.id + "|") { CoachBody(an: an) }
+                }
+            }
+        } else {
+            LoadState(loading: sessions.loading, error: sessions.error, stale: sessions.stale) { Task { await load() } }
+            if sessions.data != nil { EmptyNote(text: t("no_sessions")) }
+        }
+    }
+
+    /// My sessions: every session in the account, or only your fastest lap of each car and track
+    @ViewBuilder private var mySessions: some View {
+        HStack {
+            Button { onlyBest.toggle() } label: {
+                Text(t("only_fastest")).font(.caption.bold()).padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(onlyBest ? Theme.accent : Theme.surface2).foregroundColor(onlyBest ? Theme.ink : Theme.muted).clipShape(Capsule())
+            }
+            Spacer()
+        }
+        if onlyBest {
+            LoadState(loading: bests.loading, error: bests.error, stale: bests.stale) { Task { await load() } }
+            if let b = bests.data, b.isEmpty { EmptyNote(text: t("no_sessions")) }
+            ForEach(bests.data ?? []) { x in
+                let s = x.bestSessionId.map { CloudSession(id: $0, started: x.last, track: x.track, trackConfig: x.trackConfig, car: x.car, kind: "", laps: x.laps, best: x.best) }
+                Button { if let s { Task { await open(s) } } } label: {
+                    Panel {
+                        Text(fixText(x.track) + (x.trackConfig.isEmpty ? "" : " · " + fixText(x.trackConfig))).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
+                        Text(fixText(x.car)).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+                        HStack {
+                            Text([day(x.last), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
+                            Spacer()
+                            Text(lapTime(x.best)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(s == nil)
+            }
+        } else {
+            LoadState(loading: sessions.loading, error: sessions.error, stale: sessions.stale) { Task { await load() } }
+            // many cars, tracks and sessions make a long list: the discipline, the kind of session, the car and track,
+            // a day you drove (the calendar), like the web's "Choose a session"
+            let all = sessions.data ?? []
+            let forCat = all.filter { match($0, skip: "cat") }, forKind = all.filter { match($0, skip: "kind") }
+            let forCar = all.filter { match($0, skip: "car") }, forTrack = all.filter { match($0, skip: "track") }, forDay = all.filter { match($0, skip: "day") }
+            let list = all.filter { match($0) }
+            if all.count > 1 { filters(all, forCat, forKind, forCar, forTrack, forDay, list.count) }
+            if sessions.data != nil && list.isEmpty { EmptyNote(text: t("no_sessions")) }
+            ForEach(list) { x in
+                Button { Task { await open(x) } } label: { SessionRow(x: x, on: x.id == cur?.id) }.buttonStyle(.plain)
+            }
+        }
+    }
+
     var body: some View {
         Screen(title: t("analysis"), sub: t("uploaded_by_pc")) {
-            WebNote(text: t("coach_web"))
-            Tabs(labels: [t("sessions"), t("bests")], selected: $tab)
-            if tab == 0 {
-                LoadState(loading: sessions.loading, error: sessions.error, stale: sessions.stale) { Task { await load() } }
-                // many cars, tracks and sessions make a long list: the discipline, the kind of session, the car and track,
-                // a day you drove (the calendar), like the web's "Choose a session"
-                let all = sessions.data ?? []
-                let forCat = all.filter { match($0, skip: "cat") }, forKind = all.filter { match($0, skip: "kind") }
-                let forCar = all.filter { match($0, skip: "car") }, forTrack = all.filter { match($0, skip: "track") }, forDay = all.filter { match($0, skip: "day") }
-                let list = all.filter { match($0) }
-                if all.count > 1 { filters(all, forCat, forKind, forCar, forTrack, forDay, list.count) }
-                if sessions.data != nil && list.isEmpty { EmptyNote(text: t("no_sessions")) }
-                ForEach(list) { x in
-                    NavigationLink(value: Route.session(x)) {
-                        Panel {
-                            Text(fixText(x.track) + (x.trackConfig.isEmpty ? "" : " · " + fixText(x.trackConfig))).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
-                            Text(fixText(x.car)).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
-                            HStack {
-                                Text([kindText(x.kind), day(x.started), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
-                                LicBadge(k: x.lic)
-                                Spacer()
-                                Text(lapTime(x.best)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
-                            }
-                            .padding(.top, 4)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            } else {
-                LoadState(loading: bests.loading, error: bests.error, stale: bests.stale) { Task { await load() } }
-                if let b = bests.data, b.isEmpty { EmptyNote(text: t("no_sessions")) }
-                ForEach(bests.data ?? []) { x in
-                    let s = x.bestSessionId.map { CloudSession(id: $0, started: x.last, track: x.track, trackConfig: x.trackConfig, car: x.car, kind: "", laps: x.laps, best: x.best) }
-                    NavigationLink(value: s.map { Route.session($0) } ?? Route.races) {
-                        Panel {
-                            Text(fixText(x.track) + (x.trackConfig.isEmpty ? "" : " · " + fixText(x.trackConfig))).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
-                            Text(fixText(x.car)).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
-                            HStack {
-                                Text([day(x.last), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
-                                Spacer()
-                                Text(lapTime(x.best)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
-                            }
-                            .padding(.top, 4)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(s == nil)
+            Tabs(labels: [t("tab_laps"), t("tab_coach"), t("tab_my_sessions"), t("tab_my_races")], selected: $tab)
+            switch tab {
+            case 0, 1: lapsAndCoach
+            case 2: mySessions
+            default:
+                if account.races.isEmpty { EmptyNote(text: t("no_races")) }
+                ForEach(account.races) { r in
+                    NavigationLink(value: Route.race(r)) { RaceRow(race: r) }.buttonStyle(.plain)
                 }
             }
         }
         .refreshable { await load() }
-        .task(id: "\(tab)-\(account.demo)") {
-            if (tab == 0 ? sessions.data == nil : bests.data == nil) || account.demo != lastDemo { lastDemo = account.demo; await load() }
+        .task(id: "\(tab)-\(onlyBest)-\(account.demo)") {
+            if account.demo != lastDemo { lastDemo = account.demo; cur = nil; sessions.data = nil; bests.data = nil }
+            if tab < 2 { pickFor = tab }
+            if tab == 1 && laps.data != nil { await loadCoach() }
+            if tab == 3 { return }
+            if ((tab == 2 && onlyBest) ? bests.data == nil : sessions.data == nil) { await load() }
         }
         .onChange(of: net.cameBack) { _ in Task { await load() } }
+        .onReceive(inbox.$analysisTab.compactMap { $0 }) { v in tab = v; inbox.analysisTab = nil }
     }
-
-    @State private var lastDemo = false
 }
 
 struct SessionView: View {
@@ -1248,66 +1313,25 @@ struct SessionView: View {
     @StateObject private var laps = Loader<[CloudLap]>()
 
     var body: some View {
-        let all = laps.data ?? []
-        let valid = all.filter { $0.valid && $0.time > 0 }
-        let best = valid.map(\.time).min()
-        let nSec = all.map(\.sectors.count).max() ?? 0
-        // fastest time of each sector over the valid laps, in purple like in the sim
-        let bestSec: [Double?] = (0..<nSec).map { i in valid.compactMap { i < $0.sectors.count && $0.sectors[i] > 0 ? $0.sectors[i] : nil }.min() }
-        // the average of the valid laps: a real figure, not a lap made of the best sectors
-        let avg: Double? = valid.isEmpty ? nil : valid.map(\.time).reduce(0, +) / Double(valid.count)
-        return Screen(title: session.track, sub: session.car) {
+        Screen(title: session.track, sub: session.car) {
             LoadState(loading: laps.loading, error: laps.error, stale: laps.stale) { Task { await laps.load { try await account.laps(session.id) } } }
             if session.cat != nil {
                 HStack(spacing: 6) { Text(t("viewing", session.car, discName(session.cat))).font(.caption).foregroundColor(Theme.muted); LicBadge(k: session.lic); Spacer() }
             }
-            HStack(spacing: 8) {
-                Metric(label: t("best"), value: lapTime(best), color: Theme.purple)
-                Metric(label: t("average"), value: lapTime(avg))
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            HStack {
-                SectionLabel(text: t("laps").uppercased())
-                Spacer()
-                Text(t("tap_lap")).font(.caption2).foregroundColor(Theme.muted)
-            }
-            ForEach(all) { lap in
-                NavigationLink(value: Route.lap(session, lap, all)) {
-                    Panel {
-                        HStack {
-                            Text("L\(lap.n)").font(.system(.subheadline, design: .monospaced)).foregroundColor(Theme.muted).frame(width: 44, alignment: .leading)
-                            Text(lapTime(lap.time)).font(.system(.subheadline, design: .monospaced).bold())
-                                .foregroundColor(!lap.valid ? Theme.muted : lap.time == best ? Theme.purple : Theme.fg).strikethrough(!lap.valid)
-                            Spacer()
-                            if let best, lap.valid, lap.time > best { Text(String(format: "+%.3f", lap.time - best)).font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.muted) }
-                            if lap.inc > 0 { Text("\(lap.inc)x").font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.bad) }
-                            if !lap.valid { Text(t("invalid")).font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.bad) }
-                            Image(systemName: "chevron.right").foregroundColor(Theme.muted)
-                        }
-                        if !lap.sectors.isEmpty {
-                            HStack(spacing: 10) {
-                                ForEach(Array(lap.sectors.enumerated()), id: \.offset) { i, s in
-                                    Text("S\(i + 1) " + String(format: "%.3f", s)).font(.system(size: 11, design: .monospaced))
-                                        .foregroundColor(lap.valid && i < bestSec.count && bestSec[i] == s ? Theme.purple : Theme.muted)
-                                }
-                            }
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-            }
+            SessionBadges(x: session)
+            if let ls = laps.data { SessionLaps(session: session, laps: ls) }
         }
         .task { if laps.data == nil { await laps.load { try await account.laps(session.id) } } }
     }
 }
 
-/// A lap next to the lap it is compared with: your best lap of the session or the community's fastest.
+/// A lap next to its lap B: the driver's own best lap of the session, or the model's next level or record.
 struct LapView: View {
     @EnvironmentObject var account: Account
     let session: CloudSession
     let lap: CloudLap
     let all: [CloudLap]
-    @State private var community = false
+    @State private var kind = RefKind.myBest
     @State private var loading = false
     @State private var error: String?
     @State private var trace: Trace?
@@ -1322,44 +1346,15 @@ struct LapView: View {
     private func load() async {
         loading = true
         error = nil
-        ref = nil
-        refLabel = ""
-        refTime = nil
-        refSectors = []
         do {
-            trace = try await account.lapTrace(lap.id)
-            // the car and track of this session among the ones the community knows, matched by name
-            let combos = (try? await account.combos().data) ?? []
-            let c = combos.first { $0.track.caseInsensitiveCompare(session.track) == .orderedSame && $0.car.caseInsensitiveCompare(session.car) == .orderedSame }
-                ?? combos.first { session.track.lowercased().hasPrefix($0.track.lowercased()) && $0.car.caseInsensitiveCompare(session.car) == .orderedSame }
-            // the car card needs the car alone: what it does on other tracks, for when nobody known drove it here yet
-            if let cc = c ?? combos.first(where: { $0.car.caseInsensitiveCompare(session.car) == .orderedSame }) { car = try? await account.carCard(carId: cc.carId) }
-            if let tc = c { turns = await account.turns(trackId: tc.trackId) } else { turns = [] }
-            if !community {
-                if let best = all.filter({ $0.valid && $0.time > 0 && $0.id != lap.id }).min(by: { $0.time < $1.time }) {
-                    ref = try? await account.lapTrace(best.id)
-                    refLabel = "L\(best.n)"
-                    refTime = best.time
-                    refSectors = best.sectors
-                }
-            } else {
-                // the community leaderboard of this track and car
-                if let c, let top = (try? await account.leaderboard(trackId: c.trackId, carId: c.carId).data)?.first(where: { $0.hasTrace }) {
-                    ref = try? await account.communityTrace(top.id)
-                    refLabel = top.alias
-                    refTime = top.time
-                    refSectors = top.sectors
-                }
-                // a rival's lap has no path (it comes from its place on track): the line is then measured against
-                // your own best lap of the session, the fastest line known here
-                if var r = ref, r.x == nil || r.y == nil,
-                   let best = all.filter({ $0.valid && $0.time > 0 && $0.id != lap.id }).min(by: { $0.time < $1.time }),
-                   let bt = try? await account.lapTrace(best.id), let bx = bt.x, let by = bt.y, !bx.isEmpty, abs(bx.count - r.rows.count) <= 6 {
-                    r.x = (0..<r.rows.count).map { bx[min($0, bx.count - 1)] }
-                    r.y = (0..<r.rows.count).map { by[min($0, by.count - 1)] }
-                    ref = r
-                }
-            }
+            let a = try await account.analyse(session: session, lap: lap, all: all, kind: kind)
+            trace = a.trace
+            ref = a.ref
+            refLabel = a.refLabel
+            refTime = a.refTime
+            refSectors = a.refSectors
+            car = a.car
+            turns = a.turns
         } catch {
             self.error = (error as? AppError)?.key ?? error.localizedDescription
         }
@@ -1377,10 +1372,9 @@ struct LapView: View {
         Screen(title: t("lap_analysis") + " · L\(lap.n)", sub: session.track + " · " + session.car) {
             HStack(spacing: 8) {
                 Text(t("compare_with")).font(.caption).foregroundColor(Theme.muted)
-                Tabs(labels: [t("my_best"), t("community_fastest")], selected: Binding(get: { community ? 1 : 0 }, set: { community = $0 == 1 }))
+                Tabs(labels: [t("my_best"), "▲ " + t("next_level"), "★ " + t("record")], selected: Binding(get: { kind == .myBest ? 0 : kind == .level ? 1 : 2 }, set: { kind = $0 == 0 ? .myBest : $0 == 1 ? .level : .record }))
             }
             LoadState(loading: loading, error: error) { Task { await load() } }
-            WebNote(text: t("coach_web"))
             HStack(spacing: 8) {
                 Metric(label: t("you"), value: lapTime(lap.time), color: Theme.accent)
                 Metric(label: refLabel.isEmpty ? t("ref") : refLabel, value: lapTime(refTime), color: Theme.blue)
@@ -1418,25 +1412,9 @@ struct LapView: View {
                     EmptyNote(text: t("no_trace"))
                 }
             }
-            if !lap.sectors.isEmpty {
-                SectionLabel(text: t("sectors"))
-                Panel {
-                    ForEach(Array(lap.sectors.enumerated()), id: \.offset) { i, s in
-                        let r = i < refSectors.count ? refSectors[i] : nil
-                        HStack {
-                            Text("S\(i + 1)").foregroundColor(Theme.muted).frame(width: 40, alignment: .leading)
-                            Text(String(format: "%.3f", s)).foregroundColor(Theme.accent)
-                            Spacer()
-                            Text(r.map { String(format: "%.3f", $0) } ?? "—").foregroundColor(Theme.blue)
-                            Spacer()
-                            Text(r.map { String(format: "%+.3f", s - $0) } ?? "").foregroundColor(r != nil && s <= r! ? Theme.good : Theme.bad)
-                        }
-                        .font(.system(size: 13, design: .monospaced))
-                    }
-                }
-            }
+            if !lap.sectors.isEmpty { SectorTable(a: lap.sectors, b: refSectors) }
         }
-        .task(id: community) { await load() }
+        .task(id: kind) { await load() }
     }
 }
 
