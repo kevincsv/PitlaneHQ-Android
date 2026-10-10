@@ -255,6 +255,19 @@ struct Race: Identifiable, Hashable {
     let results: [RaceResult]
     var cat: String? = nil  // the discipline as iRacing names it (Oval, Road, DirtOval…); raceDisc tells which of ours
     var drinks: [String] = []  // DRINKS mode: who drove it when a friend drove any lap (the PC's report)
+    var ai = false  // a race against iRacing's AI drivers (an offline race)
+
+    /// DRINKS mode: your name in the race (the one of its drivers that is no lap's friend)
+    var ownName: String { drinks.first(where: { n in !laps.contains(where: { $0.drv.caseInsensitiveCompare(n) == .orderedSame }) }) ?? "Me" }
+    /// who drove a lap: the friend's name, or yours
+    func driverOf(_ l: RaceLap) -> String { l.drv.isEmpty ? ownName : l.drv }
+    /// DRINKS mode: who drove the race, with their laps and best lap, in the order they first drove ([] when you alone)
+    var drivers: [(name: String, laps: Int, best: Double?)] {
+        guard laps.contains(where: { !$0.drv.isEmpty }) else { return [] }
+        var order: [String] = [], by: [String: (String, [RaceLap])] = [:]
+        for l in laps { let n = driverOf(l), k = n.lowercased(); if by[k] == nil { order.append(k); by[k] = (n, []) }; by[k]!.1.append(l) }
+        return order.map { k in let (n, ls) = by[k]!; return (n, ls.count, ls.filter { $0.time > 0 && !$0.cut && !$0.pit }.map(\.time).min()) }
+    }
 }
 
 /// The discipline of a race as the PC tells it (discipline in journal.go, raceDisc in the web): iRacing says "Road"
@@ -277,6 +290,7 @@ struct RaceLap: Hashable {
     let inc: Int
     let pit: Bool
     var cut: Bool = false // the car left the track: not a valid lap
+    var drv: String = ""  // DRINKS mode: the friend who drove it ("" you)
 }
 
 struct RaceResult: Hashable {
@@ -288,6 +302,7 @@ struct RaceResult: Hashable {
     let laps: Int
     var k: String = ""       // the driver's opaque key (the PC's driverKey): what your driver notes find them by
     var me: Bool = false
+    var ai: Bool = false     // an AI driver
 }
 
 /// Your note on another driver (drivers.json in the account): one tag (danger, careful, clean, friend) and a note.

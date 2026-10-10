@@ -494,7 +494,7 @@ private fun RaceRow(x: Race, onClick: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(x.track, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                DrinksBadge(x)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) { DrinksBadge(x); AiBadge(x) }
                 Text(x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
                     listOf(day(x.whenMs), if (x.official) t("official") else t("unofficial"), if (x.sof > 0) "SOF ${x.sof}" else "").filter { it.isNotBlank() }.joinToString(" · "),
@@ -510,15 +510,39 @@ private fun RaceRow(x: Race, onClick: () -> Unit) {
     }
 }
 
-/** DRINKS mode: a race a friend drove (any lap): "DRINKS · Ana", or "DRINKS · Multiple" when several drove it. */
+/** DRINKS mode: a race a friend drove (any lap): "DRINKS · Ana", or "DRINKS · Multiple drivers" when several drove
+ *  it; tapped, who drove it, their laps and their best lap. */
 @Composable
 private fun DrinksBadge(x: Race, names: Boolean = false) {
     if (x.drinks.isEmpty()) return
+    var open by remember { mutableStateOf(false) }
+    val many = x.drinks.size > 1
     Column(Modifier.padding(vertical = 2.dp)) {
-        Text("DRINKS · " + (if (x.drinks.size > 1) t("drinks_multiple") else x.drinks[0]), color = Color(0xFFFFE2A8), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.4.sp, maxLines = 1,
-            modifier = Modifier.background(Accent.copy(alpha = 0.22f), RoundedCornerShape(50)).border(1.dp, Accent.copy(alpha = 0.6f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp))
-        if (names && x.drinks.size > 1) Text(t("drinks_by", x.drinks.joinToString(", ")), color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+        Text("DRINKS · " + (if (many) t("drinks_multiple") + " ▾" else x.drinks[0]), color = Color(0xFFFFE2A8), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.4.sp, maxLines = 1,
+            modifier = Modifier.background(Accent.copy(alpha = 0.22f), RoundedCornerShape(50)).border(1.dp, Accent.copy(alpha = 0.6f), RoundedCornerShape(50)).then(if (many) Modifier.clickable { open = true } else Modifier).padding(horizontal = 8.dp, vertical = 2.dp))
+        if (names && many) Text(t("drinks_by", x.drinks.joinToString(", ")), color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
     }
+    if (open) AlertDialog(onDismissRequest = { open = false }, confirmButton = { TextButton({ open = false }) { Text("OK") } },
+        title = { Text("DRINKS · " + t("drinks_who"), fontWeight = FontWeight.Black) },
+        text = {
+            Column {
+                Text(x.track + " · " + x.car, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp))
+                (x.drivers().ifEmpty { x.drinks.map { Triple(it, 0, null as Double?) } }).forEach { (n, laps, best) ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(n, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        if (laps > 0) Text(t("drinks_laps", laps, lapTime(best)), color = Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                    }
+                }
+            }
+        })
+}
+
+/** A race against iRacing's AI drivers */
+@Composable
+private fun AiBadge(x: Race) {
+    if (!x.ai) return
+    Text(t("vs_ai"), color = Blue, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.4.sp, maxLines = 1,
+        modifier = Modifier.padding(vertical = 2.dp).border(1.dp, Blue.copy(alpha = 0.55f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp))
 }
 
 @Composable
@@ -537,7 +561,7 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
     LaunchedEffect(Unit) { vm.loadDriverNotes() }
     val anyMe = x.results.any { it.me }
     Screen(x.track, x.car + " · " + dayTime(x.whenMs), back = { nav.popBackStack() }) {
-        if (x.drinks.isNotEmpty()) item { DrinksBadge(x, names = true) }
+        if (x.drinks.isNotEmpty() || x.ai) item { Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) { DrinksBadge(x, names = true); AiBadge(x) } }
         item {
             Grid(
                 listOf(
@@ -566,9 +590,12 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
             item {
                 Panel {
                     val best = x.laps.filter { it.time > 0 && !it.cut }.minOfOrNull { it.time }
+                    val drk = x.drivers().isNotEmpty()
                     x.laps.forEach { l ->
                         Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                             Text("L${l.n}", color = Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(44.dp))
+                            // DRINKS mode: who drove each lap
+                            if (drk) Text(x.driverOf(l), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(78.dp))
                             val strike = if (l.cut) TextDecoration.LineThrough else TextDecoration.None
                             Text(lapTime(l.time), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = if (l.cut) Muted else if (l.time == best) Purple else Fg, textDecoration = strike, modifier = Modifier.weight(1f).alpha(if (l.cut) .6f else 1f))
                             Text("P${l.pos}", color = Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, textDecoration = strike, modifier = Modifier.width(44.dp).alpha(if (l.cut) .6f else 1f))
@@ -587,10 +614,13 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
                         val me = if (anyMe) p.me else p.pos == x.finish
                         val note = if (me) null else noteFor(notes, p.k, p.name)
                         // your note on a driver: their tag before the name; tap a driver to mark them
-                        Row(Modifier.fillMaxWidth().then(if (me) Modifier else Modifier.clickable { editing = p }).padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().then(if (me || p.ai) Modifier else Modifier.clickable { editing = p }).padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("${p.pos}", color = if (me) Accent else Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(30.dp))
                             if (note != null && note.tag.isNotEmpty()) { TagIcon(note.tag, 14.dp); Spacer(Modifier.width(5.dp)) }
-                            Text(p.name + if (note != null && note.note.isNotEmpty()) " ✎" else "", fontSize = 12.sp, fontWeight = if (me) FontWeight.Black else FontWeight.Normal, color = if (me) Accent else Fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                            // your car in a DRINKS race: who drove it
+                            val nm = if (me && x.drivers().isNotEmpty()) x.drivers().joinToString(", ") { it.first } else p.name
+                            Text(nm + if (note != null && note.note.isNotEmpty()) " ✎" else "", fontSize = 12.sp, fontWeight = if (me) FontWeight.Black else FontWeight.Normal, color = if (me) Accent else Fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                            if (p.ai) Text(" " + t("ai_driver"), color = Blue, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             // laps more (red) or less (blue) than you, like the relative
                             val myLaps = x.results.firstOrNull { if (anyMe) it.me else it.pos == x.finish }?.laps ?: 0
                             val dl = if (!me && p.laps > 0 && myLaps > 0) p.laps - myLaps else 0

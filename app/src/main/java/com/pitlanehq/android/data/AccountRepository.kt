@@ -341,7 +341,7 @@ class AccountRepository(context: Context) {
                 r.remove("brakes"); r.remove("incidents")
                 val slim = JSONArray()
                 for (i in 0 until laps.length()) laps.optJSONObject(i)?.let { l ->
-                    slim.put(JSONObject().put("n", l.optInt("n")).put("t", l.optDouble("t")).put("p", l.optInt("p")).put("i", l.optInt("i")).put("pit", l.optBoolean("pit")).put("cut", l.optBoolean("cut")))
+                    slim.put(JSONObject().put("n", l.optInt("n")).put("t", l.optDouble("t")).put("p", l.optInt("p")).put("i", l.optInt("i")).put("pit", l.optBoolean("pit")).put("cut", l.optBoolean("cut")).apply { l.optString("drv").takeIf { it.isNotBlank() }?.let { put("drv", it) } })
                 }
                 r.put("laps", slim)
             }
@@ -363,9 +363,11 @@ class AccountRepository(context: Context) {
                 fuelUsed = r.optDouble("fuelUsed").pos(), ir = r.optInt("ir"), irChange = r.optInt("irChange"), sof = r.optInt("sof"),
                 dnf = r.optBoolean("dnf"), cat = r.optStr("cat"),
                 drinks = r.optJSONArray("drinks")?.let { d -> (0 until d.length()).map { fixTxt(d.optString(it)) }.filter { it.isNotBlank() } } ?: emptyList(),
-                laps = (0 until laps.length()).map { k -> laps.getJSONObject(k).let { RaceLap(it.optInt("n"), it.optDouble("t"), it.optInt("p"), it.optInt("i"), it.optBoolean("pit"), it.optBoolean("cut")) } },
+                ai = isAIRace(r),
+                laps = (0 until laps.length()).map { k -> laps.getJSONObject(k).let { RaceLap(it.optInt("n"), it.optDouble("t"), it.optInt("p"), it.optInt("i"), it.optBoolean("pit"), it.optBoolean("cut"), fixTxt(it.optString("drv"))) } },
                 results = (0 until res.length()).map { k ->
-                    res.getJSONObject(k).let { RaceResult(it.optInt("cpos").takeIf { p -> p > 0 } ?: it.optInt("pos"), fixTxt(it.optString("name")), it.optInt("ir"), it.optDouble("best").pos(), it.optInt("inc"), it.optInt("laps"), it.optString("k"), it.optBoolean("me")) }
+                    // an offline race has only you as a real driver: everyone else there is an AI driver
+                    res.getJSONObject(k).let { RaceResult(it.optInt("cpos").takeIf { p -> p > 0 } ?: it.optInt("pos"), fixTxt(it.optString("name")), it.optInt("ir"), it.optDouble("best").pos(), it.optInt("inc"), it.optInt("laps"), it.optString("k"), it.optBoolean("me"), !it.optBoolean("me") && (it.optBoolean("ai") || (isAIRace(r) && r.optInt("subsession") == 0))) }
                 }.sortedBy { it.pos }
             )
         }
@@ -578,7 +580,7 @@ class AccountRepository(context: Context) {
         val a = saved("races")?.let { JSONArray(it) } ?: return
         val cats = mapOf("oval" to "oval", "dirtoval" to "dirt_oval", "dirtroad" to "dirt_road", "formulacar" to "formula_car", "sportscar" to "sports_car")
         val out = JSONArray()
-        (0 until a.length()).mapNotNull { a.optJSONObject(it) }.filter { it.optInt("finish") > 0 && it.optLong("when") > 0 && !it.optBoolean("partial") && (it.optJSONArray("drinks")?.length() ?: 0) == 0 }
+        (0 until a.length()).mapNotNull { a.optJSONObject(it) }.filter { it.optInt("finish") > 0 && it.optLong("when") > 0 && !it.optBoolean("partial") && (it.optJSONArray("drinks")?.length() ?: 0) == 0 && !isAIRace(it) }
             .sortedByDescending { it.optLong("when") }.take(20).forEach { r ->
                 val res = r.optJSONArray("results")
                 val me = res?.let { x -> (0 until x.length()).mapNotNull { x.optJSONObject(it) }.firstOrNull { it.optBoolean("me") } }
@@ -634,3 +636,6 @@ class AccountRepository(context: Context) {
         }, g.stale)
     }
 }
+
+/** A race against iRacing's AI: the PC says so, or an offline race (no subsession, its id "t-…") */
+fun isAIRace(r: JSONObject): Boolean = r.optBoolean("ai") || (r.optString("game", "iracing").ifEmpty { "iracing" } == "iracing" && r.optInt("subsession") == 0 && r.optString("id").startsWith("t-"))

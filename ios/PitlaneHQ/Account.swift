@@ -468,7 +468,9 @@ final class Account: ObservableObject {
                 r["brakes"] = nil
                 r["incidents"] = nil
                 r["laps"] = laps0.map { l -> [String: Any] in
-                    ["n": l["n"] ?? 0, "t": l["t"] ?? 0, "p": l["p"] ?? 0, "i": l["i"] ?? 0, "pit": l["pit"] ?? false, "cut": l["cut"] ?? false]
+                    var o: [String: Any] = ["n": l["n"] ?? 0, "t": l["t"] ?? 0, "p": l["p"] ?? 0, "i": l["i"] ?? 0, "pit": l["pit"] ?? false, "cut": l["cut"] ?? false]
+                    if let d = l["drv"] as? String, !d.isEmpty { o["drv"] = d }
+                    return o
                 }
                 return r
             }
@@ -484,12 +486,16 @@ final class Account: ObservableObject {
                 inc: max(int(r["inc"]), (r["laps"] as? [[String: Any]] ?? []).reduce(0) { $0 + int($1["i"]) }), best: pos(r["best"]),
                 fieldBest: pos(r["fieldBest"]), avg: pos(r["avg"]), consistency: pos(r["consistency"]), pits: int(r["pits"]), fuelUsed: pos(r["fuelUsed"]),
                 ir: int(r["ir"]), irChange: int(r["irChange"]), sof: int(r["sof"]), dnf: r["dnf"] as? Bool ?? false,
-                laps: (r["laps"] as? [[String: Any]] ?? []).map { RaceLap(n: int($0["n"]), time: num($0["t"]) ?? 0, pos: int($0["p"]), inc: int($0["i"]), pit: $0["pit"] as? Bool ?? false, cut: $0["cut"] as? Bool ?? false) },
-                results: (r["results"] as? [[String: Any]] ?? []).map {
-                    RaceResult(pos: int($0["cpos"]) > 0 ? int($0["cpos"]) : int($0["pos"]), name: fixTxt(str($0["name"])), ir: int($0["ir"]), best: pos($0["best"]), inc: int($0["inc"]), laps: int($0["laps"]), k: str($0["k"]), me: $0["me"] as? Bool ?? false)
+                laps: (r["laps"] as? [[String: Any]] ?? []).map { RaceLap(n: int($0["n"]), time: num($0["t"]) ?? 0, pos: int($0["p"]), inc: int($0["i"]), pit: $0["pit"] as? Bool ?? false, cut: $0["cut"] as? Bool ?? false, drv: fixTxt(str($0["drv"]))) },
+                results: (r["results"] as? [[String: Any]] ?? []).map { x -> RaceResult in
+                    // an offline race has only you as a real driver: everyone else there is an AI driver
+                    let me = x["me"] as? Bool ?? false
+                    return RaceResult(pos: int(x["cpos"]) > 0 ? int(x["cpos"]) : int(x["pos"]), name: fixTxt(str(x["name"])), ir: int(x["ir"]), best: pos(x["best"]), inc: int(x["inc"]), laps: int(x["laps"]), k: str(x["k"]), me: me,
+                                      ai: !me && ((x["ai"] as? Bool ?? false) || (isAIRace(r) && int(r["subsession"]) == 0)))
                 }.sorted { $0.pos < $1.pos },
                 cat: r["cat"] as? String,
-                drinks: (r["drinks"] as? [String] ?? []).map { fixTxt($0) }.filter { !$0.isEmpty }
+                drinks: (r["drinks"] as? [String] ?? []).map { fixTxt($0) }.filter { !$0.isEmpty },
+                ai: isAIRace(r)
             )
         }
     }
@@ -699,7 +705,7 @@ final class Account: ObservableObject {
     func publishProfileRaces() async {
         guard !demo, signedIn, let d = saved("races"), let a = try? JSONSerialization.jsonObject(with: d) as? [[String: Any]] else { return }
         let cats = ["oval": "oval", "dirtoval": "dirt_oval", "dirtroad": "dirt_road", "formulacar": "formula_car", "sportscar": "sports_car"]
-        let list: [[String: Any]] = a.filter { int($0["finish"]) > 0 && (num($0["when"]) ?? 0) > 0 && !($0["partial"] as? Bool ?? false) && ($0["drinks"] as? [Any] ?? []).isEmpty }
+        let list: [[String: Any]] = a.filter { int($0["finish"]) > 0 && (num($0["when"]) ?? 0) > 0 && !($0["partial"] as? Bool ?? false) && ($0["drinks"] as? [Any] ?? []).isEmpty && !isAIRace($0) }
             .sorted { (num($0["when"]) ?? 0) > (num($1["when"]) ?? 0) }.prefix(20).map { r -> [String: Any] in
                 let me = (r["results"] as? [[String: Any]] ?? []).first { $0["me"] as? Bool ?? false }
                 let rawCat = str(r["cat"]).lowercased().filter { $0.isLetter }
@@ -748,4 +754,11 @@ final class Account: ObservableObject {
             SharedSetup(id: str(s["id"]), alias: str(s["alias"]), name: str(s["name"]), car: str(s["car"]), track: str(s["track"]), notes: str(s["notes"]), downloads: int(s["downloads"]), created: num(s["created"]) ?? 0)
         }, stale: g.stale)
     }
+}
+
+/// A race against iRacing's AI: the PC says so, or an offline race (no subsession, its id "t-…")
+func isAIRace(_ r: [String: Any]) -> Bool {
+    if r["ai"] as? Bool ?? false { return true }
+    let g = (r["game"] as? String) ?? ""
+    return (g.isEmpty || g == "iracing") && ((r["subsession"] as? NSNumber)?.intValue ?? 0) == 0 && ((r["id"] as? String) ?? "").hasPrefix("t-")
 }

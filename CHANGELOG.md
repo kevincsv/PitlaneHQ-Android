@@ -4,6 +4,14 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; fixes ride along as
 "Fixes and improvements". 1.0.0 comes when the beta ends. Newest first.
 
+## 0.9.7 beta
+
+- **DRINKS races show who drove every lap**: "DRINKS · Multiple drivers" opens who drove, their laps and their best;
+  each lap of the summary says its driver, and your car in the results says who drove it.
+- **Races against the AI** say "vs AI", the AI drivers are marked in the results, and those races stay off your
+  public profile.
+- Fixes and improvements.
+
 ## 0.9.6 beta
 
 - **The league hub**: every league is a post with the days it races, the usual start in its time zone and in yours,

@@ -742,7 +742,7 @@ struct RaceRow: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(race.track).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
-                    DrinksBadge(race: race)
+                    HStack(spacing: 6) { DrinksBadge(race: race); AiBadge(race: race) }
                     Text(race.car).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
                     Text([day(race.when), race.official ? t("official") : t("unofficial"), race.sof > 0 ? "SOF \(race.sof)" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
                         .font(.caption2).foregroundColor(Theme.muted)
@@ -759,19 +759,44 @@ struct RaceRow: View {
     }
 }
 
-/// DRINKS mode: a race a friend drove (any lap): "DRINKS · Ana", or "DRINKS · Multiple" when several drove it
+/// DRINKS mode: a race a friend drove (any lap): "DRINKS · Ana", or "DRINKS · Multiple drivers" when several drove
+/// it; tapped, who drove it, their laps and their best lap
 struct DrinksBadge: View {
     let race: Race
     var names = false
+    @State private var open = false
+    private var who: String {
+        let ds = race.drivers
+        if ds.isEmpty { return race.drinks.joined(separator: "\n") }
+        return ds.map { d in d.name + ": " + t("drinks_laps", d.laps, lapTime(d.best)) }.joined(separator: "\n")
+    }
     var body: some View {
         if !race.drinks.isEmpty {
+            let many = race.drinks.count > 1
             VStack(alignment: .leading, spacing: 4) {
-                Text("DRINKS · " + (race.drinks.count > 1 ? t("drinks_multiple") : race.drinks[0]))
+                Text("DRINKS · " + (many ? t("drinks_multiple") + " ▾" : race.drinks[0]))
                     .font(.system(size: 10, weight: .bold)).tracking(0.4).lineLimit(1).foregroundColor(Color(red: 1, green: 0.886, blue: 0.659))
                     .padding(.horizontal, 8).padding(.vertical, 2)
                     .background(Capsule().fill(Theme.accent.opacity(0.22))).overlay(Capsule().stroke(Theme.accent.opacity(0.6), lineWidth: 1))
-                if names && race.drinks.count > 1 { Text(t("drinks_by", race.drinks.joined(separator: ", "))).font(.caption).foregroundColor(Theme.muted) }
+                    .onTapGesture { if many { open = true } }
+                if names && many { Text(t("drinks_by", race.drinks.joined(separator: ", "))).font(.caption).foregroundColor(Theme.muted) }
             }
+            .alert("DRINKS · " + t("drinks_who"), isPresented: $open) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(who)
+            }
+        }
+    }
+}
+
+/// A race against iRacing's AI drivers
+struct AiBadge: View {
+    let race: Race
+    var body: some View {
+        if race.ai {
+            Text(t("vs_ai")).font(.system(size: 10, weight: .bold)).tracking(0.4).lineLimit(1).foregroundColor(Theme.blue)
+                .padding(.horizontal, 8).padding(.vertical, 2).overlay(Capsule().stroke(Theme.blue.opacity(0.55), lineWidth: 1))
         }
     }
 }
@@ -914,7 +939,7 @@ struct RaceView: View {
         let x = race
         let best = x.laps.filter { $0.time > 0 && !$0.cut }.map(\.time).min()
         Screen(title: x.track, sub: x.car + " · " + dayTime(x.when)) {
-            if !x.drinks.isEmpty { DrinksBadge(race: x, names: true) }
+            if !x.drinks.isEmpty || x.ai { HStack(spacing: 6) { DrinksBadge(race: x, names: true); AiBadge(race: x) } }
             MetricGrid(items: [
                 MetricData(label: t("start"), value: "P\(x.start)"),
                 MetricData(label: t("finish"), value: x.dnf ? t("dnf") : "P\(x.finish)", color: x.finish == 1 ? Theme.purple : Theme.fg),
@@ -935,9 +960,12 @@ struct RaceView: View {
             if !x.laps.isEmpty {
                 SectionLabel(text: t("laps").uppercased())
                 Panel {
+                    let drk = !x.drivers.isEmpty
                     ForEach(x.laps, id: \.n) { l in
                         HStack {
                             Text("L\(l.n)").foregroundColor(Theme.muted).frame(width: 44, alignment: .leading)
+                            // DRINKS mode: who drove each lap
+                            if drk { Text(x.driverOf(l)).font(.system(size: 12)).lineLimit(1).frame(width: 78, alignment: .leading) }
                             Text(lapTime(l.time)).foregroundColor(l.cut ? Theme.muted : l.time == best ? Theme.purple : Theme.fg).strikethrough(l.cut).opacity(l.cut ? 0.6 : 1)
                             Spacer()
                             Text("P\(l.pos)").foregroundColor(Theme.muted).strikethrough(l.cut).frame(width: 44, alignment: .leading)
@@ -959,7 +987,9 @@ struct RaceView: View {
                         HStack {
                             Text("\(p.pos)").foregroundColor(me ? Theme.accent : Theme.muted).frame(width: 28, alignment: .leading)
                             if let n = note, !n.tag.isEmpty { TagIcon(tag: n.tag).frame(width: 14, height: 14) }
-                            Text(p.name + ((note?.note.isEmpty ?? true) ? "" : " ✎")).fontWeight(me ? .black : .regular).foregroundColor(me ? Theme.accent : Theme.fg).lineLimit(1)
+                            // your car in a DRINKS race: who drove it
+                            Text((me && !x.drivers.isEmpty ? x.drivers.map { $0.name }.joined(separator: ", ") : p.name) + ((note?.note.isEmpty ?? true) ? "" : " ✎")).fontWeight(me ? .black : .regular).foregroundColor(me ? Theme.accent : Theme.fg).lineLimit(1)
+                            if p.ai { Text(t("ai_driver")).font(.system(size: 10, weight: .bold)).foregroundColor(Theme.blue) }
                             // laps more (red) or less (blue) than you, like the relative
                             let myLaps = x.results.first(where: { x.results.contains(where: { $0.me }) ? $0.me : $0.pos == x.finish })?.laps ?? 0
                             let dl = !me && p.laps > 0 && myLaps > 0 ? p.laps - myLaps : 0
@@ -971,7 +1001,7 @@ struct RaceView: View {
                         }
                         .font(.system(size: 12, design: .monospaced))
                         .contentShape(Rectangle())
-                        .onTapGesture { if !me { editing = p } }
+                        .onTapGesture { if !me && !p.ai { editing = p } }
                     }
                 }
             }

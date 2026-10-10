@@ -129,8 +129,20 @@ data class Race(
     val ir: Int, val irChange: Int, val sof: Int, val dnf: Boolean,
     val laps: List<RaceLap>, val results: List<RaceResult>,
     val cat: String? = null,  // the discipline as iRacing names it (Oval, Road, DirtOval…); raceDisc tells which of ours
-    val drinks: List<String> = emptyList()  // DRINKS mode: who drove it when a friend drove any lap (the PC's report)
-)
+    val drinks: List<String> = emptyList(),  // DRINKS mode: who drove it when a friend drove any lap (the PC's report)
+    val ai: Boolean = false  // a race against iRacing's AI drivers (an offline race)
+) {
+    /** DRINKS mode: who drove the race, with their laps and best lap, in the order they first drove ([] when you alone) */
+    fun drivers(): List<Triple<String, Int, Double?>> {
+        if (laps.none { it.drv.isNotEmpty() }) return emptyList()
+        val own = drinks.firstOrNull { n -> laps.none { it.drv.equals(n, true) } } ?: "Me"
+        val out = LinkedHashMap<String, Pair<String, MutableList<RaceLap>>>()
+        laps.forEach { l -> val n = l.drv.ifEmpty { own }; out.getOrPut(n.lowercase()) { n to mutableListOf() }.second.add(l) }
+        return out.values.map { (n, ls) -> Triple(n, ls.size, ls.filter { it.time > 0 && !it.cut && !it.pit }.minOfOrNull { it.time }) }
+    }
+    /** who drove a lap: the friend's name, or yours */
+    fun driverOf(l: RaceLap): String = l.drv.ifEmpty { drinks.firstOrNull { n -> laps.none { it.drv.equals(n, true) } } ?: "Me" }
+}
 
 /** The discipline of a race as the PC tells it (discipline in journal.go, raceDisc in the web): iRacing says "Road"
  *  for sports and formula cars alike, so the car name tells which. */
@@ -145,10 +157,10 @@ fun raceDisc(cat: String?, car: String): String {
 }
 
 /** One lap of a race; [cut]: the car left the track, the lap is not valid. */
-data class RaceLap(val n: Int, val time: Double, val pos: Int, val inc: Int, val pit: Boolean, val cut: Boolean = false)
+data class RaceLap(val n: Int, val time: Double, val pos: Int, val inc: Int, val pit: Boolean, val cut: Boolean = false, val drv: String = "")
 
 /** One driver of a race; [k]: their opaque key (the PC's driverKey), what your driver notes find them by. */
-data class RaceResult(val pos: Int, val name: String, val ir: Int, val best: Double?, val inc: Int, val laps: Int, val k: String = "", val me: Boolean = false)
+data class RaceResult(val pos: Int, val name: String, val ir: Int, val best: Double?, val inc: Int, val laps: Int, val k: String = "", val me: Boolean = false, val ai: Boolean = false)
 
 /** Your note on another driver (drivers.json in the account): one tag (danger, careful, clean, friend) and a note. */
 data class DriverNote(val name: String, val tag: String, val note: String)
