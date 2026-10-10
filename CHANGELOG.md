@@ -6,6 +6,13 @@ web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; 
 
 ## 0.9.8 beta
 
+- **Telemetry like the PC's**: Telemetry, Standings and Tyres. The top card (position, delta, last lap and fuel beside
+  the cars ahead and behind, incidents and what is left), the delta bar, the live map with the official turns, the
+  relative, fuel and incidents; the standings with every car's gaps and laps, the tyres with their temperatures and
+  wear. In DRINKS mode whoever is driving is measured against their own best lap.
+- **Analysis like the PC's**: Laps, Coach, My sessions and My races. The coach reads your session's best lap against
+  the model's next level (the driver just ahead): the gap, what to work on first, your plan, the map, the sectors and
+  the corners that cost the most. The lap analysis compares with your own best, the next level or the record.
 - Fixes and improvements.
 
 ## 0.9.7 beta

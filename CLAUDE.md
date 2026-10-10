@@ -13,7 +13,10 @@
   web/server (Cloudflare) live in the Pitwall-test repository; the apps talk to that server and
   must keep its protocol: account keys (PBKDF2 600 000 + HKDF, AES-GCM with "pitlanehq-v1"),
   live relay (`/live`, "e:" messages with "pitlanehq-live-v1", gzip JSON [event, data]).
-- Android and iOS stay the same app: same screens, same features, same wording.
+- Android and iOS stay the same app: same screens, same features, same wording, and the PC's: Telemetry has the PC's
+  Telemetry, Standings and Tyres (`Live` in PitlaneApp.kt, `LiveTabs.swift`, fed by `LiveField`); Analysis has Laps,
+  Coach, My sessions and My races (`Analysis` in PitlaneApp.kt, `AnalysisView` and `Analysis.swift`), lap B is your own
+  best, the model's next level or its record (`modelRefs`), and each driver is measured against their own laps.
 - One version for Pitlane HQ everywhere: `version.txt` (the same number as PitlaneHQ.exe and the
   web), shown with "beta" until 1.0.0. Raise it slowly (PATCH for fixes, MINOR for a set of
   features) and add the version to CHANGELOG.md: its section becomes the release notes.

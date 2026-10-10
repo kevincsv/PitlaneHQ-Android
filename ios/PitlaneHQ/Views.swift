@@ -812,8 +812,9 @@ struct HomeView: View {
         let avgInc = recent.isEmpty ? "—" : String(format: "%.1f", Double(incSum) / Double(recent.count))
         Screen(title: account.display.isEmpty ? t("driver") : account.display, sub: t("racing_companion")) {
             if account.admin || (account.supporter && !account.supporterHidden) { HStack(spacing: 6) { MyBadges(); Spacer() } }
-            Licences()
+            // the web's order: the days you drove, the licence summary, then your races
             DaysDriven(races: races)
+            Licences()
             SectionLabel(text: t("race_summary"))
             MetricGrid(items: [
                 MetricData(label: t("races"), value: "\(races.count)"),
@@ -822,7 +823,7 @@ struct HomeView: View {
                 MetricData(label: t("avg_inc"), value: avgInc),
             ], columns: 2)
             HStack {
-                SectionLabel(text: t("recent_races"))
+                SectionLabel(text: t("your_recent_races"))
                 Spacer()
                 if races.count > 5 { Button(t("see_all")) { inbox.analysisTab = 3; inbox.goTab = 1 }.font(.caption).foregroundColor(Theme.accent) }
             }

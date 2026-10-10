@@ -384,8 +384,9 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
     Screen(a.display.ifBlank { t("driver") }, t("racing_companion")) {
         if (a.admin || (a.supporter && !a.supporterHidden)) item { Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { MyBadges(a) } }
         state(r) { vm.loadRaces() }
-        item { Licences(vm) }
+        // the web's order: the days you drove, the licence summary, then your races
         item { DaysDriven(vm, nav, races) }
+        item { Licences(vm) }
         item { Section(t("race_summary")) }
         item {
             // no iRating here: each category has its own (the licence summary above), never one number for all
@@ -401,7 +402,7 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
         }
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Section(t("recent_races"))
+                Section(t("your_recent_races"))
                 Spacer(Modifier.weight(1f))
                 if (races.size > 5) TextButton({ vm.analysisTab = 3; nav.navigate("analysis") { popUpTo("home") { saveState = true }; launchSingleTop = true; restoreState = true } }) { Text(t("see_all"), color = Accent, fontSize = 12.sp) }
             }

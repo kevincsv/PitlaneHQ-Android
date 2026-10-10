@@ -43,6 +43,7 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "wins" to ("Wins" to "Victorias"),
     "top5" to ("Top 5" to "Top 5"),
     "recent_races" to ("RECENT RACES" to "CARRERAS RECIENTES"),
+    "your_recent_races" to ("YOUR RECENT RACES" to "TUS CARRERAS RECIENTES"),
     "see_all" to ("See all" to "Ver todas"),
     "no_races" to ("No races yet. Race with Pitlane HQ Agent running and account sync on: your races appear here." to "Aún no hay carreras. Corre con Pitlane HQ Agent abierto y la sincronización de la cuenta activada: tus carreras aparecerán aquí."),
     "sync" to ("Sync" to "Sincronizar"),
