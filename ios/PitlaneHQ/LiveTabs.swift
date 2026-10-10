@@ -94,31 +94,55 @@ struct LiveTopView: View {
         let lapsLeft = live.num("SessionLapsRemainEx").flatMap { $0 >= 0 && $0 < 32000 ? Int($0) : nil }
         let timeLeft = live.num("SessionTimeRemain").flatMap { $0 > 0 && $0 < 604800 ? $0 : nil }
         let who = drk && !(live.drinks?.driver ?? "").isEmpty ? " · " + (live.drinks?.driver ?? "") : ""
+        // what the cards say, worked out here so SwiftUI has little to type-check in the views
+        let posText: String = pos.map { "P\($0)" + (field > 1 ? "/\(field)" : "") } ?? "—"
+        let lapNo: String? = lap.map { "\($0)" + (total.map { "/\($0)" } ?? "") }
+        let lapSub: String? = lapNo.map { t("lt_lap_of", $0) }
+        let dltText: String = dlt.map { signedS($0, 2) } ?? "—"
+        let dltColor: Color = dlt == nil ? Theme.fg : dlt! <= 0 ? Theme.good : Theme.bad
+        let bestSub: String? = best.map { t("lt_best_t", lapTime($0)) + who }
+        let isBest: Bool = { guard let l = last, let b = best else { return false }; return l <= b + 0.001 }()
+        let lastSub: String? = { () -> String? in
+            guard let l = last, let b = best else { return nil }
+            return l <= b + 0.001 ? t("lt_your_best") : t("lt_off_best", String(format: "%.2f", l - b))
+        }()
+        let lastColor: Color = isBest ? Theme.purple : Theme.fg
+        let fuelText: String = fuel.map { String(format: "%.1f L", $0) } ?? "—"
+        let fuelSub: String? = { () -> String? in
+            guard let f = fuel, let p = perLap else { return nil }
+            return t("lt_laps", String(format: "%.1f", f / p))
+        }()
+        let isRace = kind.lowercased().contains("race")
+        let aheadText: String = ab.0.map { String(format: "−%.1f s", $0) } ?? "—"
+        let behindText: String = ab.1.map { String(format: "+%.1f s", $0) } ?? "—"
+        let incText: String = inc.map { "\($0)x" } ?? "—"
+        let leftText: String = { () -> String in
+            if let n = lapsLeft { return t("lt_laps", n) }
+            if let s = timeLeft { return String(format: "%d:%02d", Int(s) / 60, Int(s) % 60) }
+            return "—"
+        }()
+        let title: String = ses.map { $0.track.isEmpty ? t("tab_telemetry") : $0.track } ?? t("tab_telemetry")
         VStack(spacing: 10) {
             Panel {
-                Text(ses.map { $0.track.isEmpty ? t("tab_telemetry") : $0.track } ?? t("tab_telemetry")).font(.headline.weight(.black)).lineLimit(1)
+                Text(title).font(.headline.weight(.black)).lineLimit(1)
                 if !kind.isEmpty { Text(kind).font(.caption).foregroundColor(Theme.muted) }
                 HStack(spacing: 8) {
-                    Metric(label: t("lt_position"), value: pos.map { "P\($0)" + (field > 1 ? "/\(field)" : "") } ?? "—",
-                           sub: lap.map { t("lt_lap_of", "\($0)" + (total.map { "/\($0)" } ?? "")) })
-                    Metric(label: "Delta", value: dlt.map { signedS($0, 2) } ?? "—", color: dlt == nil ? Theme.fg : dlt! <= 0 ? Theme.good : Theme.bad,
-                           sub: best.map { t("lt_best_t", lapTime($0)) + who })
+                    Metric(label: t("lt_position"), value: posText, sub: lapSub)
+                    Metric(label: "Delta", value: dltText, color: dltColor, sub: bestSub)
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 8) {
-                    Metric(label: t("lt_last"), value: lapTime(last), color: last != nil && best != nil && last! <= best! + 0.001 ? Theme.purple : Theme.fg,
-                           sub: last != nil && best != nil ? (last! <= best! + 0.001 ? t("lt_your_best") : t("lt_off_best", String(format: "%.2f", last! - best!))) : nil)
-                    Metric(label: t("lt_fuel"), value: fuel.map { String(format: "%.1f L", $0) } ?? "—",
-                           sub: fuel != nil && perLap != nil ? t("lt_laps", String(format: "%.1f", fuel! / perLap!)) : nil)
+                    Metric(label: t("lt_last"), value: lapTime(last), color: lastColor, sub: lastSub)
+                    Metric(label: t("lt_fuel"), value: fuelText, sub: fuelSub)
                 }
                 .fixedSize(horizontal: false, vertical: true)
             }
             Panel {
-                SectionLabel(text: (kind.lowercased().contains("race") ? t("lt_race") : t("lt_session")).uppercased())
-                InfoRow(label: t("lt_ahead"), value: ab.0.map { String(format: "−%.1f s", $0) } ?? "—")
-                InfoRow(label: t("lt_behind"), value: ab.1.map { String(format: "+%.1f s", $0) } ?? "—")
-                InfoRow(label: t("lt_incidents"), value: inc.map { "\($0)x" } ?? "—", color: (inc ?? 0) >= 8 ? Theme.bad : Theme.fg)
-                InfoRow(label: t("lt_left"), value: lapsLeft.map { t("lt_laps", $0) } ?? timeLeft.map { String(format: "%d:%02d", Int($0) / 60, Int($0) % 60) } ?? "—")
+                SectionLabel(text: (isRace ? t("lt_race") : t("lt_session")).uppercased())
+                InfoRow(label: t("lt_ahead"), value: aheadText)
+                InfoRow(label: t("lt_behind"), value: behindText)
+                InfoRow(label: t("lt_incidents"), value: incText, color: (inc ?? 0) >= 8 ? Theme.bad : Theme.fg)
+                InfoRow(label: t("lt_left"), value: leftText)
             }
         }
     }
@@ -335,11 +359,11 @@ struct LiveMapView: View {
 struct LiveTyresView: View {
     @ObservedObject var live: Live
     var body: some View {
-        let any = ["LF", "RF", "LR", "RR"].contains { live.num($0 + "tempCM") != nil }
+        let has = ["LF", "RF", "LR", "RR"].contains { live.num($0 + "tempCM") != nil }
         Panel {
             SectionLabel(text: t("tab_tyres").uppercased())
             Text(t("lt_tyres_note")).font(.caption).foregroundColor(Theme.muted).padding(.bottom, 6)
-            if !any {
+            if !has {
                 Text(t("lt_tyres_none")).font(.caption).foregroundColor(Theme.muted)
             } else {
                 HStack(spacing: 8) { tyre("LF", t("lt_fl")); tyre("RF", t("lt_fr")) }
