@@ -503,7 +503,8 @@ private fun RaceRow(x: Race, onClick: () -> Unit) {
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(if (x.dnf) t("dnf") else "P${x.finish}/${x.field}", fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, color = if (x.finish == 1) Purple else Fg)
-                Text("iR " + signed(x.irChange), color = if (x.irChange > 0) Good else if (x.irChange < 0) Bad else Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                // a race against the AI has no iRating
+                if (!x.ai) Text("iR " + signed(x.irChange), color = if (x.irChange > 0) Good else if (x.irChange < 0) Bad else Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 Text("${x.inc}x", color = if (x.inc >= 8) Bad else Muted, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
             }
         }
@@ -559,7 +560,8 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
                 listOf(
                     MetricData(t("start"), "P${x.start}"),
                     MetricData(t("finish"), if (x.dnf) t("dnf") else "P${x.finish}", if (x.finish == 1) Purple else Fg),
-                    MetricData("iRating", signed(x.irChange), if (x.irChange > 0) Good else if (x.irChange < 0) Bad else Fg, if (x.ir > 0) "${x.ir} → ${x.ir + x.irChange}" else null),
+                    if (x.ai) MetricData("iRating", "—", Muted, t("vs_ai")) // a race against the AI has none
+                    else MetricData("iRating", signed(x.irChange), if (x.irChange > 0) Good else if (x.irChange < 0) Bad else Fg, if (x.ir > 0) "${x.ir} → ${x.ir + x.irChange}" else null),
                     MetricData(t("incidents"), "${x.inc}x", if (x.inc >= 8) Bad else Fg),
                     MetricData(t("pos_gain"), signed(x.start - x.finish), if (x.start > x.finish) Good else if (x.start < x.finish) Bad else Fg),
                     MetricData(t("sof"), if (x.sof > 0) "${x.sof}" else "—")
@@ -618,7 +620,7 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
                             val dl = if (!me && p.laps > 0 && myLaps > 0) p.laps - myLaps else 0
                             if (dl != 0) Text((if (dl > 0) " +" else " −") + kotlin.math.abs(dl) + "L", color = if (dl > 0) Bad else Blue, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                             Spacer(Modifier.weight(1f))
-                            Text(if (p.ir > 0) "${p.ir}" else "", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
+                            Text(if (p.ir > 0 && !x.ai) "${p.ir}" else "", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
                             Text(lapTime(p.best), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(66.dp))
                             Text("${p.inc}x", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(30.dp))
                         }
@@ -1971,7 +1973,7 @@ private fun ProfileScreen(vm: PitlaneViewModel, nav: NavHostController) {
                     Text(if (r.dnf) "DNF" else if (r.finish > 0) "P${r.finish}/${r.field}" else "—", fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
                 }
                 val dif = if (r.start > 0 && r.finish > 0) r.start - r.finish else 0
-                Text(listOf(if (dif != 0) (if (dif > 0) "+" else "") + dif + " " + t("places") else "", "${r.inc}x", if (r.irChange != 0) "iR " + (if (r.irChange > 0) "+" else "") + r.irChange else "", if (r.best != null) t("best_short") + " " + lapTime(r.best) else "").filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 11.sp)
+                Text(listOf(if (dif != 0) (if (dif > 0) "+" else "") + dif + " " + t("places") else "", "${r.inc}x", if (r.irChange != 0 && !r.ai) "iR " + (if (r.irChange > 0) "+" else "") + r.irChange else "", if (r.best != null) t("best_short") + " " + lapTime(r.best) else "").filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 11.sp)
             }
         }
         item { Section(t("on_leaderboards").uppercase()) }
@@ -2592,7 +2594,7 @@ private fun Licences(vm: PitlaneViewModel) {
 @Composable
 private fun LicCard(k: String, r: Triple<Int, String, Long>?, races: List<Race>, m: Modifier) {
     val col = discColor(k)
-    val last = races.filter { raceDisc(it.cat, it.car) == k }.take(5)
+    val last = races.filter { raceDisc(it.cat, it.car) == k && !it.ai }.take(5) // races against the AI give no iRating
     val chg = last.sumOf { it.irChange }
     val lic = r?.second?.trim()?.uppercase() ?: ""
     val cls = lic.takeIf { it.isNotEmpty() }?.let { if (it.startsWith("WC") || it.startsWith("PRO")) "P" else it.take(1) }

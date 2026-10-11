@@ -136,7 +136,7 @@ struct LicCard: View {
     let races: [Race]
     var body: some View {
         let col = discColor(k)
-        let last = races.filter { raceDisc($0.cat, $0.car) == k }.prefix(5)
+        let last = races.filter { raceDisc($0.cat, $0.car) == k && !$0.ai }.prefix(5) // races against the AI give no iRating
         let chg = last.reduce(0) { $0 + $1.irChange }
         let lic = (r?.lic ?? "").trimmingCharacters(in: .whitespaces).uppercased()
         let cls: String? = lic.isEmpty ? nil : (lic.hasPrefix("WC") || lic.hasPrefix("PRO") ? "P" : String(lic.prefix(1)))
@@ -748,8 +748,11 @@ struct RaceRow: View {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(race.dnf ? t("dnf") : "P\(race.finish)/\(race.field)").font(.system(.headline, design: .monospaced).weight(.black)).foregroundColor(race.finish == 1 ? Theme.purple : Theme.fg)
-                    Text("iR " + signed(race.irChange)).font(.system(.caption, design: .monospaced).bold())
-                        .foregroundColor(race.irChange > 0 ? Theme.good : race.irChange < 0 ? Theme.bad : Theme.muted)
+                    // a race against the AI has no iRating
+                    if !race.ai {
+                        Text("iR " + signed(race.irChange)).font(.system(.caption, design: .monospaced).bold())
+                            .foregroundColor(race.irChange > 0 ? Theme.good : race.irChange < 0 ? Theme.bad : Theme.muted)
+                    }
                     Text("\(race.inc)x").font(.system(.caption2, design: .monospaced)).foregroundColor(race.inc >= 8 ? Theme.bad : Theme.muted)
                 }
             }
@@ -932,7 +935,8 @@ struct RaceView: View {
             MetricGrid(items: [
                 MetricData(label: t("start"), value: "P\(x.start)"),
                 MetricData(label: t("finish"), value: x.dnf ? t("dnf") : "P\(x.finish)", color: x.finish == 1 ? Theme.purple : Theme.fg),
-                MetricData(label: "iRating", value: signed(x.irChange), color: x.irChange > 0 ? Theme.good : x.irChange < 0 ? Theme.bad : Theme.fg, sub: x.ir > 0 ? "\(x.ir) → \(x.ir + x.irChange)" : nil),
+                // a race against the AI has no iRating
+                x.ai ? MetricData(label: "iRating", value: "—", color: Theme.muted, sub: t("vs_ai")) : MetricData(label: "iRating", value: signed(x.irChange), color: x.irChange > 0 ? Theme.good : x.irChange < 0 ? Theme.bad : Theme.fg, sub: x.ir > 0 ? "\(x.ir) → \(x.ir + x.irChange)" : nil),
                 MetricData(label: t("incidents"), value: "\(x.inc)x", color: x.inc >= 8 ? Theme.bad : Theme.fg),
                 MetricData(label: t("pos_gain"), value: signed(x.start - x.finish), color: x.start > x.finish ? Theme.good : x.start < x.finish ? Theme.bad : Theme.fg),
                 MetricData(label: t("sof"), value: x.sof > 0 ? "\(x.sof)" : "—"),
@@ -984,7 +988,7 @@ struct RaceView: View {
                             let dl = !me && p.laps > 0 && myLaps > 0 ? p.laps - myLaps : 0
                             if dl != 0 { Text((dl > 0 ? "+" : "−") + "\(abs(dl))L").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(dl > 0 ? Theme.bad : Theme.blue) }
                             Spacer()
-                            Text(p.ir > 0 ? "\(p.ir)" : "").foregroundColor(Theme.muted).frame(width: 44, alignment: .trailing)
+                            Text(p.ir > 0 && !x.ai ? "\(p.ir)" : "").foregroundColor(Theme.muted).frame(width: 44, alignment: .trailing)
                             Text(lapTime(p.best)).frame(width: 66, alignment: .trailing)
                             Text("\(p.inc)x").foregroundColor(Theme.muted).frame(width: 30, alignment: .trailing)
                         }
@@ -2725,7 +2729,7 @@ struct ProfileView: View {
                             Text(r.dnf ? "DNF" : r.finish > 0 ? "P\(r.finish)/\(r.field)" : "—").font(.system(.headline, design: .monospaced).weight(.black))
                         }
                         let dif = r.start > 0 && r.finish > 0 ? r.start - r.finish : 0
-                        Text([dif != 0 ? (dif > 0 ? "+" : "") + "\(dif) " + t("places") : "", "\(r.inc)x", r.irChange != 0 ? "iR " + (r.irChange > 0 ? "+" : "") + "\(r.irChange)" : "", r.best.map { t("best_short") + " " + lapTime($0) } ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
+                        Text([dif != 0 ? (dif > 0 ? "+" : "") + "\(dif) " + t("places") : "", "\(r.inc)x", r.irChange != 0 && !r.ai ? "iR " + (r.irChange > 0 ? "+" : "") + "\(r.irChange)" : "", r.best.map { t("best_short") + " " + lapTime($0) } ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
                             .font(.caption2).foregroundColor(Theme.muted)
                     }
                 }

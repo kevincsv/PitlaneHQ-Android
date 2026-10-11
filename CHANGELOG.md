@@ -13,6 +13,7 @@ web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; 
 - **Analysis like the PC's**: Laps, Coach, My sessions and My races. The coach reads your session's best lap against
   the model's next level (the driver just ahead): the gap, what to work on first, your plan, the map, the sectors and
   the corners that cost the most. The lap analysis compares with your own best, the next level or the record.
+- **Races against the AI show no iRating** (no change, no iRating in the results, nothing in the licence summary).
 - Fixes and improvements.
 
 ## 0.9.7 beta

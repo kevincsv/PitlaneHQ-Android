@@ -9,6 +9,8 @@
 - DRINKS mode (formerly Friday night mode, admins only): friends drive on the owner's PC and their laps
   go to the community under their name. Switched on the PC or from the phone (Settings → DRINKS
   mode) through the encrypted live link ("drinks" event); the PC checks the account is an admin.
+- A race against iRacing's AI (`ai` on the race) has no iRating: no change in the race rows or the summary, no
+  iRating in its results, nothing in the licence summary.
 - This repository is only the Android app (`app/`) and the iOS app (`ios/`). The PC app and the
   web/server (Cloudflare) live in the Pitwall-test repository; the apps talk to that server and
   must keep its protocol: account keys (PBKDF2 600 000 + HKDF, AES-GCM with "pitlanehq-v1"),
