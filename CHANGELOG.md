@@ -16,7 +16,8 @@ web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; 
 - **Races against the AI show no iRating** (no change, no iRating in the results, nothing in the licence summary).
 - **The coach's advice follows your data**: no "brake later" when you already brake later than the reference, no
   "full throttle sooner" when you are already on the throttle earlier. The track map runs along the reference lap's
-  path, so the two lines are the right way round.
+  path, so the two lines are the right way round, and a lap without a path of its own (an older one, a rival's)
+  shows the track's layout drawn by the community.
 - Fixes and improvements.
 
 ## 0.9.7 beta

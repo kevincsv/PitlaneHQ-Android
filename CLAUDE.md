@@ -31,7 +31,8 @@
   (`tip_entry_before`) or in a longer slow part (`tip_apex_longer`); a throttle picked up earlier but a slower apex
   says to carry the speed (`tip_exit_speed`); only a generic tip (`GENERIC_TIPS`) gives way to the gear, the lifts
   and the line. The track map's road is the reference's path when both laps have one (`c.bx`/`c.by`: B dashed along
-  the middle, A beside it by `c.lat`), else the lap's own.
+  the middle, A beside it by `c.lat`), else the lap's own, else the track's layout drawn by the community
+  (`trackLayout`, `layout` in `LapAnalysis`), like the web: a lap without a path still has its map.
 - One version for Pitlane HQ everywhere: `version.txt` (the same number as PitlaneHQ.exe and the
   web), shown with "beta" until 1.0.0. Raise it slowly (PATCH for fixes, MINOR for a set of
   features) and add the version to CHANGELOG.md: its section becomes the release notes.

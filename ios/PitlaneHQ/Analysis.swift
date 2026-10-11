@@ -14,6 +14,7 @@ struct LapAnalysis {
     var car: [String: Any]?
     var turns: [Double] = []      // the official turn numbers of this track, when an admin placed them
     var fastest = false           // nobody known is faster here: lap B is your own best
+    var layout: ([Double], [Double])?  // the track's layout drawn by the community: the map's road when the lap has no path
 }
 
 private func fillArgs(_ s0: String, _ args: [String]) -> String {
@@ -42,6 +43,8 @@ extension Account {
         // the car card needs the car alone: what it does on other tracks, for when nobody known drove it here yet
         if let cc = c ?? combos.first(where: { $0.car.caseInsensitiveCompare(session.car) == .orderedSame }) { a.car = try? await carCard(carId: cc.carId) }
         if let tc = c { a.turns = await turns(trackId: tc.trackId) }
+        // a lap with no path of its own (an older one, a rival's) still gets its map: the track's layout drawn by the community
+        if let tc = c, !(a.trace?.hasShape ?? false) { a.layout = await trackLayout(trackId: tc.trackId) }
         let own = all.filter { $0.valid && $0.time > 0 && $0.id != lap.id && $0.drv == lap.drv }.min { $0.time < $1.time }
         if kind == .myBest {
             (a.ref, a.refLabel, a.refTime, a.refSectors) = await ownRef(own)
@@ -200,7 +203,7 @@ struct CoachBody: View {
         let lose = cs.filter { $0.tip != nil && $0.lost > 0.03 }.sorted { $0.lost > $1.lost }
         if an.ref == nil { Text(t("no_reference")).font(.caption).foregroundColor(Theme.muted) }
         else if !cs.isEmpty { summary(cs, lose) }
-        if tr.hasShape { TrackMapView(c: c, trace: tr, pick: $pick, turns: an.turns) }
+        if tr.hasShape || an.layout != nil { TrackMapView(c: c, trace: tr, pick: $pick, turns: an.turns, road: an.layout) }
         if !an.lap.sectors.isEmpty { SectorTable(a: an.lap.sectors, b: an.refSectors) }
         if !lose.isEmpty {
             SectionLabel(text: t("coach_top").uppercased())

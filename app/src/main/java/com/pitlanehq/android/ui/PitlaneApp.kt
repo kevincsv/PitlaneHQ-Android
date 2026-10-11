@@ -1015,7 +1015,7 @@ private fun LazyListScope.coachItems(an: LapAnalysis, pick: Int?, onPick: (Int) 
             }
         }
     }
-    if (tr.hasShape) item { TrackMap(c, tr, pick, an.turns, onPick) }
+    if (tr.hasShape || an.layout != null) item { TrackMap(c, tr, pick, an.turns, an.layout, onPick) }
     sectorItems(an)
     if (lose.isNotEmpty()) {
         item { Section(t("coach_top").uppercase()) }
@@ -1099,7 +1099,7 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
                 if (an.ref == null) item { Text(t("no_reference"), color = Muted, fontSize = 12.sp) }
                 val refName = an.refLabel.ifBlank { t("ref") }
                 val card: @Composable (Int) -> Unit = { i -> PointCard(c, i, refName, an.lap.sectors, an.refSectors) }
-                if (an.trace.hasShape) item { TrackMap(c, an.trace, pick, an.turns) { pick = it } }
+                if (an.trace.hasShape || an.layout != null) item { TrackMap(c, an.trace, pick, an.turns, an.layout) { pick = it } }
                 item {
                     Chart(t("speed") + " (km/h)", listOfNotNull(Series(t("you"), c.speedA, Accent), c.speedB?.let { Series(refName, it, Blue) }), c.step, { "%.0f".format(it) },
                         sel = pick, onSel = { pick = it }, card = card)
@@ -1307,13 +1307,15 @@ private fun incName(kind: String) = t(when (kind) { "contact" -> "inc_contact"; 
  * or drag on it to read that point: the charts follow it.
  */
 @Composable
-private fun TrackMap(c: Compared, tr: Trace, sel: Int?, turns: List<Double> = emptyList(), onSel: (Int) -> Unit) {
+private fun TrackMap(c: Compared, tr: Trace, sel: Int?, turns: List<Double> = emptyList(), road: Pair<List<Double>, List<Double>>? = null, onSel: (Int) -> Unit) {
     // the road is the reference's path when both laps have one (B runs along the middle, A beside it by how far it was
-    // from B); else this lap's own. Its points are the compared grid's then (c.step), else the trace's (tr.bin)
+    // from B); else this lap's own; else the track's layout drawn by the community (road). Its points are the compared
+    // grid's then (c.step), the trace's (tr.bin), or the lap's length over the layout's points
     val useB = c.lat != null && c.bx != null && c.by != null
-    val xs = (if (useB) c.bx else tr.x) ?: return
-    val ys = (if (useB) c.by else tr.y) ?: return
-    val bin = if (useB) c.step else tr.bin
+    val own = tr.hasShape
+    val xs = (if (useB) c.bx else if (own) tr.x else road?.first) ?: return
+    val ys = (if (useB) c.by else if (own) tr.y else road?.second) ?: return
+    val bin = if (useB) c.step else if (own) tr.bin else (c.speedA.size - 1) * c.step / maxOf(1, xs.size - 1)
     val incs = tr.incidents
     var showInc by rememberSaveable { mutableStateOf(true) }
     var showBrk by rememberSaveable { mutableStateOf(true) }

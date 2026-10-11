@@ -1347,6 +1347,7 @@ struct LapView: View {
     @State private var pick: Double?
     @State private var car: [String: Any]?
     @State private var turns: [Double] = [] // the official turn numbers of this track, when an admin placed them
+    @State private var layout: ([Double], [Double])? // the community's layout, the map's road when the lap has no path
 
     private func load() async {
         loading = true
@@ -1360,6 +1361,7 @@ struct LapView: View {
             refSectors = a.refSectors
             car = a.car
             turns = a.turns
+            layout = a.layout
         } catch {
             self.error = (error as? AppError)?.key ?? error.localizedDescription
         }
@@ -1400,7 +1402,7 @@ struct LapView: View {
                     if ref == nil { Text(t("no_reference")).font(.caption).foregroundColor(Theme.muted) }
                     let refName = refLabel.isEmpty ? t("ref") : refLabel
                     let card: (Int) -> AnyView = { i in AnyView(PointCard(c: c, i: i, refName: refName, sec: lap.sectors, refSec: refSectors)) }
-                    if trace.hasShape { TrackMapView(c: c, trace: trace, pick: $pick, turns: turns) }
+                    if trace.hasShape || layout != nil { TrackMapView(c: c, trace: trace, pick: $pick, turns: turns, road: layout) }
                     Chart(title: t("speed") + " (km/h)", series: speedSeries(c, refName), step: c.step, fmt: { String(format: "%.0f", $0) },
                           pick: $pick, card: card)
                     if let delta = c.delta {
@@ -1447,16 +1449,20 @@ struct TrackMapView: View {
     private let rings: [Corner]
     private let minX: Double, maxX: Double, minY: Double, maxY: Double
 
-    init(c: Compared, trace: Trace, pick: Binding<Double?>, turns: [Double] = []) {
+    init(c: Compared, trace: Trace, pick: Binding<Double?>, turns: [Double] = [], road: ([Double], [Double])? = nil) {
         self.c = c
         self.trace = trace
         self._pick = pick
         // the road is the reference's path when both laps have one (B runs along the middle, A beside it by how far it
-        // was from B); else this lap's own
+        // was from B); else this lap's own; else the track's layout drawn by the community (road). Its points are the
+        // compared grid's then, the trace's, or the lap's length over the layout's points
         let useB = c.lat != nil && c.bx != nil && c.by != nil
-        xs = useB ? c.bx! : (trace.x ?? [])
-        ys = useB ? c.by! : (trace.y ?? [])
-        bin = useB ? c.step : trace.bin
+        let own = trace.hasShape
+        let rx: [Double] = useB ? c.bx! : (own ? (trace.x ?? []) : (road?.0 ?? []))
+        let ry: [Double] = useB ? c.by! : (own ? (trace.y ?? []) : (road?.1 ?? []))
+        xs = rx
+        ys = ry
+        bin = useB ? c.step : (own ? trace.bin : Double(c.speedA.count - 1) * c.step / Double(max(1, rx.count - 1)))
         brkA = brakePoints(c.brkA, c.step)
         brkB = brakePoints(c.brkB, c.step)
         rings = c.delta != nil ? corners(c, turns: turns).filter { $0.lost > 0.05 } : []
