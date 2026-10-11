@@ -11,6 +11,8 @@
   mode) through the encrypted live link ("drinks" event); the PC checks the account is an admin.
 - A race against iRacing's AI (`ai` on the race) has no iRating: no change in the race rows or the summary, no
   iRating in its results, nothing in the licence summary.
+- The admin panel's account card has "Link a DRINKS driver" (the driver's name; `adminAccount(id, "link-guest", name)`)
+  and "Unlink DRINKS driver …" for each one joined (`guestLinked` in the accounts list, "gid|name,…").
 - This repository is only the Android app (`app/`) and the iOS app (`ios/`). The PC app and the
   web/server (Cloudflare) live in the Pitwall-test repository; the apps talk to that server and
   must keep its protocol: account keys (PBKDF2 600 000 + HKDF, AES-GCM with "pitlanehq-v1"),

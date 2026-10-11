@@ -2227,8 +2227,12 @@ private fun AdminScreen(vm: PitlaneViewModel, nav: NavHostController) {
                     Text(id, color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                     Text(t("admin_since", day(ms)) + if (u.optLong("memberSince") > 0) " ✎" else "", color = Muted, fontSize = 12.sp)
                     Text(t("admin_user_line", u.optInt("sessions"), u.optInt("laps"), u.optInt("guests")), color = Muted, fontSize = 12.sp)
-                    // help with an account: confirm its email, turn off its two-step sign-in, sign it out, rename it, unblock it
+                    // help with an account: confirm its email, turn off its two-step sign-in, sign it out, rename it, unblock it,
+                    // join a DRINKS driver to it (what was shared under the driver's name goes to the account, later laps too)
                     var rename by remember { mutableStateOf<String?>(null) }
+                    var linkGuest by remember { mutableStateOf<String?>(null) }
+                    val guestLinks = (u.opt("guestLinked") as? String ?: "").split(",").filter { it.isNotBlank() }.map { it.substringAfter("|") } // "gid|name,…", null when none
+                    if (guestLinks.isNotEmpty()) Text(t("admin_guest_linked", guestLinks.joinToString(", ")), color = Accent, fontSize = 12.sp)
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (u.optInt("verified") != 1) TextButton({ vm.adminAccount(id, "verify") }) { Text(t("admin_verify"), color = Accent) }
                         if (u.optInt("twoFactor") == 1) TextButton({ vm.adminAccount(id, "2fa-off") }) { Text(t("admin_2fa_off"), color = Accent) }
@@ -2236,6 +2240,17 @@ private fun AdminScreen(vm: PitlaneViewModel, nav: NavHostController) {
                         if (u.optInt("driverLinked") == 1) TextButton({ vm.adminAccount(id, "unlink-driver") }) { Text(t("admin_unlink_driver"), color = Accent) }
                         TextButton({ rename = u.optString("display") }) { Text(t("admin_rename"), color = Accent) }
                         TextButton({ vm.adminUnlock("account", id, "users") }) { Text(t("admin_unblock"), color = Accent) }
+                        TextButton({ linkGuest = "" }) { Text(t("admin_link_guest"), color = Accent) }
+                        guestLinks.forEach { g -> TextButton({ vm.adminAccount(id, "unlink-guest", g) }) { Text(t("admin_unlink_guest", g), color = Accent) } }
+                    }
+                    linkGuest?.let { v ->
+                        AlertDialog(
+                            onDismissRequest = { linkGuest = null },
+                            title = { Text(t("admin_link_guest")) },
+                            text = { Column { Text(t("admin_link_guest_hint"), color = Muted, fontSize = 12.sp); OutlinedTextField(v, { linkGuest = it.take(32) }, singleLine = true) } },
+                            confirmButton = { TextButton({ val n = v.trim(); linkGuest = null; if (n.isNotEmpty()) vm.adminAccount(id, "link-guest", n) }) { Text(t("save"), color = Accent) } },
+                            dismissButton = { TextButton({ linkGuest = null }) { Text(t("cancel"), color = Muted) } }
+                        )
                     }
                     rename?.let { v ->
                         AlertDialog(

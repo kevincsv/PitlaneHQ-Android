@@ -2897,6 +2897,8 @@ struct AdminView: View {
     @State private var since: SinceEdit?
     @State private var renaming: (String, String)?
     @State private var newName = ""
+    @State private var linking: String?   // the account a DRINKS driver is being joined to
+    @State private var linkName = ""
     @State private var rows: [[String: Any]]?
     @State private var error: String?
     @State private var confirmDelete: (String, String)?
@@ -2944,6 +2946,16 @@ struct AdminView: View {
                 }
             }
         }
+        // a DRINKS driver joined to an account: what was shared under the driver's name goes to the account, later laps too
+        .alert(t("admin_link_guest"), isPresented: Binding(get: { linking != nil }, set: { if !$0 { linking = nil } })) {
+            TextField(t("admin_link_guest"), text: $linkName)
+            Button(t("save")) {
+                let id = linking ?? "", n = linkName.trimmingCharacters(in: .whitespaces)
+                linking = nil
+                if !n.isEmpty { Task { try? await account.adminAccount(id, "link-guest", name: n); await load() } }
+            }
+            Button(t("cancel"), role: .cancel) { linking = nil }
+        } message: { Text(t("admin_link_guest_hint")) }
         .alert(t("admin_rename"), isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField(t("admin_rename"), text: $newName)
             Button(t("save")) {
@@ -3024,6 +3036,8 @@ struct AdminView: View {
 
     @ViewBuilder private func userRow(_ x: [String: Any]) -> some View {
         let str = { (k: String) in x[k] as? String ?? "" }
+        // the DRINKS drivers joined to this account ("gid|name,…")
+        let guestLinks: [String] = str("guestLinked").split(separator: ",").map { String($0.split(separator: "|").last ?? "") }.filter { !$0.isEmpty }
         let int = { (k: String) in (x[k] as? NSNumber)?.intValue ?? 0 }
         let ms0 = (x["memberSince"] as? NSNumber)?.doubleValue ?? 0, ms = ms0 > 0 ? ms0 : ((x["created"] as? NSNumber)?.doubleValue ?? 0)
         let name: String = str("display") + ((x["admin"] as? Bool ?? false) ? " · Admin" : "")
@@ -3040,9 +3054,12 @@ struct AdminView: View {
                 if int("driverLinked") == 1 { Button(t("admin_unlink_driver")) { Task { try? await account.adminAccount(str("id"), "unlink-driver"); await load() } } }
                 Button(t("admin_rename")) { newName = str("display"); renaming = (str("id"), str("display")) }
                 Button(t("admin_unblock")) { Task { try? await account.adminUnlock("account", str("id")); await load() } }
+                Button(t("admin_link_guest")) { linkName = ""; linking = str("id") }
+                ForEach(guestLinks, id: \.self) { g in Button(t("admin_unlink_guest", g)) { Task { try? await account.adminAccount(str("id"), "unlink-guest", name: g); await load() } } }
             }
             .foregroundColor(Theme.accent).font(.caption.bold())
         }
+        if !guestLinks.isEmpty { Text(t("admin_guest_linked", guestLinks.joined(separator: ", "))).font(.caption).foregroundColor(Theme.accent) }
         HStack(spacing: 14) {
             NavigationLink(value: Route.profile("acct:" + str("id"))) { Text(t("profile")) }.foregroundColor(Theme.accent).font(.caption.bold())
             Button(t("admin_set_since")) { since = SinceEdit(id: str("id"), date: Date(timeIntervalSince1970: ms / 1000), custom: ms0 > 0) }.foregroundColor(Theme.accent).font(.caption.bold())
