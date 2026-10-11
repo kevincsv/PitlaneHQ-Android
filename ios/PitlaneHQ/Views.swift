@@ -2780,8 +2780,7 @@ struct ProfileView: View {
 
 struct LiveView: View {
     @EnvironmentObject var account: Account
-    @StateObject private var live = Live()
-    @Environment(\.scenePhase) private var phase
+    @EnvironmentObject var live: Live
     @State private var codeIn = ""
     @State private var codeErr = false
 
@@ -2869,11 +2868,9 @@ struct LiveView: View {
             LiveTabsView(live: live)
             }
         }
-        .onAppear { start() }
-        .onDisappear { live.stop() }
-        .onChange(of: phase) { p in
-            if p == .active { start() } else { live.stop() }
-        }
+        .onAppear { live.screens += 1; start() }
+        // leaving Telemetry: back to presence only (the server's sync nudge keeps reaching the phone)
+        .onDisappear { live.screens = max(0, live.screens - 1); live.startPresence(token: account.token, key: account.dataKey) }
     }
 
     private func bar(_ label: String, _ v: Double?, _ c: Color) -> some View {
@@ -3106,7 +3103,7 @@ struct AdminView: View {
 
 struct DrinksView: View {
     @EnvironmentObject var account: Account
-    @StateObject private var live = Live()
+    @EnvironmentObject var live: Live
     @State private var name = ""
     @State private var taken: String?
     @State private var editing: String?
@@ -3130,8 +3127,8 @@ struct DrinksView: View {
                 EmptyNote(text: t("drinks_wait"))
             }
         }
-        .onAppear { live.start(token: account.token, key: account.dataKey, demo: false) }
-        .onDisappear { live.stop() }
+        .onAppear { live.screens += 1; live.start(token: account.token, key: account.dataKey, demo: false) }
+        .onDisappear { live.screens = max(0, live.screens - 1); live.startPresence(token: account.token, key: account.dataKey) }
         // change a name (the laps already shared change too) or take it off the list (they stay)
         .alert(t("drinks_rename"), isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
             TextField(t("drinks_name"), text: $newName)

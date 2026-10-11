@@ -12,6 +12,8 @@ web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; 
   shows the track's layout drawn by the community.
 - **Races against the AI**: no iRating (no change, no iRating in the results, nothing in the licence summary) and
   "vs AI" on every session, the older ones included.
+- **Changes from your PC or the web reach the phone at once**: the server tells the app the moment another device
+  saves the account. Nobody syncs by hand: the Sync button is gone.
 - Fixes and improvements.
 
 ## 0.9.8 beta

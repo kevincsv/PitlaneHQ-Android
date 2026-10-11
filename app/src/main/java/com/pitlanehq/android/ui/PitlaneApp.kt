@@ -108,6 +108,7 @@ fun PitlaneApp(vm: PitlaneViewModel = viewModel()) {
     val account by vm.account.collectAsState()
     // every time the app comes to the screen, the account syncs by itself
     LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.onForeground() }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.onBackground() }
     val scheme = darkColorScheme(
         primary = Accent, onPrimary = Ink, background = Ink, onBackground = Fg, surface = Surface, onSurface = Fg,
         surfaceVariant = Surface2, onSurfaceVariant = Muted, outline = Line, error = Bad

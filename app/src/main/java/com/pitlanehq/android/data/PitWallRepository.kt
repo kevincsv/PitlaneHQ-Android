@@ -12,7 +12,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -40,10 +42,18 @@ class PitWallRepository(private val account: AccountRepository) {
     private val laps = LiveLaps() // the laps seen here, for DRINKS mode
     private val _state = MutableStateFlow(LiveState())
     val state = _state.asStateFlow()
+    // the server says another device uploaded the account (its version): the app reads it again at once
+    private val _syncNudges = MutableSharedFlow<Long>(extraBufferCapacity = 8)
+    val syncNudges = _syncNudges.asSharedFlow()
     // what is watched: kept for your own PC (Connect stays on), never for someone's code
     private var mode = if (account.liveOwn) LiveMode.OWN else LiveMode.IDLE
     private var code = ""
     private var codeKey: ByteArray? = null
+    // presence only (every screen but Telemetry): the link stays open so the server's "sync" nudge reaches
+    // the phone; nothing is sent and your PC is not asked. What was watched comes back with start().
+    private var presence = false
+    private var savedMode = LiveMode.IDLE
+    private var savedCode = ""
 
     /** Connect to your PC (OWN), watch a code (CODE), or Disconnect (IDLE): the link opens again the new way. */
     fun watch(m: LiveMode, c: String = "") {
@@ -66,7 +76,20 @@ class PitWallRepository(private val account: AccountRepository) {
         return ws.send("e:" + Crypto.seal(key, Crypto.gzip(msg.toString().toByteArray()), Crypto.LIVE_AAD))
     }
 
+    /** Telemetry on screen: watch your PC or a code as chosen (Connect stays on). */
     fun start() {
+        if (presence) { // back from presence to what was watched
+            stop()
+            presence = false
+            mode = savedMode
+            code = savedCode
+            codeKey = null
+            _state.value = LiveState(mode = mode, code = code)
+        }
+        launch()
+    }
+
+    private fun launch() {
         if (loop?.isActive == true) return
         if (account.demo) {
             // Settings → Demo data: an invented lap, nothing from the server
@@ -109,6 +132,21 @@ class PitWallRepository(private val account: AccountRepository) {
         socket?.close(1000, "bye")
         socket = null
         _state.value = LiveState(mode = mode, code = code)
+    }
+
+    /** Presence only, on every screen but Telemetry: the server's sync nudge reaches the phone, nothing is sent. */
+    fun startPresence() {
+        if (account.demo) return
+        if (presence) { launch(); return }
+        stop()
+        presence = true
+        savedMode = mode
+        savedCode = code
+        mode = LiveMode.IDLE
+        code = ""
+        codeKey = null
+        _state.value = LiveState(mode = mode, code = code)
+        launch()
     }
 
     private fun open(closed: kotlinx.coroutines.CompletableDeferred<Unit>) {
@@ -200,6 +238,7 @@ class PitWallRepository(private val account: AccountRepository) {
         if (text == "pong") return
         if (text.startsWith("{")) {
             val o = JSONObject(text)
+            if (o.optString("ctl") == "sync") { _syncNudges.tryEmit(o.optLong("version")); return }
             if (o.optString("ctl") == "pc") {
                 val on = o.optBoolean("on")
                 if (mode == LiveMode.IDLE) { _state.update { it.copy(pcOnline = on) }; return }

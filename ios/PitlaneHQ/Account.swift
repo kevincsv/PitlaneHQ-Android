@@ -416,6 +416,18 @@ final class Account: ObservableObject {
     }
 
     private var lastAuto = Date.distantPast
+    private var nudge: Task<Void, Never>?
+
+    /// The server said another device uploaded the account (version): read it again in a moment (bursts become one read).
+    func nudged(_ version: Int) {
+        guard signedIn, !demo, version == 0 || version > syncVersion else { return } // this phone's own upload, or already read
+        nudge?.cancel()
+        nudge = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled, let self else { return }
+            await self.sync(quiet: true)
+        }
+    }
 
     /// The app came to the screen (it opened, or came back from the background): your account, public
     /// name and races are read again by themselves, at most every 30 seconds, without a spinner.

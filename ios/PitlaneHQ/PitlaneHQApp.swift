@@ -8,6 +8,7 @@ struct PitlaneHQApp: App {
     @StateObject private var i18n = I18n.shared
     @StateObject private var updates = Updates()
     @StateObject private var inbox = Inbox()
+    @StateObject private var live = Live()
     @Environment(\.scenePhase) private var phase
 
     var body: some Scene {
@@ -21,11 +22,28 @@ struct PitlaneHQApp: App {
             .environmentObject(i18n)
             .environmentObject(updates)
             .environmentObject(inbox)
+            .environmentObject(live)
             .task { await updates.check() }
             .task { await inbox.load() }
             // every time the app comes to the screen, the account syncs by itself
             .task { await account.syncIfDue() }
-            .onChange(of: phase) { p in if p == .active { Task { await account.syncIfDue() } } }
+            // and the link to the account's live room stays open (presence only): the moment another device
+            // uploads the account, the server says so and this phone reads it again
+            .task {
+                live.onSync = { v in account.nudged(v) }
+                if account.signedIn { live.startPresence(token: account.token, key: account.dataKey) }
+            }
+            .onChange(of: account.signedIn) { on in
+                if on { live.startPresence(token: account.token, key: account.dataKey) } else { live.stop() }
+            }
+            .onChange(of: phase) { p in
+                if p == .active {
+                    Task { await account.syncIfDue() }
+                    if account.signedIn { live.resume(token: account.token, key: account.dataKey, demo: account.demo) }
+                } else {
+                    live.stop()
+                }
+            }
             .preferredColorScheme(.dark)
             .tint(Theme.accent)
         }

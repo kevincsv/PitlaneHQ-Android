@@ -49,6 +49,13 @@ final class Live: ObservableObject {
         return v
     }()
     private var account: (String?, Data?, Bool) = (nil, nil, false)
+    /// presence only (every screen but Telemetry): the link stays open so the server's "sync" nudge reaches the
+    /// phone; nothing is sent and your PC is not asked. start() brings back what was watched.
+    private(set) var presence = false
+    /// how many screens watch (Telemetry, DRINKS): while one does, presence never takes the link over
+    var screens = 0
+    /// the server says another device uploaded the account (its version): the app reads it again at once
+    var onSync: ((Int) -> Void)?
 
     private var task: URLSessionWebSocketTask?
     private var key: Data?
@@ -78,8 +85,33 @@ final class Live: ObservableObject {
         ws.send(.string("e:" + sealed)) { _ in }
     }
 
+    /// Telemetry on screen: watch your PC or a code as chosen (Connect stays on).
     func start(token: String?, key: Data?, demo: Bool = false) {
         account = (token, key, demo)
+        if presence { // back from presence to what was watched
+            stop()
+            presence = false
+        }
+        launch()
+    }
+
+    /// Presence only, on every screen but Telemetry: the server's sync nudge reaches the phone, nothing is sent.
+    func startPresence(token: String?, key: Data?) {
+        if screens > 0 { return }
+        if presence && loop != nil { return }
+        stop()
+        presence = true
+        account = (token, key, false)
+        launch()
+    }
+
+    /// The app came back to the screen: the link opens again as it was (presence, or what Telemetry watched).
+    func resume(token: String?, key: Data?, demo: Bool) {
+        if presence { startPresence(token: token, key: key) } else { start(token: token, key: key, demo: demo) }
+    }
+
+    private func launch() {
+        let (token, key, demo) = account
         guard loop == nil else { return }
         if demo {
             // Settings → Demo data: an invented lap, nothing from the server
@@ -97,8 +129,8 @@ final class Live: ObservableObject {
             }
             return
         }
-        let useKey: Data? = mode == .code ? codeKey : key
-        guard let useKey, token != nil || mode == .code else { return }
+        let useKey: Data? = mode == .code && !presence ? codeKey : key
+        guard let useKey, token != nil || (mode == .code && !presence) else { return }
         loop = Task { [weak self] in
             var wait: UInt64 = 2
             while !Task.isCancelled {
@@ -127,7 +159,7 @@ final class Live: ObservableObject {
 
     /// One connection, until it closes. Returns whether it got through.
     private func run(token: String?, key: Data) async -> Bool {
-        let q = (mode == .idle ? "idle" : "view") + (mode == .code ? "&share=" + PLCrypto.codeRoom(code) : "")
+        let q = presence ? "idle" : (mode == .idle ? "idle" : "view") + (mode == .code ? "&share=" + PLCrypto.codeRoom(code) : "")
         var r = URLRequest(url: URL(string: server.absoluteString.replacingOccurrences(of: "https://", with: "wss://") + "/live?role=" + q)!)
         if let token { r.setValue("Bearer " + token, forHTTPHeaderField: "authorization") }
         let ws = URLSession.shared.webSocketTask(with: r)
@@ -136,13 +168,13 @@ final class Live: ObservableObject {
         fields = []
         link = .connecting
         ws.resume()
-        if mode == .own { hello(ws, key, fresh: true) } else { want(ws, key) }
+        if !presence { if mode == .own { hello(ws, key, fresh: true) } else { want(ws, key) } } // presence sends nothing
         var opened = false
         // hello again every 20 s while you watch your PC, so it knows you still do
         let hi = Task { [weak self, weak ws] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 20_000_000_000)
-                guard let self, let ws, self.task === ws, self.mode == .own else { continue }
+                guard let self, let ws, self.task === ws, self.mode == .own, !self.presence else { continue }
                 self.hello(ws, key, fresh: false)
             }
         }
@@ -156,7 +188,7 @@ final class Live: ObservableObject {
         // the PC sends the list of variables once: if it got lost, ask again
         let again = Task { [weak self, weak ws] in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
-            guard let self, let ws, self.task === ws, self.pcOnline, self.fields.isEmpty else { return }
+            guard let self, let ws, self.task === ws, self.pcOnline, self.fields.isEmpty, !self.presence else { return }
             self.want(ws, key)
         }
         defer {
@@ -233,10 +265,12 @@ final class Live: ObservableObject {
     private func handle(_ ws: URLSessionWebSocketTask, _ key: Data, _ text: String) {
         if text == "pong" { return }
         if text.hasPrefix("{") {
-            guard let o = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any], o["ctl"] as? String == "pc" else { return }
+            guard let o = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else { return }
+            if o["ctl"] as? String == "sync" { onSync?(o["version"] as? Int ?? 0); return }
+            guard o["ctl"] as? String == "pc" else { return }
             let on = o["on"] as? Bool ?? false
             pcOnline = on
-            if mode == .idle { return }
+            if mode == .idle || presence { return }
             if on {
                 if mode == .own { hello(ws, key, fresh: true) } else { want(ws, key) } // a PC that just started is asked again
             } else {
@@ -246,7 +280,7 @@ final class Live: ObservableObject {
             }
             return
         }
-        guard text.hasPrefix("e:"),
+        guard !presence, text.hasPrefix("e:"),
               let z = try? PLCrypto.open(key: key, sealed: String(text.dropFirst(2)), aad: PLCrypto.liveAAD),
               let raw = try? PLCrypto.gunzip(z),
               let a = try? JSONSerialization.jsonObject(with: raw) as? [Any], a.count == 2, let ev = a[0] as? String else { return }

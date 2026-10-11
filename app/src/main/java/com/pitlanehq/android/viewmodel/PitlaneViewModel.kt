@@ -15,6 +15,8 @@ import com.pitlanehq.android.data.*
 import com.pitlanehq.android.model.*
 import com.pitlanehq.android.ui.I18n
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -88,6 +90,8 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         runCatching { cm?.registerNetworkCallback(NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(), netCallback) }
         loadRaces()
         checkUpdate()
+        // another device uploaded the account (the server tells the live room): this phone reads it again at once
+        viewModelScope.launch { live.syncNudges.collect { onSyncNudge(it) } }
     }
 
     /** A newer version on GitHub: shown as a banner on top. */
@@ -132,7 +136,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         _account.value = AccountState(email = email, busy = true)
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repo.login(email, password) }
-                .onSuccess { _account.value = it; demo.value = repo.demo; loadRaces() }
+                .onSuccess { _account.value = it; demo.value = repo.demo; loadRaces(); resumeLive() }
                 .onFailure { _account.value = AccountState(email = email, error = errKey(it)) }
         }
     }
@@ -143,7 +147,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         _account.value = a.copy(busy = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repo.loginCode(code) }
-                .onSuccess { _account.value = it; demo.value = repo.demo; loadRaces() }
+                .onSuccess { _account.value = it; demo.value = repo.demo; loadRaces(); resumeLive() }
                 .onFailure { e -> _account.value = if (e.message == "sign_in_again") AccountState(email = a.email, error = "sign_in_again") else a.copy(busy = false, error = errKey(e)) }
         }
     }
@@ -205,11 +209,23 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun onForeground() {
         val a = _account.value
+        resumeLive()
         if (!a.signedIn || a.busy || demo.value) return
         val now = System.currentTimeMillis()
         if (now - lastAuto < 30_000) return
         lastAuto = now
         sync(quiet = true)
+    }
+
+    private var nudgeJob: Job? = null
+
+    /** The server said another device uploaded the account: read it again in a moment (bursts become one read). */
+    private fun onSyncNudge(version: Long) {
+        val a = _account.value
+        if (!a.signedIn || demo.value) return
+        if (version != 0L && version <= a.syncVersion) return // this phone's own upload, or already read
+        nudgeJob?.cancel()
+        nudgeJob = viewModelScope.launch { delay(400); sync(quiet = true) }
     }
 
     fun logout() {
@@ -376,9 +392,20 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // only while the live screen is open: the PC streams only while somebody watches
-    fun startLive() { if (_account.value.signedIn) live.start() }
-    fun stopLive() = live.stop()
+    // Telemetry (and DRINKS) on screen: the PC streams only while somebody watches
+    private var liveScreens = 0
+    fun startLive() { liveScreens++; resumeLive() }
+    // leaving Telemetry: back to presence only (the server's sync nudge keeps reaching the phone)
+    fun stopLive() { if (liveScreens > 0) liveScreens--; resumeLive() }
+    /**
+     * The link to the account's live room as the screen needs it: Telemetry watches your PC (or a code), every
+     * other screen keeps presence only, so another device's upload reaches this phone at once.
+     */
+    fun resumeLive() {
+        if (!_account.value.signedIn) { live.stop(); return }
+        if (liveScreens > 0) live.start() else if (!demo.value) live.startPresence() else live.stop()
+    }
+    fun onBackground() = live.stop()
     fun liveWatch(m: LiveMode, code: String = "") = live.watch(m, code)
     fun liveShare(on: Boolean, new: Boolean = false) = live.share(on, new)
     fun liveAskAgain() = live.askAgain()
