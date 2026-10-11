@@ -197,26 +197,32 @@ fun corners(c: Compared, turns: List<Double> = emptyList()): List<Corner> {
             fun lifts(th: List<Double>, from: Int, to: Int): Int { var n = 0; var prev = -1.0; for (k in from..min(to, th.size - 1)) { val t = th[k]; if (prev >= 0 && prev > .8 && t < .5) n++; prev = t }; return n }
             val lA = aMin?.let { lifts(c.thrA, it, i1) } ?: 0
             val lB = lifts(hB, zmin, i1)
-            when (phase) {
+            // braking later than the reference and arriving slower at the apex is one mistake, whatever phase pays for it
+            if (dd != null && dd > 6 && dmin != null && dmin < -2) { tip = "tip_brake_late_apex"; args = listOf(dd, (-dmin).toInt()) }
+            else when (phase) {
                 "brake" -> when {
                     dd != null && dd < -6 -> { tip = "tip_brake_later"; args = listOf(-dd) }
-                    ja != null && pa < bB[ipb] - .1 -> { tip = "tip_brake_harder"; args = listOf((pa * 100).toInt(), (bB[ipb] * 100).toInt()) }
+                    ja != null && pa < bB[ipb] - .05 -> { tip = "tip_brake_harder"; args = listOf((pa * 100).toInt(), (bB[ipb] * 100).toInt()) }
                     dd != null && dd > 6 -> { tip = "tip_brake_earlier"; args = listOf(dd) }
+                    trailA != null && trailB - trailA >= 15 -> { tip = "tip_trail"; args = listOf(trailA, trailB) }
+                    dd != null -> tip = "tip_brake_same"
                     else -> tip = "tip_brake_generic"
                 }
                 "entry" -> when {
                     trailA != null && trailB - trailA >= 15 -> { tip = "tip_trail"; args = listOf(trailA, trailB) }
                     coastA - coastB >= 10 -> { tip = "tip_coast"; args = listOf(coastA.toInt(), coastB.toInt()) }
+                    dmin != null && dmin >= 0 -> tip = "tip_entry_before"
                     else -> tip = "tip_entry_speed"
                 }
-                "apex" -> if (dmin != null && dmin < -2) { tip = "tip_apex_speed"; args = listOf((-dmin).toInt()) } else tip = "tip_apex_line"
+                "apex" -> if (dmin != null && dmin < -2) { tip = "tip_apex_speed"; args = listOf((-dmin).toInt()) } else if (dmin != null && dmin >= 0) tip = "tip_apex_longer" else tip = "tip_apex_line"
                 else -> when {
                     late != null && late >= 8 -> { tip = "tip_throttle"; args = listOf(late) }
                     coastA - coastB >= 10 -> tip = "tip_no_wait"
+                    late != null && late <= -8 && dmin != null && dmin < -1 -> { tip = "tip_exit_speed"; args = listOf(-late, (-dmin).toInt()) }
                     else -> tip = "tip_full_throttle"
                 }
             }
-            if (tip in setOf("tip_brake_generic", "tip_entry_speed", "tip_apex_line", "tip_full_throttle")) {
+            if (tip in GENERIC_TIPS) {
                 when {
                     gA >= 1 && gB >= 1 && gB > gA -> { tip = "tip_gear_up"; args = listOf(gB, gA) }
                     gA >= 1 && gB >= 1 && gB < gA -> { tip = "tip_gear_down"; args = listOf(gB, gA) }
@@ -232,7 +238,7 @@ fun corners(c: Compared, turns: List<Double> = emptyList()): List<Corner> {
             val dd = ja?.let { ((it - zi) * c.step).toInt() }
             val lt = lineTip(cornerLine(c, zi, zmin, zmin + bins(80.0), bins(40.0)), dd != null && kotlin.math.abs(dd) <= 6)
             if (lt != null) {
-                if (tip in setOf("tip_brake_generic", "tip_entry_speed", "tip_apex_line", "tip_full_throttle") || (phase == "brake" && dd != null && kotlin.math.abs(dd) <= 6)) { tip = lt.first; args = listOf(lt.second) }
+                if (tip in GENERIC_TIPS || (phase == "brake" && dd != null && kotlin.math.abs(dd) <= 6)) { tip = lt.first; args = listOf(lt.second) }
                 else { lineKey = lt.first; lineArgs = listOf(lt.second) }
             }
         }
@@ -240,7 +246,9 @@ fun corners(c: Compared, turns: List<Double> = emptyList()): List<Corner> {
     }
 }
 
-/** The three stretches of about 250 m where the lap loses the most time against the reference. */
+/** The tips that say nothing the data showed: what the data shows plainly (the gear, lifts, the line) replaces them. */
+private val GENERIC_TIPS = setOf("tip_brake_generic", "tip_entry_speed", "tip_apex_line", "tip_full_throttle", "tip_brake_same", "tip_entry_before", "tip_apex_longer")
+
 /** Where a lap starts braking (brake over 12 % after being below), in metres, from a series on the [step] grid. */
 fun brakePoints(brk: List<Double>?, step: Double): List<Double> {
     if (brk == null || brk.size < 3) return emptyList()

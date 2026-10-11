@@ -1308,8 +1308,12 @@ private fun incName(kind: String) = t(when (kind) { "contact" -> "inc_contact"; 
  */
 @Composable
 private fun TrackMap(c: Compared, tr: Trace, sel: Int?, turns: List<Double> = emptyList(), onSel: (Int) -> Unit) {
-    val xs = tr.x ?: return
-    val ys = tr.y ?: return
+    // the road is the reference's path when both laps have one (B runs along the middle, A beside it by how far it was
+    // from B); else this lap's own. Its points are the compared grid's then (c.step), else the trace's (tr.bin)
+    val useB = c.lat != null && c.bx != null && c.by != null
+    val xs = (if (useB) c.bx else tr.x) ?: return
+    val ys = (if (useB) c.by else tr.y) ?: return
+    val bin = if (useB) c.step else tr.bin
     val incs = tr.incidents
     var showInc by rememberSaveable { mutableStateOf(true) }
     var showBrk by rememberSaveable { mutableStateOf(true) }
@@ -1324,8 +1328,8 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, turns: List<Double> = em
     val secPaint = remember(labelPx) { android.graphics.Paint().apply { color = android.graphics.Color.rgb(0xFF, 0xB0, 0x2E); textSize = labelPx * 1.1f; isFakeBoldText = true; isAntiAlias = true } }
     val n = xs.size
     val m = c.speedA.size
-    val len = (n - 1) * tr.bin
-    val idxAt = { i: Int -> ((i * tr.bin) / c.step).roundToInt().coerceIn(0, m - 1) }
+    val len = (n - 1) * bin
+    val idxAt = { i: Int -> ((i * bin) / c.step).roundToInt().coerceIn(0, m - 1) }
     val minX = xs.min(); val maxX = xs.max(); val minY = ys.min(); val maxY = ys.max()
     var size by remember { mutableStateOf(IntSize(1, 1)) }
     fun pt(i: Int): Offset {
@@ -1417,23 +1421,23 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, turns: List<Double> = em
             }
             // the coach: the corners where you lose time against the reference
             if (showCoach) rings.forEach { k ->
-                val q = pt((k.atM / tr.bin).roundToInt().coerceIn(0, n - 1))
+                val q = pt((k.atM / bin).roundToInt().coerceIn(0, n - 1))
                 drawCircle(Purple.copy(alpha = .18f), 14f, q); drawCircle(Purple, 14f, q, style = Stroke(width = 2.5f))
             }
             // where each lap brakes: you (accent), the reference (blue)
             if (showBrk) {
-                brkB.forEach { d -> val q = pt((d / tr.bin).roundToInt().coerceIn(0, n - 1)); drawCircle(Bg, 7f, q); drawCircle(Blue, 5f, q) }
-                brkA.forEach { d -> val q = pt((d / tr.bin).roundToInt().coerceIn(0, n - 1)); drawCircle(Bg, 8f, q); drawCircle(Accent, 6f, q) }
+                brkB.forEach { d -> val q = pt((d / bin).roundToInt().coerceIn(0, n - 1)); drawCircle(Bg, 7f, q); drawCircle(Blue, 5f, q) }
+                brkA.forEach { d -> val q = pt((d / bin).roundToInt().coerceIn(0, n - 1)); drawCircle(Bg, 8f, q); drawCircle(Accent, 6f, q) }
             }
             // the incidents of the lap (✕ and its points, like the game), where they happened
             if (showInc) incs.forEach { (d, pts) ->
-                val q = pt((d / tr.bin).roundToInt().coerceIn(0, n - 1))
+                val q = pt((d / bin).roundToInt().coerceIn(0, n - 1))
                 drawLine(Bad, Offset(q.x - 6f, q.y - 6f), Offset(q.x + 6f, q.y + 6f), 3.5f, StrokeCap.Round)
                 drawLine(Bad, Offset(q.x + 6f, q.y - 6f), Offset(q.x - 6f, q.y + 6f), 3.5f, StrokeCap.Round)
                 drawContext.canvas.nativeCanvas.drawText("${pts}x", q.x + 8f, q.y - 7f, incPaint)
             }
             // the point under the finger
-            if (sel != null) { val i = ((sel * c.step) / tr.bin).roundToInt().coerceIn(0, n - 1); val q = pt(i); drawCircle(Fg, 9f, q); drawCircle(Accent, 6f, q) }
+            if (sel != null) { val i = ((sel * c.step) / bin).roundToInt().coerceIn(0, n - 1); val q = pt(i); drawCircle(Fg, 9f, q); drawCircle(Accent, 6f, q) }
         }
         // the same switches as the web and the race summary: braking, incidents, coach
         Row(Modifier.fillMaxWidth().padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

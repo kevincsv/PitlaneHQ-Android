@@ -14,6 +14,9 @@ web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; 
   the model's next level (the driver just ahead): the gap, what to work on first, your plan, the map, the sectors and
   the corners that cost the most. The lap analysis compares with your own best, the next level or the record.
 - **Races against the AI show no iRating** (no change, no iRating in the results, nothing in the licence summary).
+- **The coach's advice follows your data**: no "brake later" when you already brake later than the reference, no
+  "full throttle sooner" when you are already on the throttle earlier. The track map runs along the reference lap's
+  path, so the two lines are the right way round.
 - Fixes and improvements.
 
 ## 0.9.7 beta

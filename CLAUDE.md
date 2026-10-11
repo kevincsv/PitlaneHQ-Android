@@ -24,6 +24,14 @@
   Telemetry, Standings and Tyres (`Live` in PitlaneApp.kt, `LiveTabs.swift`, fed by `LiveField`); Analysis has Laps,
   Coach, My sessions and My races (`Analysis` in PitlaneApp.kt, `AnalysisView` and `Analysis.swift`), lap B is your own
   best, the model's next level or its record (`modelRefs`), and each driver is measured against their own laps.
+  The corner tips (`corners` in LapMath.kt and Models.swift, texts `tip_*`) follow the measured facts like the PC's
+  and the web's: braking later than the reference and arriving slower at the apex is one mistake whatever phase pays
+  for it (`tip_brake_late_apex`); with the same braking point the tip is about the brake (harder at first, trail,
+  `tip_brake_same`), never "brake later"; an apex reached as fast as the reference's says the time goes before it
+  (`tip_entry_before`) or in a longer slow part (`tip_apex_longer`); a throttle picked up earlier but a slower apex
+  says to carry the speed (`tip_exit_speed`); only a generic tip (`GENERIC_TIPS`) gives way to the gear, the lifts
+  and the line. The track map's road is the reference's path when both laps have one (`c.bx`/`c.by`: B dashed along
+  the middle, A beside it by `c.lat`), else the lap's own.
 - One version for Pitlane HQ everywhere: `version.txt` (the same number as PitlaneHQ.exe and the
   web), shown with "beta" until 1.0.0. Raise it slowly (PATCH for fixes, MINOR for a set of
   features) and add the version to CHANGELOG.md: its section becomes the release notes.

@@ -604,24 +604,31 @@ func corners(_ c: Compared, turns: [Double] = []) -> [Corner] {
             func lifts(_ th: [Double], _ from: Int, _ to: Int) -> Int { var n = 0; var prev = -1.0; if from > min(to, th.count - 1) { return 0 }; for k in from...min(to, th.count - 1) { let t = th[k]; if prev >= 0 && prev > 0.8 && t < 0.5 { n += 1 }; prev = t }; return n }
             let lA = aMin.map { lifts(c.thrA, $0, i1) } ?? 0
             let lB = lifts(hB, zmin, i1)
+            // braking later than the reference and arriving slower at the apex is one mistake, whatever phase pays for it
+            if let d = dd, let dm = dmin, d > 6, dm < -2 { tip = "tip_brake_late_apex"; args = ["\(d)", "\(Int(-dm))"] } else {
             switch phase ?? "" {
             case "brake":
                 if let d = dd, d < -6 { tip = "tip_brake_later"; args = ["\(-d)"] }
-                else if ja != nil && pa < bB[ipb] - 0.1 { tip = "tip_brake_harder"; args = ["\(Int(pa * 100))", "\(Int(bB[ipb] * 100))"] }
+                else if ja != nil && pa < bB[ipb] - 0.05 { tip = "tip_brake_harder"; args = ["\(Int(pa * 100))", "\(Int(bB[ipb] * 100))"] }
                 else if let d = dd, d > 6 { tip = "tip_brake_earlier"; args = ["\(d)"] }
+                else if let ta = trailA, trailB - ta >= 15 { tip = "tip_trail"; args = ["\(ta)", "\(trailB)"] }
+                else if dd != nil { tip = "tip_brake_same" }
                 else { tip = "tip_brake_generic" }
             case "entry":
                 if let ta = trailA, trailB - ta >= 15 { tip = "tip_trail"; args = ["\(ta)", "\(trailB)"] }
                 else if coastA - coastB >= 10 { tip = "tip_coast"; args = ["\(Int(coastA))", "\(Int(coastB))"] }
+                else if let dm = dmin, dm >= 0 { tip = "tip_entry_before" }
                 else { tip = "tip_entry_speed" }
             case "apex":
-                if let dm = dmin, dm < -2 { tip = "tip_apex_speed"; args = ["\(Int(-dm))"] } else { tip = "tip_apex_line" }
+                if let dm = dmin, dm < -2 { tip = "tip_apex_speed"; args = ["\(Int(-dm))"] } else if let dm = dmin, dm >= 0 { tip = "tip_apex_longer" } else { tip = "tip_apex_line" }
             default:
                 if let l = late, l >= 8 { tip = "tip_throttle"; args = ["\(l)"] }
                 else if coastA - coastB >= 10 { tip = "tip_no_wait" }
+                else if let l = late, let dm = dmin, l <= -8, dm < -1 { tip = "tip_exit_speed"; args = ["\(-l)", "\(Int(-dm))"] }
                 else { tip = "tip_full_throttle" }
             }
-            if ["tip_brake_generic", "tip_entry_speed", "tip_apex_line", "tip_full_throttle"].contains(tip ?? "") {
+            }
+            if GENERIC_TIPS.contains(tip ?? "") {
                 if gA >= 1 && gB >= 1 && gB > gA { tip = "tip_gear_up"; args = ["\(gB)", "\(gA)"] }
                 else if gA >= 1 && gB >= 1 && gB < gA { tip = "tip_gear_down"; args = ["\(gB)", "\(gA)"] }
                 else if phase == "exit" && lA >= 2 && lA > lB + 1 { tip = "tip_lifts"; args = ["\(lA)", "\(lB)"] }
@@ -634,7 +641,7 @@ func corners(_ c: Compared, turns: [Double] = []) -> [Corner] {
             let dd: Int? = ja.map { Int(Double($0 - zi) * c.step) }
             let same = dd.map { abs($0) <= 6 } ?? false
             if let lt = lineTip(cornerLine(c, brake: zi, apex: zmin, exit: zmin + bins(80), span: bins(40)), sameBrake: same) {
-                if ["tip_brake_generic", "tip_entry_speed", "tip_apex_line", "tip_full_throttle"].contains(tip ?? "") || (phase == "brake" && same) { tip = lt.0; args = [lt.1] }
+                if GENERIC_TIPS.contains(tip ?? "") || (phase == "brake" && same) { tip = lt.0; args = [lt.1] }
                 else { lineKey = lt.0; lineArgs = [lt.1] }
             }
         }
@@ -643,7 +650,9 @@ func corners(_ c: Compared, turns: [Double] = []) -> [Corner] {
     return out
 }
 
-/// The three stretches of about 250 m where the lap loses the most time against the reference.
+/// The tips that say nothing the data showed: what the data shows plainly (the gear, lifts, the line) replaces them.
+let GENERIC_TIPS: Set<String> = ["tip_brake_generic", "tip_entry_speed", "tip_apex_line", "tip_full_throttle", "tip_brake_same", "tip_entry_before", "tip_apex_longer"]
+
 /// Where a lap starts braking (brake over 12 % after being below), in metres, from a series on the `step` grid.
 func brakePoints(_ brk: [Double]?, _ step: Double) -> [Double] {
     guard let brk, brk.count >= 3 else { return [] }

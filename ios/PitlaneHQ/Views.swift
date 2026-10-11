@@ -1441,6 +1441,8 @@ struct TrackMapView: View {
     @State private var showCoach = true
     @State private var showLine = true
     private let xs: [Double], ys: [Double]
+    /// the metres between the road's points: the compared grid's when the road is the reference's path, else the trace's
+    private let bin: Double
     private let brkA: [Double], brkB: [Double]
     private let rings: [Corner]
     private let minX: Double, maxX: Double, minY: Double, maxY: Double
@@ -1449,8 +1451,12 @@ struct TrackMapView: View {
         self.c = c
         self.trace = trace
         self._pick = pick
-        xs = trace.x ?? []
-        ys = trace.y ?? []
+        // the road is the reference's path when both laps have one (B runs along the middle, A beside it by how far it
+        // was from B); else this lap's own
+        let useB = c.lat != nil && c.bx != nil && c.by != nil
+        xs = useB ? c.bx! : (trace.x ?? [])
+        ys = useB ? c.by! : (trace.y ?? [])
+        bin = useB ? c.step : trace.bin
         brkA = brakePoints(c.brkA, c.step)
         brkB = brakePoints(c.brkB, c.step)
         rings = c.delta != nil ? corners(c, turns: turns).filter { $0.lost > 0.05 } : []
@@ -1560,7 +1566,7 @@ struct TrackMapView: View {
 
     private var selectedRow: Int? {
         guard let s = selected else { return nil }
-        let i: Int = Int(((Double(s) * c.step) / trace.bin).rounded())
+        let i: Int = Int(((Double(s) * c.step) / bin).rounded())
         return max(0, min(n - 1, i))
     }
 
@@ -1622,7 +1628,7 @@ struct TrackMapView: View {
         guard let lat = c.lat, n > 4, m > 1 else { return p }
         var open = false
         for i in 0..<n {
-            let gi = max(0, min(m - 1, Int((Double(i) * trace.bin / c.step).rounded())))
+            let gi = max(0, min(m - 1, Int((Double(i) * bin / c.step).rounded())))
             let v = gi < lat.count ? lat[gi] : .nan
             if v.isNaN { open = false; continue }
             let i0 = max(0, i - 2), i1 = min(n - 1, i + 2)
@@ -1647,7 +1653,7 @@ struct TrackMapView: View {
         return p
     }
 
-    private func row(_ d: Double) -> Int { max(0, min(n - 1, Int((d / trace.bin).rounded()))) }
+    private func row(_ d: Double) -> Int { max(0, min(n - 1, Int((d / bin).rounded()))) }
 
     @ViewBuilder private func incMarks(_ size: CGSize) -> some View {
         if showInc {
