@@ -4,6 +4,16 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; fixes ride along as
 "Fixes and improvements". 1.0.0 comes when the beta ends. Newest first.
 
+## 0.9.9 beta
+
+- **The coach's advice follows your data**: no "brake later" when you already brake later than the reference, no
+  "full throttle sooner" when you are already on the throttle earlier. The track map runs along the reference lap's
+  path, so the two lines are the right way round, and a lap without a path of its own (an older one, a rival's)
+  shows the track's layout drawn by the community.
+- **Races against the AI**: no iRating (no change, no iRating in the results, nothing in the licence summary) and
+  "vs AI" on every session, the older ones included.
+- Fixes and improvements.
+
 ## 0.9.8 beta
 
 - **Telemetry like the PC's**: Telemetry, Standings and Tyres. The top card (position, delta, last lap and fuel beside
@@ -13,11 +23,6 @@ web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; 
 - **Analysis like the PC's**: Laps, Coach, My sessions and My races. The coach reads your session's best lap against
   the model's next level (the driver just ahead): the gap, what to work on first, your plan, the map, the sectors and
   the corners that cost the most. The lap analysis compares with your own best, the next level or the record.
-- **Races against the AI show no iRating** (no change, no iRating in the results, nothing in the licence summary).
-- **The coach's advice follows your data**: no "brake later" when you already brake later than the reference, no
-  "full throttle sooner" when you are already on the throttle earlier. The track map runs along the reference lap's
-  path, so the two lines are the right way round, and a lap without a path of its own (an older one, a rival's)
-  shows the track's layout drawn by the community.
 - Fixes and improvements.
 
 ## 0.9.7 beta
