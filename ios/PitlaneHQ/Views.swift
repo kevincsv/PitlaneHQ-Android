@@ -843,7 +843,6 @@ struct HomeView: View {
                         if let e = account.error { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
                     }
                     Spacer()
-                    Button(account.busy ? "…" : t("sync").uppercased()) { Task { await account.sync() } }.font(.subheadline.bold()).disabled(account.busy)
                 }
             }
         }

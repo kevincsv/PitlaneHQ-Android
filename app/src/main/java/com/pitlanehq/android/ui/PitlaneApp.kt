@@ -421,7 +421,6 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
                         )
                         a.error?.let { Text(t(it), color = Bad, fontSize = 12.sp) }
                     }
-                    TextButton({ vm.sync() }, enabled = !a.busy) { Text(if (a.busy) "…" else t("sync").uppercase(), color = Accent, fontWeight = FontWeight.Bold) }
                 }
             }
         }
