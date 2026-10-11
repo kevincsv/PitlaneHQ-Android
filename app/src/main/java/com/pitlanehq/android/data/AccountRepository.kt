@@ -418,9 +418,10 @@ class AccountRepository(context: Context) {
     }
 
     /** A session against iRacing's AI the server has no flag for (recorded by an older agent): an iRacing session
-     *  without a subsession (id "t-…") that is not a test is a single-player session, so against the AI. */
+     *  without a subsession (id "t-…" after the account's "acct_…:" prefix) that is not a test is a single-player
+     *  session, so against the AI. */
     private fun offlineAI(id: String, kind: String, game: String?) =
-        (game == null || game == "iracing") && id.startsWith("t-") && !kind.contains("test", ignoreCase = true)
+        (game == null || game == "iracing") && id.substringAfterLast(':').startsWith("t-") && !kind.contains("test", ignoreCase = true)
 
     // session and lap ids look like acct_<id>:<…>; the ':' stays as it is in the path
     private fun idPath(id: String) = URLEncoder.encode(id, "UTF-8").replace("+", "%20").replace("%3A", ":")

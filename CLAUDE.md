@@ -11,7 +11,8 @@
   mode) through the encrypted live link ("drinks" event); the PC checks the account is an admin.
 - A race against iRacing's AI (`ai` on the race) has no iRating: no change in the race rows or the summary, no
   iRating in its results, nothing in the licence summary. A session the server has no `ai` flag for is against the AI when it
-  is an iRacing session without a subsession (id "t-…") that is not a test (`offlineAI` when the sessions are parsed),
+  is an iRacing session without a subsession (id "t-…" after the account's "acct_…:" prefix) that is not a test
+  (`offlineAI` when the sessions are parsed),
   so My sessions, Laps and the Coach show "vs AI" on it like the PC and the web.
 - The admin panel's account card has "Link a DRINKS driver" (the driver's name; `adminAccount(id, "link-guest", name)`)
   and "Unlink DRINKS driver …" for each one joined (`guestLinked` in the accounts list, "gid|name,…").

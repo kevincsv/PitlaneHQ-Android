@@ -531,8 +531,9 @@ final class Account: ObservableObject {
             guard let id = s["id"] as? String else { return nil }
             let kind = str(s["kind"]), game = s["game"] as? String
             // a session against iRacing's AI the server has no flag for (recorded by an older agent): an iRacing session
-            // without a subsession (id "t-…") that is not a test is a single-player session, so against the AI
-            let offlineAI = (game == nil || game == "iracing") && id.hasPrefix("t-") && !kind.lowercased().contains("test")
+            // without a subsession (id "t-…" after the account's "acct_…:" prefix) that is not a test is a single-player
+            // session, so against the AI
+            let offlineAI = (game == nil || game == "iracing") && (id.split(separator: ":").last ?? "").hasPrefix("t-") && !kind.lowercased().contains("test")
             return CloudSession(id: id, started: num(s["started"]) ?? 0, track: str(s["track"]), trackConfig: str(s["track_config"]), car: str(s["car"]), kind: kind, laps: int(s["laps"]), best: pos(s["best"]),
                                 cat: s["cat"] as? String, lic: s["lic"] as? String,
                                 drvs: str(s["drvs"]).split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }, ai: int(s["ai"]) == 1 || offlineAI)
