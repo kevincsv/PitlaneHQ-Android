@@ -404,15 +404,23 @@ class AccountRepository(context: Context) {
         val a = JSONArray(g.data)
         return Got((0 until a.length()).map { i ->
             val s = a.getJSONObject(i)
+            val id = s.getString("id")
+            val kind = s.optString("kind").takeUnless { it == "null" } ?: ""
             CloudSession(
-                id = s.getString("id"), started = s.optLong("started"), track = s.optString("track"),
+                id = id, started = s.optLong("started"), track = s.optString("track"),
                 trackConfig = s.optString("track_config").takeUnless { it == "null" } ?: "", car = s.optString("car"),
-                kind = s.optString("kind").takeUnless { it == "null" } ?: "", laps = s.optInt("laps"), best = s.optDouble("best").pos(),
+                kind = kind, laps = s.optInt("laps"), best = s.optDouble("best").pos(),
                 cat = s.optStr("cat"), lic = s.optStr("lic"),
-                drvs = s.optStr("drvs")?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList(), ai = s.optInt("ai", 0) == 1
+                drvs = s.optStr("drvs")?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList(),
+                ai = s.optInt("ai", 0) == 1 || offlineAI(id, kind, s.optStr("game"))
             )
         }, g.stale)
     }
+
+    /** A session against iRacing's AI the server has no flag for (recorded by an older agent): an iRacing session
+     *  without a subsession (id "t-…") that is not a test is a single-player session, so against the AI. */
+    private fun offlineAI(id: String, kind: String, game: String?) =
+        (game == null || game == "iracing") && id.startsWith("t-") && !kind.contains("test", ignoreCase = true)
 
     // session and lap ids look like acct_<id>:<…>; the ':' stays as it is in the path
     private fun idPath(id: String) = URLEncoder.encode(id, "UTF-8").replace("+", "%20").replace("%3A", ":")
