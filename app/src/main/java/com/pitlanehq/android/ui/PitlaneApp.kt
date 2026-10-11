@@ -1973,7 +1973,7 @@ private fun ProfileScreen(vm: PitlaneViewModel, nav: NavHostController) {
                     Text(if (r.dnf) "DNF" else if (r.finish > 0) "P${r.finish}/${r.field}" else "—", fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
                 }
                 val dif = if (r.start > 0 && r.finish > 0) r.start - r.finish else 0
-                Text(listOf(if (dif != 0) (if (dif > 0) "+" else "") + dif + " " + t("places") else "", "${r.inc}x", if (r.irChange != 0 && !r.ai) "iR " + (if (r.irChange > 0) "+" else "") + r.irChange else "", if (r.best != null) t("best_short") + " " + lapTime(r.best) else "").filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 11.sp)
+                Text(listOf(if (dif != 0) (if (dif > 0) "+" else "") + dif + " " + t("places") else "", "${r.inc}x", if (r.irChange != 0) "iR " + (if (r.irChange > 0) "+" else "") + r.irChange else "", if (r.best != null) t("best_short") + " " + lapTime(r.best) else "").filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 11.sp)
             }
         }
         item { Section(t("on_leaderboards").uppercase()) }

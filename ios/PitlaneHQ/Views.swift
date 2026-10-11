@@ -2729,7 +2729,7 @@ struct ProfileView: View {
                             Text(r.dnf ? "DNF" : r.finish > 0 ? "P\(r.finish)/\(r.field)" : "—").font(.system(.headline, design: .monospaced).weight(.black))
                         }
                         let dif = r.start > 0 && r.finish > 0 ? r.start - r.finish : 0
-                        Text([dif != 0 ? (dif > 0 ? "+" : "") + "\(dif) " + t("places") : "", "\(r.inc)x", r.irChange != 0 && !r.ai ? "iR " + (r.irChange > 0 ? "+" : "") + "\(r.irChange)" : "", r.best.map { t("best_short") + " " + lapTime($0) } ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
+                        Text([dif != 0 ? (dif > 0 ? "+" : "") + "\(dif) " + t("places") : "", "\(r.inc)x", r.irChange != 0 ? "iR " + (r.irChange > 0 ? "+" : "") + "\(r.irChange)" : "", r.best.map { t("best_short") + " " + lapTime($0) } ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
                             .font(.caption2).foregroundColor(Theme.muted)
                     }
                 }
