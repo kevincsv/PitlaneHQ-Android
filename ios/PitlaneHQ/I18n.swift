@@ -296,7 +296,7 @@ private let strings: [String: (String, String)] = [
     "admin_tools": ("ADMIN", "ADMIN"),
     "update_available": ("New version {0} beta available · tap to download", "Nueva versión {0} beta disponible · toca para descargar"),
     "update_title": ("Pitlane HQ {0} beta is available", "Hay una versión nueva de Pitlane HQ ({0} beta)"),
-    "update_body": ("You have {0}. Download it from the downloads page and install it; your data stays in your account.", "Tienes la {0}. Descárgala de la página de descargas e instálala; tus datos siguen en tu cuenta."),
+    "update_body": ("You have {0}. Download it from the downloads page and install it.", "Tienes la {0}. Descárgala de la página de descargas e instálala."),
     "whats_new": ("What's new", "Novedades"),
     "download": ("Download", "Descargar"),
     "later": ("Later", "Más tarde"),

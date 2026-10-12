@@ -296,7 +296,7 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "admin_tools" to ("ADMIN" to "ADMIN"),
     "update_available" to ("New version {0} beta available · tap to download" to "Nueva versión {0} beta disponible · toca para descargar"),
     "update_title" to ("Pitlane HQ {0} beta is available" to "Hay una versión nueva de Pitlane HQ ({0} beta)"),
-    "update_body" to ("You have {0}. Download it from the downloads page and install it; your data stays in your account." to "Tienes la {0}. Descárgala de la página de descargas e instálala; tus datos siguen en tu cuenta."),
+    "update_body" to ("You have {0}. Download it from the downloads page and install it." to "Tienes la {0}. Descárgala de la página de descargas e instálala."),
     "whats_new" to ("What's new" to "Novedades"),
     "download" to ("Download" to "Descargar"),
     "later" to ("Later" to "Más tarde"),
