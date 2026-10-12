@@ -4,6 +4,15 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; fixes ride along as
 "Fixes and improvements". 1.0.0 comes when the beta ends. Newest first.
 
+## 0.9.10 beta
+
+- **Recent records in Community**: the fastest lap of every car and track, the newest first, who set it and whom it
+  beat; a tap opens its leaderboard. The track page (map, record per car) is in development.
+- **Changes from your PC or the web reach the phone at once**: the server tells the app the moment another device
+  saves the account. Nobody syncs by hand: the Sync button is gone.
+- **The discipline symbols show on iPhone** (licence summary, Community, leagues).
+- Fixes and improvements.
+
 ## 0.9.9 beta
 
 - **The coach's advice follows your data**: no "brake later" when you already brake later than the reference, no
@@ -12,10 +21,6 @@ web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; 
   shows the track's layout drawn by the community.
 - **Races against the AI**: no iRating (no change, no iRating in the results, nothing in the licence summary) and
   "vs AI" on every session, the older ones included.
-- **Changes from your PC or the web reach the phone at once**: the server tells the app the moment another device
-  saves the account. Nobody syncs by hand: the Sync button is gone.
-- **Recent records in Community**: the fastest lap of every car and track, the newest first, who set it and whom it
-  beat; a tap opens its leaderboard. The track page (map, record per car) is in development.
 - Fixes and improvements.
 
 ## 0.9.8 beta

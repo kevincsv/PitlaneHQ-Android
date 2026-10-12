@@ -175,7 +175,9 @@ struct DiscIcon: View {
         ZStack {
             RoundedRectangle(cornerRadius: 8).fill(col.opacity(0.12))
             RoundedRectangle(cornerRadius: 8).stroke(col, lineWidth: 1.5)
-            if let p = Path(DISC_PATHS[k] ?? "") {
+            // the symbol is SVG path data (the same as the web's): SwiftUI's Path(String) reads only its own format,
+            // so it is parsed here
+            if let p = svgPath(DISC_PATHS[k] ?? "") {
                 p.applying(CGAffineTransform(scaleX: s, y: s))
                     .stroke(col, style: StrokeStyle(lineWidth: 1.8 * s, lineCap: .round, lineJoin: .round))
                     .frame(width: size * 0.6, height: size * 0.6)
@@ -2043,6 +2045,129 @@ struct Chart: View {
 // the disciplines iRacing splits its licenses into, and the license classes, like on the web
 let DISCS = ["oval", "sports_car", "formula_car", "dirt_oval", "dirt_road"]
 /// The disciplines' symbols as SVG path data (24 × 24), the same strokes as the web's DISC_IC.
+/// SVG path data ("M8.5 6h7a6 6 0 0 1 6 6…", as the web's symbols are written) as a SwiftUI Path: M/m, L/l, H/h, V/v,
+/// C/c, S/s, Q/q, T/t, A/a and Z/z, with repeated coordinates after one command; nil when the data is not understood.
+func svgPath(_ d: String) -> Path? {
+    var path = Path()
+    var i = d.startIndex
+    let end = d.endIndex
+    var cmd: Character = " "
+    var cur = CGPoint.zero, start = CGPoint.zero, lastCtl: CGPoint? = nil, lastCmd: Character = " "
+    func skip() { while i < end, d[i] == " " || d[i] == "," || d[i] == "\n" || d[i] == "\t" { i = d.index(after: i) } }
+    func number() -> CGFloat? {
+        skip()
+        var j = i, seenDot = false, seenE = false, s = ""
+        while j < end {
+            let c = d[j]
+            if c.isNumber { s.append(c) }
+            else if c == "." && !seenDot && !seenE { seenDot = true; s.append(c) }
+            else if (c == "-" || c == "+") && (j == i || (seenE && (d[d.index(before: j)] == "e" || d[d.index(before: j)] == "E"))) { s.append(c) }
+            else if (c == "e" || c == "E") && !seenE && !s.isEmpty { seenE = true; s.append(c) }
+            else { break }
+            j = d.index(after: j)
+        }
+        guard let v = Double(s) else { return nil }
+        i = j
+        return CGFloat(v)
+    }
+    func flag() -> Bool? {
+        skip()
+        guard i < end, d[i] == "0" || d[i] == "1" else { return nil }
+        let f = d[i] == "1"; i = d.index(after: i); return f
+    }
+    // an SVG arc (endpoint form) as cubic curves, each a quarter turn at most
+    func arc(to p: CGPoint, rx rx0: CGFloat, ry ry0: CGFloat, rot: CGFloat, large: Bool, sweep: Bool) {
+        if cur == p { return }
+        var rx = abs(rx0), ry = abs(ry0)
+        if rx == 0 || ry == 0 { path.addLine(to: p); return }
+        let phi = rot * CGFloat.pi / 180, cp = cos(phi), sp = sin(phi)
+        let dx2 = (cur.x - p.x) / 2, dy2 = (cur.y - p.y) / 2
+        let x1 = cp * dx2 + sp * dy2, y1 = -sp * dx2 + cp * dy2
+        let lam = (x1 * x1) / (rx * rx) + (y1 * y1) / (ry * ry)
+        if lam > 1 { rx *= sqrt(lam); ry *= sqrt(lam) }
+        let num = max(0, rx * rx * ry * ry - rx * rx * y1 * y1 - ry * ry * x1 * x1)
+        let den = rx * rx * y1 * y1 + ry * ry * x1 * x1
+        var coef = den == 0 ? 0 : sqrt(num / den)
+        if large == sweep { coef = -coef }
+        let cx1 = coef * rx * y1 / ry, cy1 = -coef * ry * x1 / rx
+        let cx = cp * cx1 - sp * cy1 + (cur.x + p.x) / 2, cy = sp * cx1 + cp * cy1 + (cur.y + p.y) / 2
+        func ang(_ ux: CGFloat, _ uy: CGFloat, _ vx: CGFloat, _ vy: CGFloat) -> CGFloat {
+            let dot = ux * vx + uy * vy, len = sqrt((ux * ux + uy * uy) * (vx * vx + vy * vy))
+            var a = acos(max(-1, min(1, dot / max(len, 1e-12))))
+            if ux * vy - uy * vx < 0 { a = -a }
+            return a
+        }
+        let t1 = ang(1, 0, (x1 - cx1) / rx, (y1 - cy1) / ry)
+        var dt = ang((x1 - cx1) / rx, (y1 - cy1) / ry, (-x1 - cx1) / rx, (-y1 - cy1) / ry)
+        if !sweep && dt > 0 { dt -= 2 * CGFloat.pi } else if sweep && dt < 0 { dt += 2 * CGFloat.pi }
+        let n = max(1, Int(ceil(abs(dt) / (CGFloat.pi / 2))))
+        let step = dt / CGFloat(n), k = (4.0 / 3.0) * tan(step / 4)
+        var t = t1
+        for _ in 0..<n {
+            let t2 = t + step
+            let e1 = CGPoint(x: cos(t), y: sin(t)), e2 = CGPoint(x: cos(t2), y: sin(t2))
+            func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: cp * rx * x - sp * ry * y + cx, y: sp * rx * x + cp * ry * y + cy) }
+            let c1 = pt(e1.x - k * e1.y, e1.y + k * e1.x), c2 = pt(e2.x + k * e2.y, e2.y - k * e2.x), q = pt(e2.x, e2.y)
+            path.addCurve(to: q, control1: c1, control2: c2)
+            t = t2
+        }
+        path.addLine(to: p) // lands exactly on the end point
+    }
+    while true {
+        skip()
+        guard i < end else { break }
+        let before = i
+        let c = d[i]
+        if c.isLetter { cmd = c; i = d.index(after: i) }
+        else if cmd == "M" { cmd = "L" } else if cmd == "m" { cmd = "l" } // numbers after a move are lines
+        let rel = cmd.isLowercase
+        func abs2(_ x: CGFloat, _ y: CGFloat) -> CGPoint { rel ? CGPoint(x: cur.x + x, y: cur.y + y) : CGPoint(x: x, y: y) }
+        switch cmd.uppercased() {
+        case "M":
+            guard let x = number(), let y = number() else { return nil }
+            cur = abs2(x, y); start = cur; path.move(to: cur); lastCtl = nil
+        case "L":
+            guard let x = number(), let y = number() else { return nil }
+            cur = abs2(x, y); path.addLine(to: cur); lastCtl = nil
+        case "H":
+            guard let x = number() else { return nil }
+            cur = CGPoint(x: rel ? cur.x + x : x, y: cur.y); path.addLine(to: cur); lastCtl = nil
+        case "V":
+            guard let y = number() else { return nil }
+            cur = CGPoint(x: cur.x, y: rel ? cur.y + y : y); path.addLine(to: cur); lastCtl = nil
+        case "C":
+            guard let x1 = number(), let y1 = number(), let x2 = number(), let y2 = number(), let x = number(), let y = number() else { return nil }
+            let c1 = abs2(x1, y1), c2 = abs2(x2, y2), p = abs2(x, y)
+            path.addCurve(to: p, control1: c1, control2: c2); lastCtl = c2; cur = p
+        case "S":
+            guard let x2 = number(), let y2 = number(), let x = number(), let y = number() else { return nil }
+            let c1 = (lastCmd.uppercased() == "C" || lastCmd.uppercased() == "S") && lastCtl != nil ? CGPoint(x: 2 * cur.x - lastCtl!.x, y: 2 * cur.y - lastCtl!.y) : cur
+            let c2 = abs2(x2, y2), p = abs2(x, y)
+            path.addCurve(to: p, control1: c1, control2: c2); lastCtl = c2; cur = p
+        case "Q":
+            guard let x1 = number(), let y1 = number(), let x = number(), let y = number() else { return nil }
+            let c1 = abs2(x1, y1), p = abs2(x, y)
+            path.addQuadCurve(to: p, control: c1); lastCtl = c1; cur = p
+        case "T":
+            guard let x = number(), let y = number() else { return nil }
+            let c1 = (lastCmd.uppercased() == "Q" || lastCmd.uppercased() == "T") && lastCtl != nil ? CGPoint(x: 2 * cur.x - lastCtl!.x, y: 2 * cur.y - lastCtl!.y) : cur
+            let p = abs2(x, y)
+            path.addQuadCurve(to: p, control: c1); lastCtl = c1; cur = p
+        case "A":
+            guard let rx = number(), let ry = number(), let rot = number(), let large = flag(), let sweep = flag(), let x = number(), let y = number() else { return nil }
+            let p = abs2(x, y)
+            arc(to: p, rx: rx, ry: ry, rot: rot, large: large, sweep: sweep); cur = p; lastCtl = nil
+        case "Z":
+            path.closeSubpath(); cur = start; lastCtl = nil
+        default:
+            return nil
+        }
+        lastCmd = cmd
+        if i == before { return nil } // nothing read: data that is not understood, never a loop
+    }
+    return path
+}
+
 let DISC_PATHS: [String: String] = [
     "oval": "M8.5 6h7a6 6 0 0 1 6 6a6 6 0 0 1-6 6h-7a6 6 0 0 1-6-6a6 6 0 0 1 6-6zM9.5 10h5a2 2 0 0 1 2 2a2 2 0 0 1-2 2h-5a2 2 0 0 1-2-2a2 2 0 0 1 2-2zM12 6v4",
     "sports_car": "M3 15.5v-2.2l2.6-.9 3-3h5.6l3.4 3 2.4.6v2.5H3zM9.3 16a1.8 1.8 0 1 1-3.6 0a1.8 1.8 0 1 1 3.6 0zM18.3 16a1.8 1.8 0 1 1-3.6 0a1.8 1.8 0 1 1 3.6 0zM9.6 9.4l-.6 3h6l-1.2-3",
