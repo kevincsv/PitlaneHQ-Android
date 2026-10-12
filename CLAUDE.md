@@ -39,3 +39,5 @@
 - `master` is the main branch the builds come from. Running both workflows by hand with `release` ticked
   (or a `v…` tag) builds both apps and attaches the APK, AAB and IPA to the GitHub release (notes in `.github/release-notes.md`).
 - Strings: Android `ui/I18n.kt` is the source; `ios/PitlaneHQ/I18n.swift` is generated from it.
+- The notices the apps show in their inbox come from the server (`web/dist/app-news.json` in the PC and web
+  repository): never add or change one without asking the owner first, even when they say "sube todo".
