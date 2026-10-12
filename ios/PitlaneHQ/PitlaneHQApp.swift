@@ -95,7 +95,8 @@ final class Updates: ObservableObject {
         let r = URLRequest(url: URL(string: "https://pitlanehq.app/dl/phones.json")!, timeoutInterval: 15)
         guard let res = try? await URLSession.shared.data(for: r),
               let j = try? JSONSerialization.jsonObject(with: res.0) as? [String: Any],
-              let v = j["version"] as? String else { return }
+              let v0 = j["version"] as? String else { return }
+        let v = v0.replacingOccurrences(of: "-beta", with: "").replacingOccurrences(of: "v", with: "")
         let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         if Updates.newer(v, than: current) { version = v }
     }

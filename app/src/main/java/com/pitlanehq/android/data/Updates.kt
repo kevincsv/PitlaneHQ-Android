@@ -53,7 +53,7 @@ object Updates {
         client.newCall(req).execute().use { r ->
             if (!r.isSuccessful) return null
             val j = JSONObject(r.body.string())
-            val v = j.optString("version")
+            val v = j.optString("version").removePrefix("v").removeSuffix("-beta")
             if (v.isEmpty() || !newer(v, current)) return null
             val apk = j.optString("apk")
             AppUpdate(v, if (apk.isNotEmpty()) "https://pitlanehq.app/dl/$apk" else "https://pitlanehq.app/downloads")

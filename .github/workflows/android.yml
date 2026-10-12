@@ -93,5 +93,5 @@ jobs:
           npx --yes wrangler@4 r2 object put "pitlanehq-downloads/CHANGELOG-phones.md" --file CHANGELOG.md --remote --content-type text/markdown
           # phones.json goes last: the apps only see a new version once its files are there (keeps the other platform's file)
           cur=$(curl -fsSL https://pitlanehq.app/dl/phones.json 2>/dev/null || echo '{}')
-          node -e 'const c=JSON.parse(process.argv[1]);c.version=process.argv[2];c.apk="PitlaneHQ-Android.apk";c.aab="PitlaneHQ-Android.aab";c.date=new Date().toISOString();require("fs").writeFileSync("phones.json",JSON.stringify(c))' "$cur" "$VERSION"
+          node -e 'const c=JSON.parse(process.argv[1]);c.version=process.argv[2];c.apk="PitlaneHQ-Android.apk";c.aab="PitlaneHQ-Android.aab";c.date=new Date().toISOString();require("fs").writeFileSync("phones.json",JSON.stringify(c))' "$cur" "$(cat version.txt)"
           npx --yes wrangler@4 r2 object put "pitlanehq-downloads/phones.json" --file phones.json --remote --content-type application/json
