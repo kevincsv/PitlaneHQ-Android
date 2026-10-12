@@ -566,7 +566,6 @@ private let strings: [String: (String, String)] = [
     "fewer": ("Fewer", "Menos"),
     "track_page": ("Track page", "Página del circuito"),
     "track_page_short": ("Track", "Circuito"),
-    "track_page_wip": ("The track page: its map with the official turns, the record of every car on it, how many drivers and laps it has, and its leaderboards. It will be here soon.", "La página del circuito: su mapa con las curvas oficiales, el récord de cada coche en él, cuántos pilotos y vueltas tiene y sus clasificaciones. Pronto estará aquí."),
     "track_counts": ("{0} drivers · {1} laps shared · {2} cars", "{0} pilotos · {1} vueltas compartidas · {2} coches"),
     "records_per_car": ("RECORD PER CAR", "RÉCORD POR COCHE"),
     "track_no_map": ("This track is not scanned yet: a lap driven here with Pitlane HQ Agent draws its map by itself.", "Este circuito aún no está escaneado: una vuelta en él con Pitlane HQ Agent dibuja el mapa sola."),

@@ -1888,7 +1888,7 @@ private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
 }
 
 /** Recent records: the fastest lap of every car and track, the newest first, with the lap it beat (filtered by the
- *  discipline chosen); a row opens its leaderboard, "Track" its track page (in development). */
+ *  discipline chosen); a row opens its leaderboard, "Track" its track page. */
 @Composable
 private fun RecentRecords(vm: PitlaneViewModel, nav: NavHostController, cat: String) {
     val r by vm.records.collectAsState()
@@ -1927,21 +1927,13 @@ private fun RecentRecords(vm: PitlaneViewModel, nav: NavHostController, cat: Str
     }
 }
 
-/** The track page (in development: admins see it, everyone else what it will be): the map with the official turns and
- *  the direction arrow, how many drivers and laps the track has, and the record of every car on it. */
+/** The track page: the map with the official turns and the direction arrow, how many drivers and laps the track has,
+ *  and the record of every car on it. */
 @Composable
 private fun TrackPageScreen(vm: PitlaneViewModel, nav: NavHostController) {
     val ref = vm.trackRef ?: return
-    val acc by vm.account.collectAsState()
     val p by vm.trackPage.collectAsState()
     Screen(ref.second.ifEmpty { t("track_page") }, t("track_page"), back = { nav.popBackStack() }) {
-        item {
-            Panel {
-                Row(verticalAlignment = Alignment.CenterVertically) { Text(t("track_page"), fontWeight = FontWeight.Black, modifier = Modifier.weight(1f)); Status(t("in_development"), Accent) }
-                if (!acc.admin) Text(t("track_page_wip"), color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
-            }
-        }
-        if (!acc.admin) return@Screen
         state(p) { vm.openTrack(ref.first, ref.second) }
         val d = p.data ?: return@Screen
         item { Text(t("track_counts", d.drivers, d.laps, d.cars.size), color = Muted, fontSize = 12.sp) }
@@ -2021,7 +2013,6 @@ private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
                 TextButton({ vm.openTrack(x.trackId, x.track); nav.navigate("track") }) { Text(t("track_page"), color = Accent, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
-                Status(t("in_development"), Accent)
             }
         }
         state(b) { vm.loadBoard(x) }

@@ -7,7 +7,8 @@ web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; 
 ## 0.9.10 beta
 
 - **Recent records in Community**: the fastest lap of every car and track, the newest first, who set it and whom it
-  beat; a tap opens its leaderboard. The track page (map, record per car) is in development.
+  beat; a tap opens its leaderboard. And the track page: its map with the official turns, how many drivers and laps
+  the track has, and the record of every car on it.
 - **Changes from your PC or the web reach the phone at once**: the server tells the app the moment another device
   saves the account. Nobody syncs by hand: the Sync button is gone.
 - **The discipline symbols show on iPhone** (licence summary, Community, leagues).

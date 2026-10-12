@@ -2728,7 +2728,7 @@ struct CommunityView: View {
 }
 
 /// Recent records: the fastest lap of every car and track, the newest first, with the lap it beat (filtered by the
-/// discipline chosen); a row opens its leaderboard, "Track" its track page (in development).
+/// discipline chosen); a row opens its leaderboard, "Track" its track page.
 struct RecentRecords: View {
     @EnvironmentObject var account: Account
     let cat: String
@@ -2784,8 +2784,8 @@ struct RecentRecords: View {
     }
 }
 
-/// The track page (in development: admins see it, everyone else what it will be): the map with the official turns and
-/// the direction arrow, how many drivers and laps the track has, and the record of every car on it.
+/// The track page: the map with the official turns and the direction arrow, how many drivers and laps the track has,
+/// and the record of every car on it.
 struct TrackPageView: View {
     @EnvironmentObject var account: Account
     let ref: TrackRef
@@ -2793,11 +2793,7 @@ struct TrackPageView: View {
 
     var body: some View {
         Screen(title: ref.name.isEmpty ? t("track_page") : ref.name, sub: t("track_page")) {
-            Panel {
-                HStack { Text(t("track_page")).font(.headline.weight(.black)).foregroundColor(Theme.fg); Spacer(); StatusPill(text: t("in_development"), color: Theme.accent) }
-                if !account.admin { Text(t("track_page_wip")).font(.subheadline).foregroundColor(Theme.muted).padding(.top, 4) }
-            }
-            if account.admin {
+            do {
                 LoadState(loading: page.loading, error: page.error, stale: page.stale) { Task { await page.load { try await account.trackPage(trackId: ref.id) } } }
                 if let d = page.data {
                     Text(t("track_counts", d.drivers, d.laps, d.cars.count)).font(.caption).foregroundColor(Theme.muted)
@@ -2828,7 +2824,7 @@ struct TrackPageView: View {
                 }
             }
         }
-        .task(id: ref.id) { if account.admin { await page.load { try await account.trackPage(trackId: ref.id) } } }
+        .task(id: ref.id) { await page.load { try await account.trackPage(trackId: ref.id) } }
     }
 }
 
@@ -2883,13 +2879,11 @@ struct ComboView: View {
         // the server marks the signed-in driver's own lap (anonymous ones too); older servers: by the public name
         let mine = laps.firstIndex { $0.mine } ?? laps.firstIndex { !account.display.isEmpty && $0.alias.caseInsensitiveCompare(account.display) == .orderedSame }
         Screen(title: combo.track, sub: combo.car) {
-            // the track page (in development)
+            // its track page
             HStack {
                 Spacer()
-                NavigationLink(value: Route.track(TrackRef(id: combo.trackId, name: combo.track))) {
-                    HStack(spacing: 6) { Text(t("track_page")).font(.caption.bold()).foregroundColor(Theme.accent); StatusPill(text: t("in_development"), color: Theme.accent) }
-                }
-                .buttonStyle(.plain)
+                NavigationLink(value: Route.track(TrackRef(id: combo.trackId, name: combo.track))) { Text(t("track_page")).font(.caption.bold()).foregroundColor(Theme.accent) }
+                    .buttonStyle(.plain)
             }
             LoadState(loading: board.loading, error: board.error, stale: board.stale) { Task { await board.load { try await account.leaderboard(trackId: combo.trackId, carId: combo.carId) } } }
             if board.data != nil {

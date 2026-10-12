@@ -563,7 +563,6 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "fewer" to ("Fewer" to "Menos"),
     "track_page" to ("Track page" to "Página del circuito"),
     "track_page_short" to ("Track" to "Circuito"),
-    "track_page_wip" to ("The track page: its map with the official turns, the record of every car on it, how many drivers and laps it has, and its leaderboards. It will be here soon." to "La página del circuito: su mapa con las curvas oficiales, el récord de cada coche en él, cuántos pilotos y vueltas tiene y sus clasificaciones. Pronto estará aquí."),
     "track_counts" to ("{0} drivers · {1} laps shared · {2} cars" to "{0} pilotos · {1} vueltas compartidas · {2} coches"),
     "records_per_car" to ("RECORD PER CAR" to "RÉCORD POR COCHE"),
     "track_no_map" to ("This track is not scanned yet: a lap driven here with Pitlane HQ Agent draws its map by itself." to "Este circuito aún no está escaneado: una vuelta en él con Pitlane HQ Agent dibuja el mapa sola."),
