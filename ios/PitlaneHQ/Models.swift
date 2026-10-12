@@ -73,6 +73,45 @@ struct Combo: Identifiable, Hashable {
     var cat: String? = nil
 }
 
+/// A record of the leaderboards: the fastest lap of a car and track, and the lap it beat (the second fastest), for
+/// Community's "Recent records" and the track page.
+struct RecordItem: Identifiable, Hashable {
+    let id: String
+    let trackId: Int64
+    let track: String
+    let carId: Int64
+    let car: String
+    let cat: String?
+    let time: Double
+    let created: Double
+    let alias: String
+    let n: Int
+    let hasTrace: Bool
+    let mine: Bool
+    let prof: Bool
+    let sup: Bool
+    let prevTime: Double?
+    let prevAlias: String?
+    var combo: Combo { Combo(trackId: trackId, track: track, carId: carId, car: car, laps: n, best: time, cat: cat) }
+}
+
+/// A track's page (in development): its layout and official turns, how many drivers and laps it has, the record of every car on it.
+struct TrackPage {
+    let trackId: Int64
+    let track: String
+    let drivers: Int
+    let laps: Int
+    let layout: ([Double], [Double])?
+    let turns: [Double]
+    let cars: [RecordItem]
+}
+
+/// a track to open its page: its id and name
+struct TrackRef: Hashable {
+    let id: Int64
+    let name: String
+}
+
 struct CommunityLap: Identifiable, Hashable {
     let id: String
     let alias: String

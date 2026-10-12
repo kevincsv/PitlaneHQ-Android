@@ -87,6 +87,16 @@ data class PersonalBest(
 /** A track and car the community has laps for (GET /community/combos). */
 data class Combo(val trackId: Long, val track: String, val carId: Long, val car: String, val laps: Int, val best: Double?, val cat: String? = null)
 
+/** A record of the leaderboards: the fastest lap of a car and track, and the lap it beat (the second fastest), for
+ *  Community's "Recent records" and the track page. */
+data class RecordItem(val id: String, val trackId: Long, val track: String, val carId: Long, val car: String, val cat: String?, val time: Double, val created: Long,
+    val alias: String, val n: Int, val hasTrace: Boolean, val mine: Boolean, val prof: Boolean, val sup: Boolean, val prevTime: Double?, val prevAlias: String?) {
+    val combo get() = Combo(trackId, track, carId, car, n, time, cat)
+}
+
+/** A track's page (in development): its layout and official turns, how many drivers and laps it has, the record of every car on it. */
+data class TrackPage(val trackId: Long, val track: String, val drivers: Int, val laps: Int, val layout: Pair<List<Double>, List<Double>>?, val turns: List<Double>, val cars: List<RecordItem>)
+
 /** `mine`: the signed-in driver's own lap, also when it was shared anonymously (only they see that). */
 data class CommunityLap(val id: String, val alias: String, val time: Double, val created: Long, val hasTrace: Boolean, val sectors: List<Double>, val mine: Boolean = false,
     val lic: String? = null, val prof: Boolean = false, val sup: Boolean = false, val field: Boolean = false)

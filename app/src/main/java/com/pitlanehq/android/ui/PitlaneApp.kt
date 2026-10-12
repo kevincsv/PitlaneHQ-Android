@@ -207,6 +207,7 @@ private fun MainApp(vm: PitlaneViewModel) {
                 composable("lap") { LapDetail(vm, nav) }
                 composable("community") { Community(vm, nav) }
                 composable("combo") { ComboDetail(vm, nav) }
+                composable("track") { TrackPageScreen(vm, nav) }
                 composable("profile") { ProfileScreen(vm, nav) }
                 composable("live") { Live(vm) }
                 composable("settings") { Settings(vm, nav) }
@@ -1824,6 +1825,7 @@ private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
             return@Screen
         }
         item { WebNote(t("community_web")) }
+        item { RecentRecords(vm, nav, cat) }
         // setups and shared race analyses are switched off for now: only the leaderboards, by lap time, per discipline
         item {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1885,6 +1887,126 @@ private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
     }
 }
 
+/** Recent records: the fastest lap of every car and track, the newest first, with the lap it beat (filtered by the
+ *  discipline chosen); a row opens its leaderboard, "Track" its track page (in development). */
+@Composable
+private fun RecentRecords(vm: PitlaneViewModel, nav: NavHostController, cat: String) {
+    val r by vm.records.collectAsState()
+    LaunchedEffect(Unit) { if (r.data == null && !r.loading) vm.loadRecords() }
+    var all by rememberSaveable { mutableStateOf(false) }
+    val list = (r.data ?: emptyList()).filter { cat.isEmpty() || it.cat == cat }
+    fun name(a: String?) = if (a == null || a == "Anonymous") t("anonymous") else a
+    Panel {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Section(t("recent_records"))
+                Text(t("recent_records_sub"), color = Muted, fontSize = 12.sp)
+            }
+            if (list.isNotEmpty()) Text(t("records_n", list.size), color = Muted, fontSize = 12.sp)
+        }
+        when {
+            r.loading && r.data == null -> Text("…", color = Muted, modifier = Modifier.padding(top = 6.dp))
+            r.error != null && r.data == null -> Text(t(r.error!!), color = Bad, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+            list.isEmpty() -> Text(t("no_records"), color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+        }
+        (if (all) list else list.take(6)).forEach { x ->
+            Column(Modifier.fillMaxWidth().padding(top = 8.dp).clickable { vm.combo = x.combo; vm.loadBoard(x.combo); nav.navigate("combo") }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(name(x.alias) + (if (x.mine) " · " + t("you_badge") else ""), fontWeight = FontWeight.Black, color = if (x.mine) Accent else Fg, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(lapTime(x.time), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                }
+                Text(x.car + " · " + x.track, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val pt = x.prevTime
+                    Text((if (pt != null) t("record_beat", name(x.prevAlias), "%.3f".format(pt - x.time)) else t("record_first")) + " · " + day(x.created), color = Muted, fontSize = 11.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    TextButton({ vm.openTrack(x.trackId, x.track); nav.navigate("track") }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) { Text(t("track_page_short"), color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                }
+            }
+        }
+        if (list.size > 6) TextButton({ all = !all }) { Text(if (all) t("fewer") else t("show_all_n", list.size), color = Accent, fontWeight = FontWeight.Bold) }
+    }
+}
+
+/** The track page (in development: admins see it, everyone else what it will be): the map with the official turns and
+ *  the direction arrow, how many drivers and laps the track has, and the record of every car on it. */
+@Composable
+private fun TrackPageScreen(vm: PitlaneViewModel, nav: NavHostController) {
+    val ref = vm.trackRef ?: return
+    val acc by vm.account.collectAsState()
+    val p by vm.trackPage.collectAsState()
+    Screen(ref.second.ifEmpty { t("track_page") }, t("track_page"), back = { nav.popBackStack() }) {
+        item {
+            Panel {
+                Row(verticalAlignment = Alignment.CenterVertically) { Text(t("track_page"), fontWeight = FontWeight.Black, modifier = Modifier.weight(1f)); Status(t("in_development"), Accent) }
+                if (!acc.admin) Text(t("track_page_wip"), color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+            }
+        }
+        if (!acc.admin) return@Screen
+        state(p) { vm.openTrack(ref.first, ref.second) }
+        val d = p.data ?: return@Screen
+        item { Text(t("track_counts", d.drivers, d.laps, d.cars.size), color = Muted, fontSize = 12.sp) }
+        item { Panel { TrackLayoutMap(d.layout, d.turns) } }
+        item { Section(t("records_per_car")) }
+        if (d.cars.isEmpty()) item { Empty(t("no_records")) }
+        items(d.cars, key = { it.carId }) { x ->
+            Panel(Modifier.clickable { vm.combo = x.combo; vm.loadBoard(x.combo); nav.navigate("combo") }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(x.car, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(listOf(discName(x.cat), (if (x.alias == "Anonymous") t("anonymous") else x.alias) + (if (x.mine) " · " + t("you_badge") else ""), t("drivers", x.n), day(x.created)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    Text(lapTime(x.time), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+/** A track's layout as a road with depth, its start/finish line, the direction arrow and the official turns: the
+ *  same drawing as the live map, without the cars. */
+@Composable
+private fun TrackLayoutMap(layout: Pair<List<Double>, List<Double>>?, turns: List<Double>) {
+    if (layout == null || layout.first.size < 20) { Text(t("track_no_map"), color = Muted, fontSize = 12.sp); return }
+    val dpx = with(LocalDensity.current) { 1.dp.toPx() }
+    val labelPx = with(LocalDensity.current) { 9.sp.toPx() }
+    val turnPaint = remember(labelPx) { android.graphics.Paint().apply { color = android.graphics.Color.rgb(0x8A, 0x97, 0xA9); textSize = labelPx; isFakeBoldText = true; isAntiAlias = true; textAlign = android.graphics.Paint.Align.CENTER } }
+    val xs = layout.first; val ys = layout.second; val n = xs.size
+    val minX = xs.min(); val maxX = xs.max(); val minY = ys.min(); val maxY = ys.max()
+    Canvas(Modifier.fillMaxWidth().height(240.dp)) {
+        val pad = 22f * dpx
+        val k = minOf((size.width - 2 * pad) / maxOf(1e-6, maxX - minX).toFloat(), (size.height - 2 * pad) / maxOf(1e-6, maxY - minY).toFloat())
+        val ox = (size.width - 2 * pad - (maxX - minX).toFloat() * k) / 2; val oy = (size.height - 2 * pad - (maxY - minY).toFloat() * k) / 2
+        fun pt(i: Int) = Offset(pad + (xs[i] - minX).toFloat() * k + ox, size.height - pad - (ys[i] - minY).toFloat() * k - oy)
+        val track = Path()
+        for (i in 0 until n) { val q = pt(i); if (i == 0) track.moveTo(q.x, q.y) else track.lineTo(q.x, q.y) }
+        track.close()
+        val w = 11f * dpx
+        drawContext.canvas.save(); drawContext.canvas.translate(1.5f * dpx, 2.5f * dpx)
+        drawPath(track, Color.Black.copy(alpha = .38f), style = Stroke(width = w + 2 * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        drawContext.canvas.restore()
+        drawPath(track, Line.copy(red = minOf(1f, Line.red + .12f), green = minOf(1f, Line.green + .12f), blue = minOf(1f, Line.blue + .12f)), style = Stroke(width = w, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        drawPath(track, Color(0xFF151A21), style = Stroke(width = w - 3.5f * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        // the start/finish line across the road and the way the cars go beside it
+        val p0 = pt(0); val p1 = pt(maxOf(2, n / 60))
+        val dx = p1.x - p0.x; val dy = p1.y - p0.y; val m = maxOf(1e-6f, kotlin.math.hypot(dx, dy)); val ux = dx / m; val uy = dy / m
+        var nx = -uy; var ny = ux
+        if ((p0.x - size.width / 2f) * nx + (p0.y - size.height / 2f) * ny < 0) { nx = -nx; ny = -ny }
+        drawLine(Color.White, Offset(p0.x - nx * w / 2, p0.y - ny * w / 2), Offset(p0.x + nx * w / 2, p0.y + ny * w / 2), strokeWidth = 3.5f * dpx)
+        val bx = p0.x + nx * (w / 2 + 8 * dpx); val by = p0.y + ny * (w / 2 + 8 * dpx); val tx = bx + ux * 18f * dpx; val ty = by + uy * 18f * dpx; val h = 6f * dpx
+        drawLine(Fg, Offset(bx, by), Offset(tx - ux * h, ty - uy * h), strokeWidth = 2f * dpx, cap = StrokeCap.Round)
+        val head = Path(); head.moveTo(tx, ty); head.lineTo(tx - ux * h + nx * h * .6f, ty - uy * h + ny * h * .6f); head.lineTo(tx - ux * h - nx * h * .6f, ty - uy * h - ny * h * .6f); head.close()
+        drawPath(head, Fg)
+        // the official turns, beside the road
+        turns.forEachIndexed { ti, f ->
+            val i = (f * n).toInt().coerceIn(0, n - 1); val q = pt(i); val q1 = pt((i + 2) % n); val q0 = pt((i - 2 + n) % n)
+            val tmx = q1.x - q0.x; val tmy = q1.y - q0.y; val tm = maxOf(1e-3f, kotlin.math.hypot(tmx, tmy))
+            var qx = -tmy / tm; var qy = tmx / tm
+            if ((q.x - size.width / 2) * qx + (q.y - size.height / 2) * qy < 0) { qx = -qx; qy = -qy }
+            drawContext.canvas.nativeCanvas.drawText("T${ti + 1}", q.x + qx * (w / 2 + 9 * dpx), q.y + qy * (w / 2 + 9 * dpx) + labelPx * .35f, turnPaint)
+        }
+    }
+}
+
 @Composable
 private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
     val x = vm.combo ?: return
@@ -1896,6 +2018,12 @@ private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
     // the server marks the signed-in driver's own lap (anonymous ones too); older servers: by the public name
     val mineAll = all.indexOfFirst { it.mine }.let { i -> if (i >= 0) i else all.indexOfFirst { a.display.isNotBlank() && it.alias.equals(a.display, true) } }
     Screen(x.track, x.car, back = { nav.popBackStack() }) {
+        item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
+                TextButton({ vm.openTrack(x.trackId, x.track); nav.navigate("track") }) { Text(t("track_page"), color = Accent, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+                Status(t("in_development"), Accent)
+            }
+        }
         state(b) { vm.loadBoard(x) }
         if (b.data != null) item {
             Panel {

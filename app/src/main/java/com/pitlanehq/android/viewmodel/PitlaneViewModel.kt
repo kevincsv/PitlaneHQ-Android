@@ -278,6 +278,12 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     fun loadLaps(id: String) { laps.value = Loadable(); load(laps) { repo.laps(id) } }
     fun loadCombos() = load(combos) { repo.combos() }
     fun loadBoard(c: Combo) { board.value = Loadable(); load(board) { repo.leaderboard(c.trackId, c.carId) } }
+    // Community's recent records, and the track page (in development) of the track chosen
+    val records = MutableStateFlow(Loadable<List<RecordItem>>())
+    fun loadRecords() = load(records) { repo.records() }
+    val trackPage = MutableStateFlow(Loadable<TrackPage>())
+    var trackRef: Pair<Long, String>? = null
+    fun openTrack(id: Long, name: String) { trackRef = id to name; trackPage.value = Loadable(); load(trackPage) { repo.trackPage(id) } }
     fun loadReports() = load(reports) { repo.reports() }
     fun loadSetups() = load(setups) { repo.setups() }
     fun loadDevices() = load(devices) { Got(repo.devices()) }

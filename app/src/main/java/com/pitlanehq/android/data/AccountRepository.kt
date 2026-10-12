@@ -563,6 +563,36 @@ class AccountRepository(context: Context) {
         }, g.stale)
     }
 
+    /** The records: the fastest lap of every car and track, the newest first, with the lap it beat. */
+    fun records(): Got<List<RecordItem>> {
+        if (demo) return Got(emptyList())
+        val g = cachedGet("/community/records?game=iracing&limit=40")
+        val a = JSONObject(g.data).optJSONArray("records") ?: JSONArray()
+        return Got((0 until a.length()).map { recordOf(a.getJSONObject(it), 0L, "") }, g.stale)
+    }
+
+    private fun recordOf(r: JSONObject, trackId: Long, track: String): RecordItem {
+        val p = r.optJSONObject("prev")
+        return RecordItem(r.optString("id"), if (r.has("trackId")) r.optLong("trackId") else trackId, r.optStr("track") ?: track, r.optLong("carId"), r.optStr("car") ?: "", r.optStr("cat"),
+            r.optDouble("time"), r.optLong("created"), r.optStr("alias") ?: "Driver", r.optInt("n"), r.optBoolean("hasTrace"), r.optBoolean("mine"), r.optBoolean("prof"), r.optBoolean("sup"),
+            p?.optDouble("time")?.takeIf { it > 0 }, p?.optStr("alias"))
+    }
+
+    /** One track: its layout and official turns, how many drivers and laps it has, and the record of every car on it. */
+    fun trackPage(trackId: Long): Got<TrackPage> {
+        if (demo || trackId <= 0) return Got(TrackPage(trackId, "", 0, 0, null, emptyList(), emptyList()))
+        val g = cachedGet("/community/track?game=iracing&trackId=$trackId")
+        val j = JSONObject(g.data)
+        val lay = j.optJSONObject("layout")?.let { l ->
+            val x = l.optJSONArray("x"); val y = l.optJSONArray("y")
+            if (x == null || y == null || x.length() < 20 || x.length() != y.length()) null else (0 until x.length()).map { x.optDouble(it) } to (0 until y.length()).map { y.optDouble(it) }
+        }
+        val turns = j.optJSONArray("turns")?.let { a -> (0 until a.length()).map { a.optDouble(it) }.filter { it >= 0 && it < 1 } } ?: emptyList()
+        val name = j.optStr("track") ?: ""
+        val cars = j.optJSONArray("cars") ?: JSONArray()
+        return Got(TrackPage(trackId, name, j.optInt("drivers"), j.optInt("laps"), lay, turns, (0 until cars.length()).map { recordOf(cars.getJSONObject(it), trackId, name) }), g.stale)
+    }
+
     /** One line per driver: their best lap. */
     fun leaderboard(trackId: Long, carId: Long): Got<List<CommunityLap>> {
         if (demo) return Got(Demo.board(trackId, carId))

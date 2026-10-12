@@ -14,6 +14,8 @@ web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; 
   "vs AI" on every session, the older ones included.
 - **Changes from your PC or the web reach the phone at once**: the server tells the app the moment another device
   saves the account. Nobody syncs by hand: the Sync button is gone.
+- **Recent records in Community**: the fastest lap of every car and track, the newest first, who set it and whom it
+  beat; a tap opens its leaderboard. The track page (map, record per car) is in development.
 - Fixes and improvements.
 
 ## 0.9.8 beta

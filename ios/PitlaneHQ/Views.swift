@@ -429,6 +429,7 @@ enum Route: Hashable {
     case session(CloudSession)
     case lap(CloudSession, CloudLap, [CloudLap])
     case combo(Combo)
+    case track(TrackRef)
     case profile(String?)
 }
 
@@ -440,6 +441,7 @@ extension View {
             case let .session(s): SessionView(session: s)
             case let .lap(s, l, all): LapView(session: s, lap: l, all: all)
             case let .combo(c): ComboView(combo: c)
+            case let .track(r): TrackPageView(ref: r)
             case let .profile(id): ProfileView(lapId: id)
             }
         }
@@ -2533,6 +2535,7 @@ struct CommunityView: View {
                 LeagueHub()
             } else {
             WebNote(text: t("community_web"))
+            RecentRecords(cat: cat)
             // setups and shared race analyses are switched off for now: only the leaderboards, by lap time, per discipline
             Pills(items: [("", t("disc_all"))] + DISCS.map { k in (k, discName(k) + " (\((combos.data ?? []).filter { $0.cat == k }.count))") }, selected: $cat)
             TextField(t("search"), text: $q).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
@@ -2599,6 +2602,150 @@ struct CommunityView: View {
     }
 }
 
+/// Recent records: the fastest lap of every car and track, the newest first, with the lap it beat (filtered by the
+/// discipline chosen); a row opens its leaderboard, "Track" its track page (in development).
+struct RecentRecords: View {
+    @EnvironmentObject var account: Account
+    let cat: String
+    @StateObject private var recs = Loader<[RecordItem]>()
+    @State private var all = false
+
+    private func name(_ a: String?) -> String { a == nil || a == "Anonymous" ? t("anonymous") : a! }
+
+    var body: some View {
+        let list = (recs.data ?? []).filter { cat.isEmpty || $0.cat == cat }
+        Panel {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    SectionLabel(text: t("recent_records"))
+                    Text(t("recent_records_sub")).font(.caption).foregroundColor(Theme.muted)
+                }
+                Spacer()
+                if !list.isEmpty { Text(t("records_n", list.count)).font(.caption).foregroundColor(Theme.muted) }
+            }
+            if recs.loading && recs.data == nil {
+                Text("…").foregroundColor(Theme.muted)
+            } else if let e = recs.error, recs.data == nil {
+                Text(t(e)).font(.caption).foregroundColor(Theme.bad)
+            } else if list.isEmpty {
+                Text(t("no_records")).font(.subheadline).foregroundColor(Theme.muted)
+            }
+            ForEach(all ? list : Array(list.prefix(6))) { x in
+                VStack(alignment: .leading, spacing: 2) {
+                    NavigationLink(value: Route.combo(x.combo)) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text(name(x.alias) + (x.mine ? " · " + t("you_badge") : "")).font(.subheadline.weight(.black)).foregroundColor(x.mine ? Theme.accent : Theme.fg).lineLimit(1)
+                                Spacer()
+                                Text(lapTime(x.time)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
+                            }
+                            Text(x.car + " · " + x.track).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    HStack {
+                        Text((x.prevTime.map { t("record_beat", name(x.prevAlias), String(format: "%.3f", $0 - x.time)) } ?? t("record_first")) + " · " + day(x.created)).font(.caption2).foregroundColor(Theme.muted).lineLimit(1)
+                        Spacer()
+                        NavigationLink(value: Route.track(TrackRef(id: x.trackId, name: x.track))) { Text(t("track_page_short")).font(.caption.bold()).foregroundColor(Theme.accent) }.buttonStyle(.plain)
+                    }
+                }
+                .padding(.top, 6)
+            }
+            if list.count > 6 {
+                Button(all ? t("fewer") : t("show_all_n", list.count)) { all.toggle() }.font(.subheadline.bold()).foregroundColor(Theme.accent)
+            }
+        }
+        .task(id: account.demo) { await recs.load { try await account.records() } }
+    }
+}
+
+/// The track page (in development: admins see it, everyone else what it will be): the map with the official turns and
+/// the direction arrow, how many drivers and laps the track has, and the record of every car on it.
+struct TrackPageView: View {
+    @EnvironmentObject var account: Account
+    let ref: TrackRef
+    @StateObject private var page = Loader<TrackPage>()
+
+    var body: some View {
+        Screen(title: ref.name.isEmpty ? t("track_page") : ref.name, sub: t("track_page")) {
+            Panel {
+                HStack { Text(t("track_page")).font(.headline.weight(.black)).foregroundColor(Theme.fg); Spacer(); StatusPill(text: t("in_development"), color: Theme.accent) }
+                if !account.admin { Text(t("track_page_wip")).font(.subheadline).foregroundColor(Theme.muted).padding(.top, 4) }
+            }
+            if account.admin {
+                LoadState(loading: page.loading, error: page.error, stale: page.stale) { Task { await page.load { try await account.trackPage(trackId: ref.id) } } }
+                if let d = page.data {
+                    Text(t("track_counts", d.drivers, d.laps, d.cars.count)).font(.caption).foregroundColor(Theme.muted)
+                    Panel {
+                        if let lay = d.layout, lay.0.count >= 20 {
+                            Canvas { ctx, size in drawTrackRoad(ctx, size, lay.0, lay.1, d.turns) }.frame(height: 240)
+                        } else {
+                            Text(t("track_no_map")).font(.caption).foregroundColor(Theme.muted)
+                        }
+                    }
+                    SectionLabel(text: t("records_per_car"))
+                    if d.cars.isEmpty { EmptyNote(text: t("no_records")) }
+                    ForEach(d.cars) { x in
+                        NavigationLink(value: Route.combo(x.combo)) {
+                            Panel {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(x.car).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
+                                        Text([discName(x.cat), (x.alias == "Anonymous" ? t("anonymous") : x.alias) + (x.mine ? " · " + t("you_badge") : ""), t("drivers", x.n), day(x.created)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(2)
+                                    }
+                                    Spacer()
+                                    Text(lapTime(x.time)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .task(id: ref.id) { if account.admin { await page.load { try await account.trackPage(trackId: ref.id) } } }
+    }
+}
+
+/// A track's layout as a road with depth, its start/finish line, the direction arrow and the official turns: the same
+/// drawing as the live map, without the cars.
+func drawTrackRoad(_ ctx: GraphicsContext, _ size: CGSize, _ xs: [Double], _ ys: [Double], _ turns: [Double]) {
+    let n = xs.count, pad: CGFloat = 22
+    guard n >= 20 else { return }
+    let minX = xs.min() ?? 0, maxX = xs.max() ?? 1, minY = ys.min() ?? 0, maxY = ys.max() ?? 1
+    let k = min((size.width - 2 * pad) / CGFloat(max(1e-6, maxX - minX)), (size.height - 2 * pad) / CGFloat(max(1e-6, maxY - minY)))
+    let ox = (size.width - 2 * pad - CGFloat(maxX - minX) * k) / 2, oy = (size.height - 2 * pad - CGFloat(maxY - minY) * k) / 2
+    func pt(_ i: Int) -> CGPoint { CGPoint(x: pad + CGFloat(xs[i] - minX) * k + ox, y: size.height - pad - CGFloat(ys[i] - minY) * k - oy) }
+    var track = Path()
+    for i in 0..<n { if i == 0 { track.move(to: pt(i)) } else { track.addLine(to: pt(i)) } }
+    track.closeSubpath()
+    let w: CGFloat = 11
+    // the track as a road with depth: its shadow, the rim and the darker asphalt inside
+    ctx.stroke(track.offsetBy(dx: 1.5, dy: 2.5), with: .color(.black.opacity(0.38)), style: StrokeStyle(lineWidth: w + 2, lineCap: .round, lineJoin: .round))
+    ctx.stroke(track, with: .color(Color(red: 0x3F / 255, green: 0x49 / 255, blue: 0x56 / 255)), style: StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round))
+    ctx.stroke(track, with: .color(Color(red: 0x15 / 255, green: 0x1A / 255, blue: 0x21 / 255)), style: StrokeStyle(lineWidth: w - 3.5, lineCap: .round, lineJoin: .round))
+    // the start/finish line across the road and the way the cars go beside it
+    let p0 = pt(0), p1 = pt(max(2, n / 60))
+    let dx = p1.x - p0.x, dy = p1.y - p0.y, m = max(1e-6, hypot(dx, dy)), ux = dx / m, uy = dy / m
+    var nx = -uy, ny = ux
+    if (p0.x - size.width / 2) * nx + (p0.y - size.height / 2) * ny < 0 { nx = -nx; ny = -ny }
+    var sf = Path(); sf.move(to: CGPoint(x: p0.x - nx * w / 2, y: p0.y - ny * w / 2)); sf.addLine(to: CGPoint(x: p0.x + nx * w / 2, y: p0.y + ny * w / 2))
+    ctx.stroke(sf, with: .color(.white), lineWidth: 3.5)
+    let bx = p0.x + nx * (w / 2 + 8), by = p0.y + ny * (w / 2 + 8), tx = bx + ux * 18, ty = by + uy * 18, h: CGFloat = 6
+    var shaft = Path(); shaft.move(to: CGPoint(x: bx, y: by)); shaft.addLine(to: CGPoint(x: tx - ux * h, y: ty - uy * h))
+    ctx.stroke(shaft, with: .color(Theme.fg), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+    var head = Path(); head.move(to: CGPoint(x: tx, y: ty)); head.addLine(to: CGPoint(x: tx - ux * h + nx * h * 0.6, y: ty - uy * h + ny * h * 0.6)); head.addLine(to: CGPoint(x: tx - ux * h - nx * h * 0.6, y: ty - uy * h - ny * h * 0.6)); head.closeSubpath()
+    ctx.fill(head, with: .color(Theme.fg))
+    // the official turns, beside the road
+    for (ti, f) in turns.enumerated() {
+        let i = min(max(Int(f * Double(n)), 0), n - 1), q = pt(i), q1 = pt((i + 2) % n), q0 = pt((i - 2 + n) % n)
+        let tmx = q1.x - q0.x, tmy = q1.y - q0.y, tm = max(1e-3, hypot(tmx, tmy))
+        var qx = -tmy / tm, qy = tmx / tm
+        if (q.x - size.width / 2) * qx + (q.y - size.height / 2) * qy < 0 { qx = -qx; qy = -qy }
+        ctx.draw(Text("T\(ti + 1)").font(.system(size: 9, weight: .bold)).foregroundColor(Theme.muted), at: CGPoint(x: q.x + qx * (w / 2 + 9), y: q.y + qy * (w / 2 + 9)))
+    }
+}
+
 struct ComboView: View {
     @EnvironmentObject var account: Account
     let combo: Combo
@@ -2611,6 +2758,14 @@ struct ComboView: View {
         // the server marks the signed-in driver's own lap (anonymous ones too); older servers: by the public name
         let mine = laps.firstIndex { $0.mine } ?? laps.firstIndex { !account.display.isEmpty && $0.alias.caseInsensitiveCompare(account.display) == .orderedSame }
         Screen(title: combo.track, sub: combo.car) {
+            // the track page (in development)
+            HStack {
+                Spacer()
+                NavigationLink(value: Route.track(TrackRef(id: combo.trackId, name: combo.track))) {
+                    HStack(spacing: 6) { Text(t("track_page")).font(.caption.bold()).foregroundColor(Theme.accent); StatusPill(text: t("in_development"), color: Theme.accent) }
+                }
+                .buttonStyle(.plain)
+            }
             LoadState(loading: board.loading, error: board.error, stale: board.stale) { Task { await board.load { try await account.leaderboard(trackId: combo.trackId, carId: combo.carId) } } }
             if board.data != nil {
                 Panel {

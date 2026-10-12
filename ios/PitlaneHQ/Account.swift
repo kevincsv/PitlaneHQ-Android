@@ -601,6 +601,37 @@ final class Account: ObservableObject {
         }, stale: g.stale)
     }
 
+    /// The records: the fastest lap of every car and track, the newest first, with the lap it beat.
+    func records() async throws -> Got<[RecordItem]> {
+        if demo { return Got(data: []) }
+        let g = try await cachedGet("/community/records?game=iracing&limit=40")
+        let a = (g.data as? [String: Any])?["records"] as? [[String: Any]] ?? []
+        return Got(data: a.map { recordOf($0, trackId: 0, track: "") }, stale: g.stale)
+    }
+
+    private func recordOf(_ r: [String: Any], trackId: Int64, track: String) -> RecordItem {
+        let p = r["prev"] as? [String: Any]
+        let tn = str(r["track"])
+        return RecordItem(id: str(r["id"]), trackId: (r["trackId"] as? NSNumber)?.int64Value ?? trackId, track: tn.isEmpty ? track : tn,
+                          carId: (r["carId"] as? NSNumber)?.int64Value ?? 0, car: str(r["car"]), cat: r["cat"] as? String,
+                          time: num(r["time"]) ?? 0, created: num(r["created"]) ?? 0, alias: (r["alias"] as? String) ?? "Driver", n: int(r["n"]),
+                          hasTrace: r["hasTrace"] as? Bool ?? false, mine: r["mine"] as? Bool ?? false, prof: r["prof"] as? Bool ?? false, sup: r["sup"] as? Bool ?? false,
+                          prevTime: p.flatMap { pos($0["time"]) }, prevAlias: p?["alias"] as? String)
+    }
+
+    /// One track: its layout and official turns, how many drivers and laps it has, and the record of every car on it.
+    func trackPage(trackId: Int64) async throws -> Got<TrackPage> {
+        if demo { return Got(data: TrackPage(trackId: trackId, track: "", drivers: 0, laps: 0, layout: nil, turns: [], cars: [])) }
+        let g = try await cachedGet("/community/track?game=iracing&trackId=\(trackId)")
+        let j = g.data as? [String: Any] ?? [:]
+        var lay: ([Double], [Double])? = nil
+        if let l = j["layout"] as? [String: Any], let x = (l["x"] as? [NSNumber])?.map({ $0.doubleValue }), let y = (l["y"] as? [NSNumber])?.map({ $0.doubleValue }), x.count >= 20, x.count == y.count { lay = (x, y) }
+        let turns = ((j["turns"] as? [NSNumber]) ?? []).map { $0.doubleValue }.filter { $0 >= 0 && $0 < 1 }
+        let name = str(j["track"])
+        let cars = (j["cars"] as? [[String: Any]] ?? []).map { recordOf($0, trackId: trackId, track: name) }
+        return Got(data: TrackPage(trackId: trackId, track: name, drivers: int(j["drivers"]), laps: int(j["laps"]), layout: lay, turns: turns, cars: cars), stale: g.stale)
+    }
+
     /// One line per driver: their best lap.
     /// The card of a car: what it does on every track it was driven on (its hardest braking, where the fast
     /// drivers shift up, its top speed), learnt by the server from its laps; nil when the server has no laps of it.
