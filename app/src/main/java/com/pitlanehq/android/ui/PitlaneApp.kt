@@ -2059,6 +2059,7 @@ private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
 private fun ProfileScreen(vm: PitlaneViewModel, nav: NavHostController) {
     val st by vm.profile.collectAsState()
     val p = st.data
+    val uri = LocalUriHandler.current
     Screen(p?.name ?: t("profile"), if (p != null) t("since", day(p.since)) else "", back = { nav.popBackStack() }) {
         if (p == null) {
             if (st.error != null) item { Empty(if (st.error!!.contains("anonymous", true)) t("anonymous_private") else t(st.error!!)) } else item { Empty(t("loading")) }
@@ -2072,6 +2073,12 @@ private fun ProfileScreen(vm: PitlaneViewModel, nav: NavHostController) {
                 }
                 if (p.anonymous) Text("🔒 " + t(if (p.mine) "anon_mine" else "anon_admins_only"), color = Muted, fontSize = 12.sp)
                 if (p.mine && p.supporter && p.supporterHidden) Text(t("badge_hidden"), color = Muted, fontSize = 12.sp)
+                // their Discord, when they chose to show it
+                if (p.discordId.isNotEmpty() && p.discordId.all { it in '0'..'9' }) Row(Modifier.padding(top = 4.dp)) {
+                    Text("Discord: ", color = Muted, fontSize = 12.sp)
+                    Text(if (p.discordHandle.isNotBlank()) "@" + p.discordHandle else t("discord_open"), color = Accent, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable { uri.openUri("https://discord.com/users/" + p.discordId) })
+                }
                 val ls = DISCS.filter { p.lics[it] != null }
                 if (ls.isNotEmpty()) Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     ls.forEach { k -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) { LicBadge(p.lics[k]); Text(discName(k), fontSize = 12.sp) } }
@@ -2536,6 +2543,8 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
     val demo by vm.demo.collectAsState()
     val uri = LocalUriHandler.current
     LaunchedEffect(Unit) { if (d.data == null && !d.loading) vm.loadDevices() }
+    // the Discord card is read when the screen shows and when the app comes back (from Discord's sign-in in the browser)
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.loadDiscord() }
     Screen(t("account_tab")) {
         item { Section(t("account")) }
         item {
@@ -2571,6 +2580,8 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
             }
         }
         if ((d.data?.size ?: 0) > 1) item { TextButton({ vm.revoke("others") }) { Text(t("sign_out_others"), color = Bad) } }
+        item { Section("DISCORD") }
+        item { DiscordPanel(vm) }
         item { Section(t("language")) }
         item {
             Panel {
@@ -2615,6 +2626,48 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
         }
         item { Text(t("version", BuildConfig.VERSION_NAME.replace("-", " ")), color = Muted, fontSize = 11.sp, modifier = Modifier.fillMaxWidth()) }
     }
+}
+
+/** Account → Discord: link it with Discord's sign-in (in the browser), show it on your profile so other drivers can find
+ *  you there (off until you say), or unlink it. Without Discord's sign-in on the server, the bot's /link does it. */
+@Composable
+private fun DiscordPanel(vm: PitlaneViewModel) {
+    val st by vm.discord.collectAsState()
+    val d = st.data
+    val uri = LocalUriHandler.current
+    var opened by remember { mutableStateOf(false) }
+    var unlinking by remember { mutableStateOf(false) }
+    Panel {
+        if (d == null) { if (st.error == null) Text(t("loading"), color = Muted, fontSize = 12.sp) }
+        else if (!d.linked) {
+            Text(t("discord_intro"), color = Muted, fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
+            if (d.oauth) Button({ vm.discordStart { u -> if (u != null) { uri.openUri(u); opened = true } } }, colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) {
+                Text(t("discord_link").uppercase(), fontWeight = FontWeight.Black)
+            }
+            else Text(t("discord_no_oauth"), color = Muted, fontSize = 12.sp)
+            if (opened) Text(t("discord_finish"), color = Accent, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(if (d.handle.isNotBlank()) "@" + d.handle else t("discord_linked"), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(t("discord_linked_pill"), color = Good, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                    modifier = Modifier.border(1.dp, Good.copy(alpha = 0.55f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp))
+            }
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(t("discord_show"), fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Switch(d.shown, { vm.discordShow(it) })
+            }
+            Text(t("discord_show_note"), color = Muted, fontSize = 12.sp)
+            OutlinedButton({ unlinking = true }, modifier = Modifier.padding(top = 8.dp)) { Text(t("discord_unlink"), color = Bad) }
+        }
+        st.error?.let { Text(t(it), color = Bad, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp)) }
+    }
+    if (unlinking) AlertDialog(
+        onDismissRequest = { unlinking = false },
+        text = { Text(t("discord_unlink_ask")) },
+        confirmButton = { TextButton({ unlinking = false; vm.discordUnlink() }) { Text(t("discord_unlink"), color = Bad) } },
+        dismissButton = { TextButton({ unlinking = false }) { Text(t("cancel"), color = Muted) } }
+    )
 }
 
 /** Two-step sign-in with an authenticator app: optional, recommended. Setup: password → link/key → first code → recovery codes once. */

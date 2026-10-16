@@ -527,6 +527,22 @@ final class Account: ObservableObject {
         _ = try await call("POST", "/account/sessions/revoke", body: ["id": id])
     }
 
+    // ---------- Discord: link it (Discord's sign-in, in the browser), show it on your profile, unlink it ----------
+    func discord() async throws -> Got<DiscordLink> {
+        let j = try JSONSerialization.jsonObject(with: await call("GET", "/account/discord")) as? [String: Any] ?? [:]
+        return Got(data: DiscordLink(linked: j["linked"] as? Bool ?? false, id: str(j["id"]), handle: str(j["handle"]), shown: j["shown"] as? Bool ?? false, oauth: j["oauth"] as? Bool ?? false))
+    }
+
+    /// The address of Discord's sign-in, to open in the browser.
+    func discordStart() async throws -> URL? {
+        let j = try JSONSerialization.jsonObject(with: await call("POST", "/account/discord/start", body: [:])) as? [String: Any] ?? [:]
+        return URL(string: str(j["url"]))
+    }
+
+    func discordShow(_ shown: Bool) async throws { _ = try await call("POST", "/account/discord/show", body: ["shown": shown]) }
+
+    func discordUnlink() async throws { _ = try await call("POST", "/account/discord/unlink", body: [:]) }
+
     // ---------- your laps (uploaded by PitlaneHQ.exe) ----------
 
     // session and lap ids look like acct_<id>:<…>; the ':' stays as it is in the path
@@ -778,7 +794,8 @@ final class Account: ObservableObject {
         }
         return DriverProfile(name: (j["name"] as? String) ?? "Driver", since: num(j["since"]) ?? 0, mine: j["mine"] as? Bool ?? false, admin: j["admin"] as? Bool ?? false, anonymous: j["anonymous"] as? Bool ?? false,
                              supporter: j["supporter"] as? Bool ?? false, supporterHidden: j["supporterHidden"] as? Bool ?? false, lics: j["lics"] as? [String: String] ?? [:], races: races, laps: laps,
-                             days: (j["days"] as? [String: Any] ?? [:]).mapValues { int($0) })
+                             days: (j["days"] as? [String: Any] ?? [:]).mapValues { int($0) },
+                             discordId: str((j["discord"] as? [String: Any])?["id"]), discordHandle: str((j["discord"] as? [String: Any])?["handle"]))
     }
 
     /// The league hub: the posts (with the views and clicks of yours), post one or edit yours, remove yours.

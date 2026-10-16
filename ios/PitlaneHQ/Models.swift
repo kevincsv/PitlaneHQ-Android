@@ -143,6 +143,9 @@ struct DriverProfile {
     let races: [ProfileRace]
     let laps: [ProfileLap]
     var days: [String: Int] = [:]
+    /// their Discord, when they chose to show it on their profile
+    var discordId = ""
+    var discordHandle = ""
 }
 
 /// A league posted on the hub: the days it races (0 Monday … 6 Sunday), the usual start in its time zone, one or
@@ -261,6 +264,15 @@ struct Device: Identifiable, Hashable {
     let device: String
     let lastSeen: Double
     let current: Bool
+}
+
+/// Your Discord account linked to this one (`oauth`: the server can link it with Discord's sign-in).
+struct DiscordLink {
+    let linked: Bool
+    let id: String
+    let handle: String
+    let shown: Bool
+    let oauth: Bool
 }
 
 /// DRINKS mode on the PC (admins only): friends drive and their laps go to the community under their name.

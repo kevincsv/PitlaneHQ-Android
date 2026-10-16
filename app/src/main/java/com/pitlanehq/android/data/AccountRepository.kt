@@ -397,6 +397,18 @@ class AccountRepository(context: Context) {
         call("POST", "/account/sessions/revoke", JSONObject().put("id", id))
     }
 
+    // ---------- Discord: link it (Discord's sign-in, in the browser), show it on your profile, unlink it ----------
+    fun discord(): DiscordLink = JSONObject(call("GET", "/account/discord")).let {
+        DiscordLink(it.optBoolean("linked"), it.optStr("id") ?: "", it.optStr("handle") ?: "", it.optBoolean("shown"), it.optBoolean("oauth"))
+    }
+
+    /** The address of Discord's sign-in, to open in the browser. */
+    fun discordStart(): String = JSONObject(call("POST", "/account/discord/start", JSONObject())).optString("url")
+
+    fun discordShow(shown: Boolean) { call("POST", "/account/discord/show", JSONObject().put("shown", shown)) }
+
+    fun discordUnlink() { call("POST", "/account/discord/unlink", JSONObject()) }
+
     // ---------- your laps (uploaded by PitlaneHQ.exe) ----------
     fun sessions(): Got<List<CloudSession>> {
         if (demo) return Got(Demo.sessions())
@@ -622,6 +634,7 @@ class AccountRepository(context: Context) {
         val l = j.optJSONObject("lics") ?: JSONObject()
         val rs = j.optJSONArray("races") ?: JSONArray()
         val ls = j.optJSONArray("laps") ?: JSONArray()
+        val dc = j.optJSONObject("discord")
         return DriverProfile(
             j.optString("name", "Driver"), j.optLong("since"), j.optBoolean("mine"), j.optBoolean("admin"), j.optBoolean("anonymous"), j.optBoolean("supporter"), j.optBoolean("supporterHidden"),
             l.keys().asSequence().associateWith { l.optString(it) },
@@ -631,7 +644,8 @@ class AccountRepository(context: Context) {
             },
             (0 until ls.length()).mapNotNull { ls.optJSONObject(it) }.map { x -> ProfileLap(fixTxt(x.optString("track")), fixTxt(x.optString("car")), x.optDouble("time"), x.optLong("created"), x.optStr("cat"), x.optStr("lic"), x.optBoolean("anon"),
                 x.optLong("trackId"), x.optLong("carId"), x.optInt("pos"), x.optInt("of")) },
-            dj.keys().asSequence().associateWith { dj.optInt(it) }
+            dj.keys().asSequence().associateWith { dj.optInt(it) },
+            dc?.optStr("id") ?: "", dc?.optStr("handle") ?: ""
         )
     }
 

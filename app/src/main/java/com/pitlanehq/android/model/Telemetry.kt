@@ -103,7 +103,8 @@ data class CommunityLap(val id: String, val alias: String, val time: Double, val
 
 /** A driver's profile: their nickname (never their iRacing name), license classes, recent races and laps on the leaderboards. */
 data class DriverProfile(val name: String, val since: Long, val mine: Boolean, val admin: Boolean, val anonymous: Boolean, val supporter: Boolean, val supporterHidden: Boolean,
-    val lics: Map<String, String>, val races: List<ProfileRace>, val laps: List<ProfileLap>, val days: Map<String, Int> = emptyMap())
+    val lics: Map<String, String>, val races: List<ProfileRace>, val laps: List<ProfileLap>, val days: Map<String, Int> = emptyMap(),
+    val discordId: String = "", val discordHandle: String = "")
 data class ProfileRace(val whenMs: Long, val track: String, val car: String, val cat: String?, val lic: String?, val official: Boolean, val start: Int, val finish: Int, val field: Int,
     val inc: Int, val best: Double?, val irChange: Int, val dnf: Boolean)
 data class ProfileLap(val track: String, val car: String, val time: Double, val created: Long, val cat: String?, val lic: String?, val anon: Boolean,
@@ -141,6 +142,9 @@ data class SharedReport(val id: String, val alias: String, val track: String, va
 data class SharedSetup(val id: String, val alias: String, val name: String, val car: String, val track: String, val notes: String, val downloads: Int, val created: Long)
 
 data class Device(val id: String, val device: String, val lastSeen: Long, val current: Boolean)
+
+/** Your Discord account linked to this one (`oauth`: the server can link it with Discord's sign-in). */
+data class DiscordLink(val linked: Boolean, val id: String, val handle: String, val shown: Boolean, val oauth: Boolean)
 
 /** A race the PC recorded (races.json in the account sync). */
 data class Race(

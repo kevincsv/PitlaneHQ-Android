@@ -60,6 +60,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     val reports = MutableStateFlow(Loadable<List<SharedReport>>())
     val setups = MutableStateFlow(Loadable<List<SharedSetup>>())
     val devices = MutableStateFlow(Loadable<List<Device>>())
+    val discord = MutableStateFlow(Loadable<DiscordLink>())
     val profile = MutableStateFlow(Loadable<DriverProfile>())
     private var profileLap: String? = null
 
@@ -230,7 +231,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
 
     fun logout() {
         live.stop()
-        listOf(races, sessions, bests, laps, analysis, combos, board, reports, setups, devices).forEach { (it as MutableStateFlow<Loadable<*>>).value = Loadable<Any>() }
+        listOf(races, sessions, bests, laps, analysis, combos, board, reports, setups, devices, discord).forEach { (it as MutableStateFlow<Loadable<*>>).value = Loadable<Any>() }
         viewModelScope.launch(Dispatchers.IO) {
             repo.logout()
             demo.value = false
@@ -313,6 +314,20 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
             runCatching { repo.revoke(id) }.onFailure { devices.value = devices.value.copy(error = errKey(it)) }
             loadDevices()
         }
+    }
+
+    // Account → Discord
+    fun loadDiscord() = load(discord) { Got(repo.discord()) }
+    /** Discord's sign-in to open in the browser (null: it failed, the card shows why); read again when the app is back. */
+    fun discordStart(done: (String?) -> Unit) = viewModelScope.launch(Dispatchers.IO) {
+        val url = runCatching { repo.discordStart() }.onFailure { discord.value = discord.value.copy(error = errKey(it)) }.getOrNull()?.ifBlank { null }
+        withContext(Dispatchers.Main) { done(url) }
+    }
+    fun discordShow(shown: Boolean) = viewModelScope.launch(Dispatchers.IO) {
+        runCatching { repo.discordShow(shown) }.onSuccess { loadDiscord() }.onFailure { discord.value = discord.value.copy(error = errKey(it)) }
+    }
+    fun discordUnlink() = viewModelScope.launch(Dispatchers.IO) {
+        runCatching { repo.discordUnlink() }.onSuccess { loadDiscord() }.onFailure { discord.value = discord.value.copy(error = errKey(it)) }
     }
 
     /** Analysis → Coach: the best valid lap of a session against the model's next level (else the record), once per session */

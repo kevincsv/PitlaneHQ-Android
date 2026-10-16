@@ -528,6 +528,72 @@ struct CodeSheet: View {
 }
 
 /// Two-step sign-in with an authenticator app: optional, recommended. Setup: password → link/key → first code → recovery codes once.
+/// Account → Discord: link it with Discord's sign-in (in the browser), show it on your profile so other drivers can find
+/// you there (off until you say), or unlink it. Without Discord's sign-in on the server, the bot's /link does it.
+struct DiscordPanel: View {
+    @EnvironmentObject var account: Account
+    @Environment(\.scenePhase) private var phase
+    @Environment(\.openURL) private var openURL
+    @StateObject private var discord = Loader<DiscordLink>()
+    @State private var opened = false
+    @State private var unlinking = false
+
+    var body: some View {
+        Panel {
+            if let d = discord.data {
+                if !d.linked {
+                    Text(t("discord_intro")).font(.caption).foregroundColor(Theme.muted)
+                    if d.oauth {
+                        Button { start() } label: {
+                            Text(t("discord_link").uppercased()).font(.caption.weight(.black)).padding(.horizontal, 14).padding(.vertical, 8).background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                        .padding(.top, 4)
+                    } else {
+                        Text(t("discord_no_oauth")).font(.caption).foregroundColor(Theme.muted)
+                    }
+                    if opened { Text(t("discord_finish")).font(.caption).foregroundColor(Theme.accent).padding(.top, 2) }
+                } else {
+                    HStack(spacing: 8) {
+                        Text(d.handle.isEmpty ? t("discord_linked") : "@" + d.handle).font(.subheadline.bold()).lineLimit(1)
+                        Text(t("discord_linked_pill")).font(.system(size: 10, weight: .bold)).lineLimit(1).foregroundColor(Theme.good)
+                            .padding(.horizontal, 8).padding(.vertical, 2).overlay(Capsule().stroke(Theme.good.opacity(0.55), lineWidth: 1))
+                    }
+                    Toggle(t("discord_show"), isOn: Binding(get: { d.shown }, set: { v in act { try await account.discordShow(v) } })).font(.subheadline)
+                    Text(t("discord_show_note")).font(.caption).foregroundColor(Theme.muted)
+                    Button(t("discord_unlink")) { unlinking = true }.font(.caption.bold()).foregroundColor(Theme.bad).padding(.top, 4)
+                }
+            } else if discord.error == nil {
+                Text(t("loading")).font(.caption).foregroundColor(Theme.muted)
+            }
+            if let e = discord.error { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
+        }
+        // read when the screen shows and when the app comes back (from Discord's sign-in in the browser)
+        .task { await load() }
+        .onChange(of: phase) { p in if p == .active { Task { await load() } } }
+        .alert(t("discord_unlink_ask"), isPresented: $unlinking) {
+            Button(t("discord_unlink"), role: .destructive) { act { try await account.discordUnlink() } }
+            Button(t("cancel"), role: .cancel) {}
+        }
+    }
+
+    private func load() async { await discord.load { try await account.discord() } }
+
+    private func start() {
+        Task {
+            do {
+                if let u = try await account.discordStart() { opened = true; openURL(u) }
+            } catch { discord.error = (error as? AppError)?.key ?? error.localizedDescription }
+        }
+    }
+
+    // a change, then the card read again (an error stays on the card)
+    private func act(_ f: @escaping () async throws -> Void) {
+        Task {
+            do { try await f(); await load() } catch { discord.error = (error as? AppError)?.key ?? error.localizedDescription }
+        }
+    }
+}
+
 struct TwoFactorPanel: View {
     @EnvironmentObject var account: Account
     @State private var step = ""          // "", "pw", "scan", "codes", "off"
@@ -2984,6 +3050,14 @@ struct ProfileView: View {
                     }
                     if p.anonymous { Text("🔒 " + t(p.mine ? "anon_mine" : "anon_admins_only")).font(.caption).foregroundColor(Theme.muted) }
                     if p.mine && p.supporter && p.supporterHidden { Text(t("badge_hidden")).font(.caption).foregroundColor(Theme.muted) }
+                    // their Discord, when they chose to show it
+                    if !p.discordId.isEmpty, p.discordId.allSatisfy({ $0.isASCII && $0.isNumber }), let u = URL(string: "https://discord.com/users/" + p.discordId) {
+                        HStack(spacing: 0) {
+                            Text("Discord: ").font(.caption).foregroundColor(Theme.muted)
+                            Link(p.discordHandle.isEmpty ? t("discord_open") : "@" + p.discordHandle, destination: u).font(.caption.bold()).foregroundColor(Theme.accent)
+                        }
+                        .padding(.top, 2)
+                    }
                     let ls = DISCS.filter { p.lics[$0] != nil }
                     if !ls.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -3531,6 +3605,8 @@ struct SettingsView: View {
             if (devices.data?.count ?? 0) > 1 {
                 Button(t("sign_out_others")) { revoke("others") }.foregroundColor(Theme.bad)
             }
+            SectionLabel(text: "DISCORD")
+            DiscordPanel()
             SectionLabel(text: t("language"))
             Panel {
                 ForEach(["system", "en", "es"], id: \.self) { k in
