@@ -4,6 +4,12 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; fixes ride along as
 "Fixes and improvements". 1.0.0 comes when the beta ends. Newest first.
 
+## 0.9.12 beta
+
+- **Discord**: link your account in Account → Discord and use the Pitlane HQ bot from the chat (records, a driver's
+  laps, your coach, the server's new records in a channel).
+- Fixes and improvements.
+
 ## 0.9.11 beta
 
 - Fixes and improvements.
