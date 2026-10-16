@@ -568,7 +568,7 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "track_no_map" to ("This track is not scanned yet: a lap driven here with Pitlane HQ Agent draws its map by itself." to "Este circuito aún no está escaneado: una vuelta en él con Pitlane HQ Agent dibuja el mapa sola."),
     "discord_intro" to ("Link your Discord account: the Pitlane HQ bot knows you there, and other drivers can find you if you want." to "Vincula tu cuenta de Discord: el bot de Pitlane HQ te reconoce allí, y otros pilotos pueden encontrarte si quieres."),
     "discord_link" to ("Link Discord" to "Vincular Discord"),
-    "discord_no_oauth" to ("In Discord, write /link to the Pitlane HQ bot." to "En Discord, escribe /vincular al bot de Pitlane HQ."),
+    "discord_no_oauth" to ("In Discord, write /link to the Pitlane HQ bot." to "En Discord, escribe /link al bot de Pitlane HQ."),
     "discord_finish" to ("Finish in the browser, then come back here." to "Termina en el navegador y vuelve aquí."),
     "discord_linked_pill" to ("linked" to "vinculado"),
     "discord_linked" to ("Linked" to "Vinculado"),
