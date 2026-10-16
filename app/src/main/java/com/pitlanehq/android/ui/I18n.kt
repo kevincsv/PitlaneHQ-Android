@@ -420,7 +420,7 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "your_code_sub" to ("Whoever types it in their Pitlane HQ (Telemetry) watches your telemetry, read only." to "Quien lo escriba en su Pitlane HQ (Telemetría) ve tu telemetría, solo mirar."),
     "new_code" to ("New code" to "Código nuevo"),
     "stop_sharing" to ("Stop sharing" to "Dejar de compartir"),
-    "get_code_sub" to ("Let a friend or your engineer watch your telemetry with a code." to "Deja que un amigo o tu ingeniero vea tu telemetría con un código."),
+    "get_code_sub" to ("Let a friend watch your telemetry with a code." to "Deja que un amigo vea tu telemetría con un código."),
     "get_code" to ("Get a code" to "Crear un código"),
     "watching_other_back" to ("You are watching another driver: Connect goes back to your PC." to "Estás viendo a otro piloto: Conectar vuelve a tu PC."),
     "connect" to ("Connect" to "Conectar"),

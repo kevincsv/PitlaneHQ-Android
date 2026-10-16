@@ -420,7 +420,7 @@ private let strings: [String: (String, String)] = [
     "your_code_sub": ("Whoever types it in their Pitlane HQ (Telemetry) watches your telemetry, read only.", "Quien lo escriba en su Pitlane HQ (Telemetría) ve tu telemetría, solo mirar."),
     "new_code": ("New code", "Código nuevo"),
     "stop_sharing": ("Stop sharing", "Dejar de compartir"),
-    "get_code_sub": ("Let a friend or your engineer watch your telemetry with a code.", "Deja que un amigo o tu ingeniero vea tu telemetría con un código."),
+    "get_code_sub": ("Let a friend watch your telemetry with a code.", "Deja que un amigo vea tu telemetría con un código."),
     "get_code": ("Get a code", "Crear un código"),
     "watching_other_back": ("You are watching another driver: Connect goes back to your PC.", "Estás viendo a otro piloto: Conectar vuelve a tu PC."),
     "connect": ("Connect", "Conectar"),
