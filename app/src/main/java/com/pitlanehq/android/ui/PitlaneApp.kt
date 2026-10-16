@@ -178,7 +178,6 @@ private fun LoginScreen(vm: PitlaneViewModel, error: String?, busy: Boolean) {
                 }
             }
         }
-        item { Text(t("pw_note"), color = Muted, fontSize = 11.sp) }
     }
 }
 
@@ -2616,8 +2615,6 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
                 Text(t("demo_note"), color = Muted, fontSize = 12.sp)
             }
         }
-        item { Section(t("your_data")) }
-        item { Panel { Text(t("privacy"), color = Muted, fontSize = 12.sp) } }
         item {
             Button(
                 onClick = { vm.logout() }, modifier = Modifier.fillMaxWidth(),

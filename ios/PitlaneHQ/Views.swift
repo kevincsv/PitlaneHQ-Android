@@ -488,7 +488,6 @@ struct LoginView: View {
                     }
                     .padding(.top, 6)
                 }
-                Text(t("pw_note")).font(.caption2).foregroundColor(Theme.muted)
             }
             .padding(24)
         }
@@ -3638,8 +3637,6 @@ struct SettingsView: View {
                     Text(t("demo_note")).font(.caption).foregroundColor(Theme.muted)
                 }
             }
-            SectionLabel(text: t("your_data"))
-            Panel { Text(t("privacy")).font(.caption).foregroundColor(Theme.muted) }
             Button {
                 Task { await account.logout() }
             } label: {
