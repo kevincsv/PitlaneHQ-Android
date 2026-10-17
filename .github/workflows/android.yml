@@ -71,6 +71,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           v=$(cat version.txt)
+          # the public history started again at 0.4.1 (the owner's choice): the releases of a higher number go, tags too
+          gh release list --limit 300 --json tagName -q '.[].tagName' 2>/dev/null | while read -r t; do o="${t#v}"; o="${o%-beta}"; [[ "$o" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue; [ "$o" = "$v" ] && continue; [ "$(printf '%s\n%s\n' "$v" "$o" | sort -V | tail -1)" = "$o" ] && gh release delete "$t" -y --cleanup-tag || true; done
           tag="v$v-beta"
           # the release notes are this version's part of CHANGELOG.md
           awk -v v="$v" '$0 ~ "^## "v"( |$)" {on=1; next} on && /^## / {exit} on {print}' CHANGELOG.md > notes.md

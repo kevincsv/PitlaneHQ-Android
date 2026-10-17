@@ -54,7 +54,9 @@ object Updates {
             if (!r.isSuccessful) return null
             val j = JSONObject(r.body.string())
             val v = j.optString("version").removePrefix("v").removeSuffix("-beta")
-            if (v.isEmpty() || !newer(v, current)) return null
+            // another version on the server is the one to have (the numbering started again at 0.4.1, so a
+            // lower number can be the newer build)
+            if (v.isEmpty() || parts(v) == parts(current)) return null
             val apk = j.optString("apk")
             AppUpdate(v, if (apk.isNotEmpty()) "https://pitlanehq.app/dl/$apk" else "https://pitlanehq.app/downloads")
         }

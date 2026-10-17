@@ -76,7 +76,7 @@ final class Updates: ObservableObject {
     @Published var version: String?
     let page = URL(string: "https://pitlanehq.app/downloads")!
 
-    private static func parts(_ v: String) -> [Int] {
+    static func parts(_ v: String) -> [Int] {
         let core = v.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "v", with: "").split(separator: "-").first.map(String.init) ?? ""
         return core.split(separator: ".").map { Int($0) ?? 0 }
     }
@@ -98,7 +98,8 @@ final class Updates: ObservableObject {
               let v0 = j["version"] as? String else { return }
         let v = v0.replacingOccurrences(of: "-beta", with: "").replacingOccurrences(of: "v", with: "")
         let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
-        if Updates.newer(v, than: current) { version = v }
+        // another version on the server is the one to have (the numbering started again at 0.4.1)
+        if !v.isEmpty && Updates.parts(v) != Updates.parts(current) { version = v }
     }
 }
 
